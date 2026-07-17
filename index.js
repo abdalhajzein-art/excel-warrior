@@ -22,7 +22,7 @@ app.post("/process", async (req, res) => {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "mistral-tiny",
+        model: "mistral-small",   // ⭐ إصلاح الموديل
         messages: [
           { role: "system", content: "أنت خبير Excel. أرجع CSV فقط." },
           { role: "user", content: `CSV:\n${csv}\n\nتعليمات:\n${prompt}` }
