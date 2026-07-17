@@ -56,4 +56,9 @@ def process():
     # 7) إرسال الملف المعدّل للمستخدم
     return send_file(OUTPUT_PATH, as_attachment=True)
 
-app.run(host="0.0.0.0", port=8000)
+# -----------------------------
+# تشغيل السيرفر على Railway
+# -----------------------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
