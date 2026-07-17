@@ -1,46 +1,59 @@
 from flask import Flask, request, send_file
-import excel_engine
-import arena_client
+import openpyxl
 import os
+
+import ai_client
+import excel_engine
 
 app = Flask(__name__)
 
+UPLOAD_PATH = "uploaded.xlsx"
+OUTPUT_PATH = "output.xlsx"
+
 @app.route('/')
 def home():
-    return "Excel Warrior Ready"
+    return open("index.html").read()
 
-@app.route('/upload', methods=['POST'])
-def upload_file():
+@app.route('/process', methods=['POST'])
+def process():
+    # 1) استلام الملف
     file = request.files['excel_file']
+    file.save(UPLOAD_PATH)
 
-    # نقرأ محتوى الملف كنص لإرساله لـ Arena.ai
-    wb_temp = excel_engine.openpyxl.load_workbook(file)
-    sheet_temp = wb_temp.active
+    # 2) قراءة محتوى الملف كنص
+    wb = openpyxl.load_workbook(UPLOAD_PATH)
+    sheet = wb.active
 
     content = []
-    for row in sheet_temp.iter_rows(values_only=True):
+    for row in sheet.iter_rows(values_only=True):
         content.append(str(row))
 
     excel_text = "\n".join(content)
 
-    # نرسل النص لـ Arena.ai
+    # 3) استلام طلب المستخدم
+    user_instruction = request.form['instruction']
+
+    # 4) بناء البرومبت للذكاء الاصطناعي
     prompt = f"""
     هذا محتوى ملف Excel:
     {excel_text}
 
-    المطلوب: أعطني كود Python يعدّل هذا الملف باستخدام openpyxl.
-    لا تكتب شرح، فقط الكود.
+    طلب المستخدم:
+    {user_instruction}
+
+    المطلوب:
+    أعطني كود Python باستخدام مكتبة openpyxl يعدّل هذا الملف حسب الطلب.
+    رجّع فقط الكود بدون شرح.
     """
 
-    instructions = arena_client.ask_arena(prompt)
+    # 5) إرسال الطلب للذكاء الاصطناعي
+    instructions = ai_client.ask_ai(prompt)
 
-    # نعيد فتح الملف الأصلي لتنفيذ التعليمات عليه
-    file.stream.seek(0)
-    wb = excel_engine.process_workbook(file, instructions)
+    # 6) تنفيذ الكود على الملف
+    wb = excel_engine.process_workbook(UPLOAD_PATH, instructions)
+    wb.save(OUTPUT_PATH)
 
-    output_path = "output.xlsx"
-    wb.save(output_path)
-
-    return send_file(output_path, as_attachment=True)
+    # 7) إرسال الملف المعدّل للمستخدم
+    return send_file(OUTPUT_PATH, as_attachment=True)
 
 app.run(host="0.0.0.0", port=8000)
