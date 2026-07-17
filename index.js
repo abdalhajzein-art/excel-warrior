@@ -4,16 +4,14 @@ import cors from "cors";
 
 const app = express();
 
-app.use(cors());
+// ⭐ تفعيل CORS بشكل كامل
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"]
+}));
+
 app.use(express.json());
-
-// ⭐ خدمة ملفات الواجهة من الجذر
-app.use(express.static("."));
-
-// ⭐ عرض الصفحة الرئيسية
-app.get("/", (req, res) => {
-  res.sendFile("index.html", { root: "." });
-});
 
 app.post("/process", async (req, res) => {
   try {
