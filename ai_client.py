@@ -21,11 +21,13 @@ def ask_ai(prompt):
     response = requests.post(url, json=payload, headers=headers)
     data = response.json()
 
-    # حماية من الأخطاء
+    # إذا في خطأ من OpenRouter
     if "error" in data:
         return f"ERROR: {data['error']['message']}"
 
+    # إذا ما في choices
     if "choices" not in data:
         return f"ERROR: Unexpected response: {data}"
 
+    # الرد الطبيعي
     return data["choices"][0]["message"]["content"]
