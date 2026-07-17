@@ -10,6 +10,11 @@ app.use(express.json());
 // ⭐ خدمة ملفات الواجهة من الجذر
 app.use(express.static("."));
 
+// ⭐ صفحة رئيسية حتى لا يظهر Cannot GET /
+app.get("/", (req, res) => {
+  res.send("Excel Warrior API is running on Railway");
+});
+
 app.post("/process", async (req, res) => {
   try {
     const { csv, prompt } = req.body;
@@ -22,7 +27,7 @@ app.post("/process", async (req, res) => {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",   // ⭐ الموديل الصحيح
+        model: "openai/gpt-4o-mini",
         messages: [
           { role: "system", content: "أنت خبير Excel. أرجع CSV فقط." },
           { role: "user", content: `CSV:\n${csv}\n\nتعليمات:\n${prompt}` }
@@ -30,11 +35,9 @@ app.post("/process", async (req, res) => {
       })
     });
 
-    // ⭐ طباعة الرد الخام من OpenRouter
     const raw = await response.text();
     console.log("RAW RESPONSE:", raw);
 
-    // ⭐ محاولة تحويل الرد إلى JSON
     let data;
     try {
       data = JSON.parse(raw);
@@ -45,7 +48,6 @@ app.post("/process", async (req, res) => {
       });
     }
 
-    // ⭐ التحقق من وجود الرد الصحيح
     if (!data?.choices?.[0]?.message?.content) {
       return res.status(500).json({
         error: "AI response missing content",
@@ -53,7 +55,6 @@ app.post("/process", async (req, res) => {
       });
     }
 
-    // ⭐ إرسال CSV المعدّل للواجهة
     res.json({ csv: data.choices[0].message.content.trim() });
 
   } catch (error) {
@@ -67,5 +68,5 @@ app.post("/process", async (req, res) => {
 
 // ⭐ تشغيل السيرفر
 app.listen(process.env.PORT || 3000, () =>
-  console.log("Excel Warrior API running")
+  console.log("Excel Warrior API running on Railway")
 );
