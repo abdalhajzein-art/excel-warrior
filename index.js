@@ -10,16 +10,15 @@ app.use(express.json());
 // ⭐ خدمة ملفات الواجهة من الجذر
 app.use(express.static("."));
 
-// ⭐ صفحة رئيسية حتى لا يظهر Cannot GET /
+// ⭐ عرض الصفحة الرئيسية
 app.get("/", (req, res) => {
-  res.send("Excel Warrior API is running on Railway");
+  res.sendFile("index.html", { root: "." });
 });
 
 app.post("/process", async (req, res) => {
   try {
     const { csv, prompt } = req.body;
 
-    // ⭐ طلب OpenRouter
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -66,7 +65,6 @@ app.post("/process", async (req, res) => {
   }
 });
 
-// ⭐ تشغيل السيرفر
 app.listen(process.env.PORT || 3000, () =>
   console.log("Excel Warrior API running on Railway")
 );
