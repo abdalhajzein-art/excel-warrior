@@ -4,11 +4,9 @@ import cors from "cors";
 
 const app = express();
 
-// السماح للواجهة بالاتصال بالسيرفر
 app.use(cors());
 app.use(express.json());
 
-// مسار Excel Warrior الرسمي
 app.post("/process", async (req, res) => {
   try {
     const { csv, prompt } = req.body;
@@ -29,7 +27,6 @@ app.post("/process", async (req, res) => {
     });
 
     const data = await response.json();
-
     res.json({ csv: data.choices[0].message.content });
 
   } catch (error) {
@@ -38,5 +35,6 @@ app.post("/process", async (req, res) => {
   }
 });
 
-// تشغيل السيرفر
-app.listen(3000, () => console.log("Excel Warrior API running on port 3000"));
+app.listen(process.env.PORT || 3000, () =>
+  console.log("Excel Warrior API running")
+);
