@@ -18,7 +18,7 @@ app.post("/process", async (req, res) => {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "google-gemini-1.5-flash",
+        model: "mistral-tiny",
         messages: [
           { role: "system", content: "أنت خبير Excel. أرجع CSV فقط." },
           { role: "user", content: `CSV:\n${csv}\n\nتعليمات:\n${prompt}` }
