@@ -4,15 +4,16 @@ import cors from "cors";
 
 const app = express();
 
-// ⭐ تفعيل CORS بشكل كامل
+// ⭐ تفعيل CORS بشكل كامل ومسموح لدومين GitHub Pages
 app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"]
+  origin: "https://abdalhajzein-art.github.io",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
 }));
 
 app.use(express.json());
 
+// ⭐ معالجة طلبات الذكاء الاصطناعي
 app.post("/process", async (req, res) => {
   try {
     const { csv, prompt } = req.body;
@@ -63,6 +64,7 @@ app.post("/process", async (req, res) => {
   }
 });
 
+// ⭐ تشغيل السيرفر
 app.listen(process.env.PORT || 3000, () =>
   console.log("Excel Warrior API running on Railway")
 );
