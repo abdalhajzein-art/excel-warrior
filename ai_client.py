@@ -1,7 +1,7 @@
 import requests
 import os
 
-API_KEY = os.getenv("OPENROUTER_KEY")
+API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 def ask_ai(prompt):
     url = "https://openrouter.ai/api/v1/chat/completions"
@@ -20,5 +20,12 @@ def ask_ai(prompt):
 
     response = requests.post(url, json=payload, headers=headers)
     data = response.json()
+
+    # حماية من الأخطاء
+    if "error" in data:
+        return f"ERROR: {data['error']['message']}"
+
+    if "choices" not in data:
+        return f"ERROR: Unexpected response: {data}"
 
     return data["choices"][0]["message"]["content"]
