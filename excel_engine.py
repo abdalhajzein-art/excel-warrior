@@ -1,18 +1,10 @@
 import openpyxl
 
-def process_workbook(file, instructions=None):
-    """
-    محرك Excel Warrior
-    - يفتح ملف Excel
-    - ينفّذ تعليمات Arena.ai إذا موجودة
-    - يرجّع الملف جاهز للحفظ
-    """
-
-    wb = openpyxl.load_workbook(file)
+def process_workbook(file_path, instructions):
+    wb = openpyxl.load_workbook(file_path)
     sheet = wb.active
 
-    # تنفيذ تعليمات Arena.ai إذا موجودة
-    if instructions:
-        exec(instructions)
+    # ⚠️ تنفيذ الكود القادم من الذكاء الاصطناعي
+    exec(instructions)
 
     return wb
