@@ -7,8 +7,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ⭐ أضف هذا السطر لعرض الواجهة
-app.use(express.static("public"));   // ← هذا هو الحل
+// ⭐ هذا السطر هو الحل
+app.use(express.static("."));
 
 app.post("/process", async (req, res) => {
   try {
