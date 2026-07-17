@@ -21,6 +21,6 @@ def ask_ai(prompt):
     response = requests.post(url, json=payload, headers=headers)
     data = response.json()
 
-    print("AI RAW RESPONSE:", data)   # ← السطر الذهبي
+    print("AI RAW RESPONSE:", data)
 
-    return data   # ← رجّع الرد كامل بدون ما تقرأ منه شيء
+    return "OK"   # ← مهم جدًا لحتى السيرفر ما يوقع
