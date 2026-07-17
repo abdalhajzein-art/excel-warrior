@@ -23,4 +23,4 @@ def ask_ai(prompt):
 
     print("AI RAW RESPONSE:", data)   # ← السطر الذهبي
 
-    return data["choices"][0]["message"]["content"]
+    return data   # ← رجّع الرد كامل بدون ما تقرأ منه شيء
