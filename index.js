@@ -22,7 +22,7 @@ app.post("/process", async (req, res) => {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "mistral-7b-instruct",   // ⭐ الموديل الصحيح
+        model: "openai/gpt-4o-mini",   // ⭐ الموديل الصحيح
         messages: [
           { role: "system", content: "أنت خبير Excel. أرجع CSV فقط." },
           { role: "user", content: `CSV:\n${csv}\n\nتعليمات:\n${prompt}` }
