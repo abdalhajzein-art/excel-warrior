@@ -7,13 +7,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ⭐ هذا السطر هو الحل
+// ⭐ خدمة ملفات الواجهة من الجذر
 app.use(express.static("."));
 
 app.post("/process", async (req, res) => {
   try {
     const { csv, prompt } = req.body;
 
+    // ⭐ طلب OpenRouter
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -29,16 +30,42 @@ app.post("/process", async (req, res) => {
       })
     });
 
-    const data = await response.json();
+    // ⭐ طباعة الرد الخام من OpenRouter
+    const raw = await response.text();
+    console.log("RAW RESPONSE:", raw);
 
-    res.json({ csv: data.choices[0].message.content });
+    // ⭐ محاولة تحويل الرد إلى JSON
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      return res.status(500).json({
+        error: "AI returned invalid JSON",
+        raw
+      });
+    }
+
+    // ⭐ التحقق من وجود الرد الصحيح
+    if (!data?.choices?.[0]?.message?.content) {
+      return res.status(500).json({
+        error: "AI response missing content",
+        raw: data
+      });
+    }
+
+    // ⭐ إرسال CSV المعدّل للواجهة
+    res.json({ csv: data.choices[0].message.content.trim() });
 
   } catch (error) {
-    console.error("Error:", error);
-    res.status(500).json({ error: "AI processing failed" });
+    console.error("SERVER ERROR:", error);
+    res.status(500).json({
+      error: "AI processing failed",
+      details: error.message
+    });
   }
 });
 
+// ⭐ تشغيل السيرفر
 app.listen(process.env.PORT || 3000, () =>
   console.log("Excel Warrior API running")
 );
