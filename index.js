@@ -7,6 +7,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ⭐ أضف هذا السطر لعرض الواجهة
+app.use(express.static("public"));   // ← هذا هو الحل
+
 app.post("/process", async (req, res) => {
   try {
     const { csv, prompt } = req.body;
