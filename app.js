@@ -9,7 +9,7 @@ function addMessage(text, sender) {
   msg.className = `message ${sender}`;
   msg.textContent = text;
   chatArea.appendChild(msg);
-  chatArea.scrollTop = chatArea.scrollHeight;
+  chatArea.scrollTop = chatArea.scrollHeight; // السكرول لنهاية الرسالة
 }
 
 async function sendMessage() {
@@ -36,9 +36,5 @@ async function sendMessage() {
 
 sendBtn.onclick = sendMessage;
 
-userInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-});
+/* إزالة إرسال الرسالة عند الضغط على Enter
+   الآن Enter ينزل سطر طبيعي */
