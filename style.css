@@ -104,3 +104,19 @@ body {
   color: #fff;
   font-size: 15px;
 }
+.typing {
+  color: #9ca3af;
+  font-size: 15px;
+  padding: 12px 14px;
+  background: #1a1a1d;
+  border-radius: 14px;
+  width: fit-content;
+  border: 1px solid #2a2a2d;
+  animation: blink 1.4s infinite;
+}
+
+@keyframes blink {
+  0%   { opacity: 0.2; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.2; }
+}
