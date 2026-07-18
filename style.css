@@ -1,4 +1,4 @@
-/* ====== الأساسيات ====== */
+/* ====== RESET ====== */
 * {
   margin: 0;
   padding: 0;
@@ -7,43 +7,44 @@
 }
 
 body {
-  background: #0d0d0f; /* داكن جدًا */
-  color: #fff;
-  height: 100vh;
+  background: #0b0b0d;
   display: flex;
   justify-content: center;
+  height: 100vh;
+  overflow: hidden;
 }
 
-/* ====== الحاوية الأساسية ====== */
+/* ====== APP CONTAINER ====== */
 .app-container {
   width: 100%;
   max-width: 480px; /* شكل تطبيق */
   height: 100vh;
+  background: #0f0f11;
   display: flex;
   flex-direction: column;
-  background: #111114;
-  border-left: 1px solid #1f1f22;
-  border-right: 1px solid #1f1f22;
+  border-left: 1px solid #1c1c1f;
+  border-right: 1px solid #1c1c1f;
 }
 
-/* ====== الشريط العلوي ====== */
+/* ====== HEADER ====== */
 .top-bar {
   padding: 16px;
-  background: #111114;
-  border-bottom: 1px solid #1f1f22;
+  background: #0f0f11;
+  border-bottom: 1px solid #1c1c1f;
 }
 
 .title {
   font-size: 20px;
   font-weight: bold;
+  color: #ffffff;
 }
 
 .subtitle {
   font-size: 13px;
-  opacity: 0.6;
+  color: #9ca3af;
 }
 
-/* ====== منطقة الرسائل ====== */
+/* ====== CHAT AREA ====== */
 .chat-area {
   flex: 1;
   overflow-y: auto;
@@ -53,7 +54,7 @@ body {
   gap: 12px;
 }
 
-/* ====== الرسائل ====== */
+/* ====== MESSAGES ====== */
 .message {
   max-width: 80%;
   padding: 12px 14px;
@@ -62,29 +63,29 @@ body {
   font-size: 15px;
 }
 
-/* رسالة المستخدم */
+/* USER MESSAGE */
 .message.user {
+  align-self: flex-end;
   background: #1a1f2b;
   color: #dbe3ff;
-  align-self: flex-end;
   border: 1px solid #2a3244;
 }
 
-/* رسالة الذكاء */
+/* AI MESSAGE */
 .message.ai {
+  align-self: flex-start;
   background: #1a1a1d;
   color: #e6e6e6;
-  align-self: flex-start;
   border: 1px solid #2a2a2d;
 }
 
-/* ====== صندوق الكتابة ====== */
+/* ====== INPUT AREA ====== */
 .input-area {
   display: flex;
   padding: 12px;
   gap: 10px;
-  background: #111114;
-  border-top: 1px solid #1f1f22;
+  background: #0f0f11;
+  border-top: 1px solid #1c1c1f;
 }
 
 #userInput {
