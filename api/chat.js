@@ -26,9 +26,9 @@ export default async function handler(req, res) {
 
     if (!message) return res.status(400).json({ reply: "الرسالة فارغة، يرجى كتابة شيء." });
 
-    // إعداد النموذج المضمون والمستقر
+    // إعداد النموذج المحدث ليعمل بدون أخطاء 404
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     // طلب الرد من الذكاء الاصطناعي
     const result = await model.generateContent(message);
@@ -39,8 +39,9 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("خطأ تقني:", error);
+    // إرجاع تفاصيل الخطأ لتتمكن من معرفة المشكلة بوضوح إذا استمرت
     return res.status(500).json({ 
-      reply: "حدث خطأ أثناء الاتصال بالذكاء الاصطناعي. تأكد من إعدادات المفتاح." 
+      reply: "حدث خطأ أثناء الاتصال: " + error.message 
     });
   }
 }
