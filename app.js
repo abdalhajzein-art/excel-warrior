@@ -1,4 +1,4 @@
-const API_URL = "https://excel-warrior.vercel.app/api/chat";
+const API_URL = "/api/chat"; // سنبقيها تشير لسيرفرك على Vercel
 
 const chatArea = document.getElementById("chatArea");
 const userInput = document.getElementById("userInput");
@@ -8,19 +8,20 @@ const welcomeScreen = document.getElementById("welcomeScreen");
 let isWaiting = false;
 let typingMsg = null;
 
-/* إخفاء شاشة الترحيب */
 function hideWelcome() {
   if (welcomeScreen) welcomeScreen.style.display = "none";
 }
 
-/* إضافة رسالة */
 function addMessage(text, sender) {
   hideWelcome();
   const msg = document.createElement("div");
   msg.className = `message ${sender}`;
   msg.textContent = text;
-
-  if (/^[a-zA-Z0-9]/.test(text)) {
+  
+  if (/[\u0600-\u06FF]/.test(text)) {
+    msg.style.direction = "rtl";
+    msg.style.textAlign = "right";
+  } else {
     msg.style.direction = "ltr";
     msg.style.textAlign = "left";
   }
@@ -29,7 +30,6 @@ function addMessage(text, sender) {
   chatArea.scrollTop = chatArea.scrollHeight;
 }
 
-/* جاري الرد */
 function showTyping() {
   typingMsg = document.createElement("div");
   typingMsg.className = "typing";
@@ -37,13 +37,11 @@ function showTyping() {
   chatArea.appendChild(typingMsg);
 }
 
-/* إخفاء جاري الرد */
 function hideTyping() {
   if (typingMsg) typingMsg.remove();
   typingMsg = null;
 }
 
-/* إرسال الرسالة */
 async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || isWaiting) return;
@@ -58,51 +56,29 @@ async function sendMessage() {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: text
-      })
+      body: JSON.stringify({ message: text }) // هنا السيرفر الخاص بك سيستلم النص
     });
 
-    // 👇 نقرأ الرد الخام
-    const raw = await res.text();
-
-    // 👇 نعرض الرد الخام مباشرة على الشاشة
-    if (!raw || raw.trim() === "") {
-      hideTyping();
-      addMessage("⚠️ الرد الخام من السيرفر فارغ تمامًا.\nهذا يعني أن /api/chat لم يرجّع أي نص.", "ai");
-      isWaiting = false;
-      return;
-    }
-
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch (e) {
-      hideTyping();
-      addMessage(
-        "⚠️ السيرفر رجّع نص غير قابل للتحويل إلى JSON:\n\n" + raw,
-        "ai"
-      );
-      isWaiting = false;
-      return;
-    }
-
+    const data = await res.json();
     hideTyping();
-    addMessage(
-      data.reply || "⚠️ السيرفر رجّع JSON بدون reply:\n\n" + raw,
-      "ai"
-    );
 
+    if (data.reply) {
+      addMessage(data.reply, "ai");
+    } else {
+      addMessage("⚠️ حدث خطأ في الرد من السيرفر.", "ai");
+    }
   } catch (err) {
     hideTyping();
-    addMessage("⚠️ خطأ أثناء الاتصال بالسيرفر:\n" + err.message, "ai");
+    addMessage("⚠️ خطأ في الاتصال: " + err.message, "ai");
   }
-
   isWaiting = false;
 }
 
 sendBtn.onclick = sendMessage;
 
 userInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {}
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
 });
