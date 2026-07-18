@@ -1,6 +1,21 @@
+export const config = {
+  api: {
+    bodyParser: false
+  }
+};
+
 export default async function handler(req, res) {
   try {
-    // قراءة جسم الطلب يدويًا لأن req.json() غير موجود في Node.js
+    // CORS
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if (req.method === "OPTIONS") {
+      return res.status(200).end();
+    }
+
+    // قراءة جسم الطلب يدويًا
     const buffers = [];
     for await (const chunk of req) {
       buffers.push(chunk);
@@ -13,11 +28,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No message provided." });
     }
 
+    // إرسال الطلب إلى OpenRouter
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "HTTP-Referer": "https://excel-warrior-ui.vercel.app",
+        "X-Title": "Excel Warrior AI"
       },
       body: JSON.stringify({
         model: "deepseek/deepseek-r1",
