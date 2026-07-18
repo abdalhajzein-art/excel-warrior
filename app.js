@@ -27,6 +27,8 @@ function addMessage(text, sender) {
   }
 
   chatArea.appendChild(msg);
+
+  // 🔥 إضافة Scroll تلقائي بعد إضافة الرسالة
   chatArea.scrollTop = chatArea.scrollHeight;
 }
 
@@ -35,11 +37,17 @@ function showTyping() {
   typingMsg.className = "typing";
   typingMsg.textContent = "جاري الرد...";
   chatArea.appendChild(typingMsg);
+
+  // 🔥 Scroll أثناء الكتابة أيضاً
+  chatArea.scrollTop = chatArea.scrollHeight;
 }
 
 function hideTyping() {
   if (typingMsg) typingMsg.remove();
   typingMsg = null;
+
+  // 🔥 Scroll بعد إزالة "جاري الرد"
+  chatArea.scrollTop = chatArea.scrollHeight;
 }
 
 async function sendMessage() {
@@ -56,7 +64,7 @@ async function sendMessage() {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }) // هنا السيرفر الخاص بك سيستلم النص
+      body: JSON.stringify({ message: text })
     });
 
     const data = await res.json();
@@ -64,6 +72,9 @@ async function sendMessage() {
 
     if (data.reply) {
       addMessage(data.reply, "ai");
+
+      // 🔥 Scroll بعد رد الذكاء مباشرة
+      chatArea.scrollTop = chatArea.scrollHeight;
     } else {
       addMessage("⚠️ حدث خطأ في الرد من السيرفر.", "ai");
     }
@@ -76,8 +87,27 @@ async function sendMessage() {
 
 sendBtn.onclick = sendMessage;
 
+// ===============================
+// Enter → سطر جديد
+// Ctrl + Enter → إرسال
+// ===============================
 userInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
+  if (e.key === "Enter" && !e.ctrlKey) {
+    e.preventDefault();
+
+    const textarea = e.target;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    textarea.value =
+      textarea.value.substring(0, start) +
+      "\n" +
+      textarea.value.substring(end);
+
+    textarea.selectionStart = textarea.selectionEnd = start + 1;
+  }
+
+  if (e.key === "Enter" && e.ctrlKey) {
     e.preventDefault();
     sendMessage();
   }
