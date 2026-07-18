@@ -4,8 +4,10 @@ const chatArea = document.getElementById("chatArea");
 const userInput = document.getElementById("userInput");
 const sendBtn = document.getElementById("sendBtn");
 
-let isWaiting = false; // يمنع إرسال رسالتين بنفس الوقت
+let isWaiting = false; // منع إرسال رسالتين بنفس الوقت
+let typingMsg = null; // عنصر جاري الرد
 
+/* إضافة رسالة */
 function addMessage(text, sender) {
   const msg = document.createElement("div");
   msg.className = `message ${sender}`;
@@ -14,6 +16,24 @@ function addMessage(text, sender) {
   chatArea.scrollTop = chatArea.scrollHeight;
 }
 
+/* عرض جاري الرد */
+function showTyping() {
+  typingMsg = document.createElement("div");
+  typingMsg.className = "typing";
+  typingMsg.textContent = "جاري الرد...";
+  chatArea.appendChild(typingMsg);
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+/* إخفاء جاري الرد */
+function hideTyping() {
+  if (typingMsg) {
+    typingMsg.remove();
+    typingMsg = null;
+  }
+}
+
+/* إرسال الرسالة */
 async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || isWaiting) return;
@@ -21,15 +41,8 @@ async function sendMessage() {
   addMessage(text, "user");
   userInput.value = "";
 
-  // منع إرسال رسالة ثانية قبل الرد
   isWaiting = true;
-
-  // رسالة انتظار
-  const loadingMsg = document.createElement("div");
-  loadingMsg.className = "message ai";
-  loadingMsg.textContent = "⏳ جاري المعالجة...";
-  chatArea.appendChild(loadingMsg);
-  chatArea.scrollTop = chatArea.scrollHeight;
+  showTyping();
 
   try {
     const res = await fetch(API_URL, {
@@ -40,15 +53,23 @@ async function sendMessage() {
 
     const data = await res.json();
 
-    loadingMsg.remove(); // إزالة رسالة الانتظار
+    hideTyping();
     addMessage(data.reply || "❌ لم يصل رد من الذكاء الاصطناعي.", "ai");
 
   } catch (err) {
-    loadingMsg.remove();
+    hideTyping();
     addMessage("❌ خطأ في الاتصال بالسيرفر.", "ai");
   }
 
-  isWaiting = false; // السماح بإرسال رسالة جديدة
+  isWaiting = false;
 }
 
+/* زر الإرسال */
 sendBtn.onclick = sendMessage;
+
+/* Enter ينزل سطر فقط */
+userInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    // ينزل سطر طبيعي
+  }
+});
