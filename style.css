@@ -42,13 +42,13 @@ body {
 
 /* CHAT AREA */
 .chat-area {
-  height: calc(100vh - 140px); /* السكرول ياخد راحته */
-  overflow-y: scroll;
+  flex: 1;                 /* تتمدّد طبيعي */
+  overflow-y: auto;        /* السكرول كامل */
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-bottom: 20px;
+  padding-bottom: 20px;    /* مساحة إضافية للرسائل الطويلة */
 }
 
 /* MESSAGES */
