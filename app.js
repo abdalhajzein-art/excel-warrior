@@ -1,5 +1,5 @@
 // رابط API الصحيح على سيرفرك الجديد
-const API_URL = "https://excel-warrior-r964t394v-excel-bot.vercel.app/api/chat";
+const API_URL = "https://excel-warrior.vercel.app/api/chat";  // ← عدّل حسب اسم مشروعك
 
 // عناصر الواجهة
 const chatArea = document.getElementById("chatArea");
