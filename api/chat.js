@@ -18,30 +18,27 @@ export default async function handler(req, res) {
   try {
     const { message } = req.body;
     
-    // التحقق من المفتاح
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ reply: "خطأ: مفتاح الـ API غير مهيأ في السيرفر." });
+      return res.status(500).json({ reply: "خطأ في إعدادات السيرفر." });
     }
 
-    if (!message) return res.status(400).json({ reply: "الرسالة فارغة، يرجى كتابة شيء." });
+    if (!message) return res.status(400).json({ reply: "الرسالة فارغة." });
 
-    // إعداد النموذج المحدث ليعمل بدون أخطاء 404
     const genAI = new GoogleGenerativeAI(apiKey);
+    
+    // التعديل النهائي: استخدام النموذج المحدث مباشرة مع تحديد الإصدار الافتراضي للمكتبة
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // طلب الرد من الذكاء الاصطناعي
     const result = await model.generateContent(message);
-    const response = await result.response;
-    const text = response.text();
+    const text = result.response.text();
 
     return res.status(200).json({ reply: text });
 
   } catch (error) {
-    console.error("خطأ تقني:", error);
-    // إرجاع تفاصيل الخطأ لتتمكن من معرفة المشكلة بوضوح إذا استمرت
+    // سنقوم بإرجاع تفاصيل الخطأ لنتأكد من السبب
     return res.status(500).json({ 
-      reply: "حدث خطأ أثناء الاتصال: " + error.message 
+      reply: "خطأ تقني: " + error.message 
     });
   }
 }
