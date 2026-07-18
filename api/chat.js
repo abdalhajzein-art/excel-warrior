@@ -3,34 +3,47 @@ export default async function handler(req, res) {
 
   try {
     const { message } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
 
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    if (!apiKey) {
+      return res.status(500).json({
+        reply: "⚠️ GROQ_API_KEY غير موجود ضمن المتغيرات البيئية"
+      });
+    }
 
-    const response = await fetch(url, {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: message }] }]
+        model: "llama-3.1-70b-versatile",
+        messages: [
+          {
+            role: "user",
+            content: message
+          }
+        ],
+        temperature: 0.4
       })
     });
 
     const data = await response.json();
 
-    if (data.candidates) {
+    if (data?.choices?.[0]?.message?.content) {
       return res.status(200).json({
-        reply: data.candidates[0].content.parts[0].text
+        reply: data.choices[0].message.content
       });
     } else {
       return res.status(500).json({
-        reply: "الخطأ الكامل من جوجل: " + JSON.stringify(data)
+        reply: "⚠️ الخطأ الكامل من Groq: " + JSON.stringify(data)
       });
     }
+
   } catch (error) {
     return res.status(500).json({
-      reply: "خطأ في الاتصال: " + error.message
+      reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
 }
