@@ -21,6 +21,10 @@ export default async function handler(req, res) {
         model: "llama-3.1-8b-instant",
         messages: [
           {
+            role: "system",
+            content: "أنت مساعد ذكي، ترد بالعربية الفصحى أو اللهجة السورية حسب أسلوب المستخدم، وتكون إجاباتك واضحة ومباشرة."
+          },
+          {
             role: "user",
             content: message
           }
