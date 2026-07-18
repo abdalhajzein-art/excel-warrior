@@ -21,7 +21,6 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-
     const reply = data?.choices?.[0]?.message?.content || "No response from model.";
 
     res.status(200).json({ reply });
