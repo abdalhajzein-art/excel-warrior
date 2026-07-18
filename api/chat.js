@@ -1,7 +1,12 @@
 export default async function handler(req, res) {
   try {
-    // قراءة JSON من الطلب
-    const body = await req.json();
+    // قراءة جسم الطلب يدويًا لأن req.json() غير موجود في Node.js
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+    const rawBody = Buffer.concat(buffers).toString();
+    const body = rawBody ? JSON.parse(rawBody) : {};
     const message = body?.message;
 
     if (!message) {
