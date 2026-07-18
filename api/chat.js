@@ -32,34 +32,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No message provided." });
     }
 
-    // ⭐ إرسال الطلب إلى OpenRouter
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "HTTP-Referer": "https://excel-warrior.vercel.app",   // ← عدّلها حسب دومين واجهتك
-        "X-Title": "Excel Warrior AI"
-      },
-      body: JSON.stringify({
-        model: "deepseek/deepseek-r1",
-        messages: [
-          { role: "user", content: message }
-        ]
-      })
-    });
-
-    // ⭐ فحص نجاح الطلب
-    if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(500).json({
-        error: "OpenRouter error",
-        details: errorText
-      });
-    }
-
-    const data = await response.json();
-    const reply = data?.choices?.[0]?.message?.content || "No response from model.";
+    // ⭐ رد تجريبي بدل OpenRouter
+    const reply = `📂 استلمت رسالتك: "${message}"\n(هالرد تجريبي من السيرفر بدون OpenRouter)`;
 
     return res.status(200).json({ reply });
 
