@@ -63,25 +63,39 @@ async function sendMessage() {
       })
     });
 
-    // 👇 كشف الرد الخام من الـ API
+    // 👇 نقرأ الرد الخام
     const raw = await res.text();
-    console.log("RAW RESPONSE FROM API:", raw);
+
+    // 👇 نعرض الرد الخام مباشرة على الشاشة
+    if (!raw || raw.trim() === "") {
+      hideTyping();
+      addMessage("⚠️ الرد الخام من السيرفر فارغ تمامًا.\nهذا يعني أن /api/chat لم يرجّع أي نص.", "ai");
+      isWaiting = false;
+      return;
+    }
 
     let data;
     try {
       data = JSON.parse(raw);
     } catch (e) {
-      console.warn("⚠️ Failed to parse JSON, using raw as reply.");
-      data = { reply: raw };
+      hideTyping();
+      addMessage(
+        "⚠️ السيرفر رجّع نص غير قابل للتحويل إلى JSON:\n\n" + raw,
+        "ai"
+      );
+      isWaiting = false;
+      return;
     }
 
     hideTyping();
-    addMessage(data.reply || "❌ لم يصل رد من الذكاء الاصطناعي.", "ai");
+    addMessage(
+      data.reply || "⚠️ السيرفر رجّع JSON بدون reply:\n\n" + raw,
+      "ai"
+    );
 
   } catch (err) {
-    console.error("❌ Fetch error:", err);
     hideTyping();
-    addMessage("❌ خطأ في الاتصال بالسيرفر.", "ai");
+    addMessage("⚠️ خطأ أثناء الاتصال بالسيرفر:\n" + err.message, "ai");
   }
 
   isWaiting = false;
