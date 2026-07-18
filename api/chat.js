@@ -7,6 +7,7 @@ export const config = {
 };
 
 export default async function handler(req, res) {
+  // CORS Headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -17,18 +18,19 @@ export default async function handler(req, res) {
   try {
     const { message } = req.body;
     
-    // فحص وجود المفتاح داخل السيرفر
+    // التحقق من المفتاح
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      console.error("خطأ: GEMINI_API_KEY غير موجود في إعدادات البيئة!");
-      return res.status(500).json({ reply: "خطأ في تهيئة السيرفر (API Key missing)" });
+      return res.status(500).json({ reply: "خطأ: مفتاح الـ API غير مهيأ في السيرفر." });
     }
 
-    if (!message) return res.status(400).json({ reply: "الرسالة فارغة" });
+    if (!message) return res.status(400).json({ reply: "الرسالة فارغة، يرجى كتابة شيء." });
 
+    // إعداد النموذج المضمون والمستقر
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
+    // طلب الرد من الذكاء الاصطناعي
     const result = await model.generateContent(message);
     const response = await result.response;
     const text = response.text();
@@ -36,10 +38,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ reply: text });
 
   } catch (error) {
-    // طباعة الخطأ الحقيقي في Log الخاص بـ Vercel
-    console.error("خطأ سيرفر:", error);
+    console.error("خطأ تقني:", error);
     return res.status(500).json({ 
-      reply: "حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: " + error.message 
+      reply: "حدث خطأ أثناء الاتصال بالذكاء الاصطناعي. تأكد من إعدادات المفتاح." 
     });
   }
 }
