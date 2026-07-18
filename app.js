@@ -5,7 +5,7 @@ const userInput = document.getElementById("userInput");
 const sendBtn = document.getElementById("sendBtn");
 const welcomeScreen = document.getElementById("welcomeScreen");
 
-let isWaiting = false; 
+let isWaiting = false;
 let typingMsg = null;
 
 /* إخفاء شاشة الترحيب */
@@ -23,6 +23,7 @@ function addMessage(text, sender) {
   msg.className = `message ${sender}`;
   msg.textContent = text;
 
+  // كشف اللغة الإنجليزية تلقائياً
   if (/^[a-zA-Z0-9]/.test(text)) {
     msg.style.direction = "ltr";
     msg.style.textAlign = "left";
@@ -66,14 +67,20 @@ async function sendMessage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        lang: "ar",
-        force_language: "ar",
+
+        // وضع مطابقة اللغة تلقائياً
         system: `
-          أجب دائمًا باللغة العربية الفصحى.
+          طابق لغة المستخدم ولهجته تلقائيًا:
+          إذا كتب باللهجة السورية، رد باللهجة السورية.
+          إذا كتب بالعربية الفصحى، رد بالفصحى.
+          إذا كتب بالإنجليزية، رد بالإنجليزية.
+          إذا كتب بلغة أخرى، طابقها.
+          لا تعُد إلى الفصحى إذا كان المستخدم يتحدث بلهجة عامية.
+          لا تغيّر اللغة أو اللهجة من تلقاء نفسك.
+          
           لا تذكر أنك DeepSeek أو R1 أو أي نموذج ذكاء اصطناعي.
-          إذا سألك المستخدم عن اسمك، فقل: "أنا مساعدك الذكي في منصة الذكاء."
-          إذا سألك المستخدم من صنعك، فقل: "تم تطويري خصيصًا لخدمتك ضمن منصة الذكاء."
-          لا تستخدم أي لغة أخرى إلا إذا طلب المستخدم ذلك صراحة.
+          إذا سألك المستخدم عن اسمك، فقل: "أنا مساعدك الذكي في منصّة الذكاء."
+          إذا سألك من صنعك، فقل: "تم تطويري خصيصًا لخدمتك ضمن منصّة الذكاء."
         `
       })
     });
