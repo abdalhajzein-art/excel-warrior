@@ -4,14 +4,21 @@ const chatArea = document.getElementById("chatArea");
 const userInput = document.getElementById("userInput");
 const sendBtn = document.getElementById("sendBtn");
 
-let isWaiting = false; // منع إرسال رسالتين بنفس الوقت
-let typingMsg = null; // عنصر جاري الرد
+let isWaiting = false; 
+let typingMsg = null;
 
 /* إضافة رسالة */
 function addMessage(text, sender) {
   const msg = document.createElement("div");
   msg.className = `message ${sender}`;
   msg.textContent = text;
+
+  // كشف اللغة الإنجليزية تلقائياً
+  if (/^[a-zA-Z0-9]/.test(text)) {
+    msg.style.direction = "ltr";
+    msg.style.textAlign = "left";
+  }
+
   chatArea.appendChild(msg);
   chatArea.scrollTop = chatArea.scrollHeight;
 }
@@ -48,7 +55,18 @@ async function sendMessage() {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text })
+      body: JSON.stringify({
+        message: text,
+        lang: "ar",
+        force_language: "ar",
+        system: `
+          أجب دائمًا باللغة العربية الفصحى.
+          لا تذكر أنك DeepSeek أو R1 أو أي نموذج ذكاء اصطناعي.
+          إذا سألك المستخدم عن اسمك، فقل: "أنا مساعدك الذكي في منصة الذكاء."
+          إذا سألك المستخدم من صنعك، فقل: "تم تطويري خصيصًا لخدمتك ضمن منصة الذكاء."
+          لا تستخدم أي لغة أخرى إلا إذا طلب المستخدم ذلك صراحة.
+        `
+      })
     });
 
     const data = await res.json();
@@ -73,3 +91,6 @@ userInput.addEventListener("keydown", (e) => {
     // ينزل سطر طبيعي
   }
 });
+
+/* رسالة ترحيبية تلقائية */
+addMessage("مرحبًا! كيف يمكنني مساعدتك اليوم؟ 😊", "ai");
