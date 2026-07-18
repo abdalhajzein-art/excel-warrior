@@ -10,7 +10,7 @@
 body {
   background: #0b0b0d;
   height: 100vh;
-  overflow: hidden; /* مهم جداً */
+  overflow: hidden; /* يمنع تمدد غريب */
 }
 
 /* APP FULL SCREEN */
@@ -42,12 +42,13 @@ body {
 
 /* CHAT AREA */
 .chat-area {
-  flex: 1;
-  overflow-y: auto;
+  height: calc(100vh - 140px); /* السكرول ياخد راحته */
+  overflow-y: scroll;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding-bottom: 20px;
 }
 
 /* MESSAGES */
