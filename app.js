@@ -63,12 +63,23 @@ async function sendMessage() {
       })
     });
 
-    const data = await res.json();
+    // 👇 كشف الرد الخام من الـ API
+    const raw = await res.text();
+    console.log("RAW RESPONSE FROM API:", raw);
+
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      console.warn("⚠️ Failed to parse JSON, using raw as reply.");
+      data = { reply: raw };
+    }
 
     hideTyping();
     addMessage(data.reply || "❌ لم يصل رد من الذكاء الاصطناعي.", "ai");
 
   } catch (err) {
+    console.error("❌ Fetch error:", err);
     hideTyping();
     addMessage("❌ خطأ في الاتصال بالسيرفر.", "ai");
   }
