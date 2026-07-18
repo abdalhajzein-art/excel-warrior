@@ -3,17 +3,26 @@ const API_URL = "https://excel-warrior.vercel.app/api/chat";
 const chatArea = document.getElementById("chatArea");
 const userInput = document.getElementById("userInput");
 const sendBtn = document.getElementById("sendBtn");
+const welcomeScreen = document.getElementById("welcomeScreen");
 
 let isWaiting = false; 
 let typingMsg = null;
 
+/* إخفاء شاشة الترحيب */
+function hideWelcome() {
+  if (welcomeScreen) {
+    welcomeScreen.style.display = "none";
+  }
+}
+
 /* إضافة رسالة */
 function addMessage(text, sender) {
+  hideWelcome(); // أول رسالة تخفي الترحيب
+
   const msg = document.createElement("div");
   msg.className = `message ${sender}`;
   msg.textContent = text;
 
-  // كشف اللغة الإنجليزية تلقائياً
   if (/^[a-zA-Z0-9]/.test(text)) {
     msg.style.direction = "ltr";
     msg.style.textAlign = "left";
@@ -91,6 +100,3 @@ userInput.addEventListener("keydown", (e) => {
     // ينزل سطر طبيعي
   }
 });
-
-/* رسالة ترحيبية تلقائية */
-addMessage("مرحبًا! كيف يمكنني مساعدتك اليوم؟ 😊", "ai");
