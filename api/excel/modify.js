@@ -37,13 +37,23 @@ function findClosestHeader(userWord, headers) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") {
+    res.writeHead(405, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ error: "Method not allowed" }));
+  }
 
   try {
     const { base64, editMap } = req.body;
 
-    if (!base64) return res.status(400).json({ error: "لا يوجد ملف Excel مرفوع." });
-    if (!editMap) return res.status(400).json({ error: "لا يوجد خريطة تعديل (editMap)." });
+    if (!base64) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "لا يوجد ملف Excel مرفوع." }));
+    }
+
+    if (!editMap) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "لا يوجد خريطة تعديل (editMap)." }));
+    }
 
     // فك ترميز الملف
     const buffer = Buffer.from(base64, "base64");
@@ -66,9 +76,10 @@ export default async function handler(req, res) {
       const matchedHeader = findClosestHeader(userReference, headers);
 
       if (!matchedHeader) {
-        return res.status(400).json({
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({
           error: `لم يتم العثور على عمود مطابق لـ "${userReference}".`
-        });
+        }));
       }
 
       const insertIndex = headers.indexOf(matchedHeader) + 2;
@@ -88,21 +99,18 @@ export default async function handler(req, res) {
 ============================ */
     const outputBuffer = await workbook.xlsx.writeBuffer();
 
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
-    res.setHeader(
-      "Content-Disposition",
-      "attachment; filename=modified.xlsx"
-    );
-    res.setHeader("Content-Length", Buffer.byteLength(outputBuffer));
+    res.writeHead(200, {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": "attachment; filename=modified.xlsx",
+      "Content-Length": Buffer.byteLength(outputBuffer)
+    });
 
-    // أهم سطر: يمنع تحويل الملف إلى JSON
     return res.end(Buffer.from(outputBuffer));
 
   } catch (error) {
     console.error("خطأ أثناء تعديل الملف:", error);
-    return res.status(500).json({ error: "خطأ أثناء تعديل الملف." });
+
+    res.writeHead(500, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ error: "خطأ أثناء تعديل الملف." }));
   }
-           }
+}
