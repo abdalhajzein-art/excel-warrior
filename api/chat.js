@@ -195,4 +195,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
-         }
+}
