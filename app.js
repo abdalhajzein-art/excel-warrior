@@ -146,7 +146,7 @@ async function processExcel(editMap) {
   showTyping();
 
   try {
-    const res = await fetch("/api/excel/modify", {
+    const res = await fetch("/api/excel/modify", {   // ← المسار الصحيح
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -250,6 +250,7 @@ sendBtn.onclick = sendMessage;
 
 newChatBtn.onclick = async () => {
   chatArea.innerHTML = "";
+  window.lastEditMap = null;
 
   await fetch(API_URL, {
     method: "POST",
