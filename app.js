@@ -10,26 +10,45 @@ const clearChatBtn = document.getElementById("clearChatBtn");
 
 let isWaiting = false;
 let typingMsg = null;
-let isInitialLoad = true;   // ← أهم نقطة
 
 /* ============================
-   AUTO SCROLL (Copilot style)
+   AUTO SCROLL
 ============================ */
-function smoothScrollToBottom() {
-  if (isInitialLoad) return; // ← لا تعمل scroll أثناء التحميل الأولي
+function autoScroll() {
+  chatArea.scrollTop = chatArea.scrollHeight;
+}
 
-  requestAnimationFrame(() => {
-    chatArea.scrollTop = chatArea.scrollHeight;
-    requestAnimationFrame(() => {
-      chatArea.scrollTop = chatArea.scrollHeight;
-    });
-  });
+/* ============================
+   SAVE CHAT LOCALLY
+============================ */
+function saveChat() {
+  const messages = [...chatArea.querySelectorAll(".message")].map(m => ({
+    sender: m.classList.contains("user") ? "user" : "ai",
+    text: m.textContent.replace("📋", "").trim()
+  }));
+  localStorage.setItem("chatHistory", JSON.stringify(messages));
+}
+
+/* ============================
+   LOAD CHAT ON PAGE RELOAD
+============================ */
+const saved = localStorage.getItem("chatHistory");
+if (saved) {
+  const messages = JSON.parse(saved);
+  messages.forEach(m => addMessage(m.text, m.sender));
+}
+
+/* ============================
+   WELCOME SCREEN
+============================ */
+function hideWelcome() {
+  if (welcomeScreen) welcomeScreen.style.display = "none";
 }
 
 /* ============================
    ADD MESSAGE
 ============================ */
-function addMessage(text, sender, doScroll = true) {
+function addMessage(text, sender) {
   hideWelcome();
 
   const msg = document.createElement("div");
@@ -51,24 +70,8 @@ function addMessage(text, sender, doScroll = true) {
     msg.appendChild(copyBtn);
   }
 
-  if (doScroll) smoothScrollToBottom();
+  autoScroll();
 }
-
-/* ============================
-   LOAD CHAT ON PAGE RELOAD
-============================ */
-const saved = localStorage.getItem("chatHistory");
-if (saved) {
-  const messages = JSON.parse(saved);
-
-  // نضيف الرسائل القديمة بدون scroll
-  messages.forEach(m => addMessage(m.text, m.sender, false));
-
-  // بعد انتهاء التحميل → رجّع الشات لفوق
-  chatArea.scrollTop = 0;
-}
-
-isInitialLoad = false; // ← انتهى التحميل الأولي
 
 /* ============================
    TYPING
@@ -78,13 +81,13 @@ function showTyping() {
   typingMsg.className = "typing";
   typingMsg.textContent = "جاري الرد...";
   chatArea.appendChild(typingMsg);
-  smoothScrollToBottom();
+  autoScroll();
 }
 
 function hideTyping() {
   if (typingMsg) typingMsg.remove();
   typingMsg = null;
-  smoothScrollToBottom();
+  autoScroll();
 }
 
 /* ============================
@@ -99,7 +102,6 @@ async function sendMessage() {
 
   userInput.value = "";
   isWaiting = true;
-
   showTyping();
 
   try {
@@ -112,7 +114,9 @@ async function sendMessage() {
     const data = await res.json();
     hideTyping();
 
-    if (data.reply === "🔄 تم بدء جلسة جديدة.") return;
+    if (data.reply === "🔄 تم بدء جلسة جديدة.") {
+      return;
+    }
 
     if (data.reply) {
       addMessage(data.reply, "ai");
