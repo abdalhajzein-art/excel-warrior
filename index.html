@@ -11,43 +11,69 @@
 
   <div class="app-container">
 
-    <header class="top-bar">
-      <div class="title">AI الأثـــير</div>
-      <div class="subtitle">مدعومة بـ الذكاء المتقدم</div>
-    </header>
+    <!-- ============================
+         SIDEBAR
+    ============================= -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">الأثـــير</div>
+        <div class="sidebar-sub">منصة ذكاء</div>
+      </div>
 
-    <div class="control-bar">
-      <button id="newChatBtn">جلسة جديدة</button>
-      <button id="clearChatBtn">حذف المحادثة</button>
-    </div>
+      <button class="sidebar-btn" id="newSessionBtn">جلسة جديدة</button>
 
-    <div id="welcomeScreen" class="welcome-screen">
-      <h1 class="welcome-title">منصّة الأثـــير</h1>
-      <p class="welcome-subtitle">مرحبًا بك 👋</p>
-      <p class="welcome-hint">ابدأ المحادثة الآن…</p>
-    </div>
+      <div class="sidebar-section-title">الجلسات</div>
+      <div id="sessionsList" class="sessions-list"></div>
 
-    <main id="chatArea" class="chat-area"></main>
+      <div class="sidebar-footer">
+        <div class="sidebar-mini">© 2026</div>
+      </div>
+    </aside>
 
     <!-- ============================
-         INPUT AREA (UPDATED)
+         MAIN AREA (YOUR ORIGINAL UI)
     ============================= -->
-    <div class="input-area">
+    <div class="main-area">
 
-      <!-- NEW: صندوق الإرفاق -->
-      <div id="attachmentBox" class="hidden"></div>
+      <header class="top-bar">
+        <div class="title">AI الأثـــير</div>
+        <div class="subtitle">مدعومة بـ الذكاء المتقدم</div>
+      </header>
 
-      <!-- زر الإرفاق -->
-      <button id="attachBtn">📎</button>
+      <div class="control-bar">
+        <button id="newChatBtn">جلسة جديدة</button>
+        <button id="clearChatBtn">حذف المحادثة</button>
+      </div>
 
-      <!-- صندوق الكتابة -->
-      <textarea id="userInput" placeholder="اكتب رسالتك هنا..." rows="1"></textarea>
+      <div id="welcomeScreen" class="welcome-screen">
+        <h1 class="welcome-title">منصّة الأثـــير</h1>
+        <p class="welcome-subtitle">مرحبًا بك 👋</p>
+        <p class="welcome-hint">ابدأ المحادثة الآن…</p>
+      </div>
 
-      <!-- زر الإرسال -->
-      <button id="sendBtn">إرسال</button>
-    </div>
+      <main id="chatArea" class="chat-area"></main>
 
-  </div>
+      <!-- ============================
+           INPUT AREA (UPDATED)
+      ============================= -->
+      <div class="input-area">
+
+        <!-- NEW: صندوق الإرفاق -->
+        <div id="attachmentBox" class="hidden"></div>
+
+        <!-- زر الإرفاق -->
+        <button id="attachBtn">📎</button>
+
+        <!-- صندوق الكتابة -->
+        <textarea id="userInput" placeholder="اكتب رسالتك هنا..." rows="1"></textarea>
+
+        <!-- زر الإرسال -->
+        <button id="sendBtn">إرسال</button>
+      </div>
+
+    </div> <!-- END MAIN AREA -->
+
+  </div> <!-- END APP CONTAINER -->
 
   <script src="app.js?v=2002"></script>
 </body>
