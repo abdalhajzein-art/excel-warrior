@@ -163,6 +163,217 @@ async function processExcel(instruction) {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
 
+    // زر تحميل حقيقي
+    addMessage("⬇️ تم توليد ملف Excel جديد:", "ai");
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "modified.xlsx";
+    link.textContent = "تحميل الملف المعدّل";
+    link.style.display = "inline-block";
+    link.style.marginTop = "10px";
+    link.style.color = "#007bff";
+    link.style.fontWeight = "bold";
+
+    chatArea.lastChild.appendChild(link);
+
+  } catch (err) {
+    hideTyping();
+    addMessage("⚠️ خطأ أثناء تعديل الملف: " + err.message, "ai");
+  }
+}
+
+/* ============================
+   GENERATE EXCEL
+============================ */
+async function generateExcel(instruction) {
+  showTyping();
+
+  try {
+    const res = await fetch("/api/excel/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction })
+    });
+
+    hideTyping();
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    // زر تحميل حقيقي
+    addMessage("⬇️ تم توليد ملف Excel جديد:", "ai");
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "generated.xlsx";
+    link.textContent = "تحميل الملف الجديد";
+    link.style.display = "inline-block";
+    link.style.marginTop = "10px";
+    link.style.color = "#007bff";
+    link.style.fontWeight = "bold";
+
+    chatArea.lastChild.appendChild(link);
+
+  } catch (err) {
+    hideTyping();
+    addMessage("⚠️ خطأ أثناء توليد الملف: " + err.message, "ai");
+  }
+}
+
+/* ============================
+   SEND MESSAGE
+============================ */
+async function sendMessage() {
+  const text = userInput.value.trim();
+  if (!text || isWaiting) return;
+
+  // أوامر Excel
+  if (text.startsWith("عدل") || text.startsWith("تعديل")) {
+    return processExcel(text);
+  }
+
+  if (text.startsWith("ولد") || text.startsWith("توليد")) {
+    return generateExcel(text);
+  }
+
+  addMessage(text, "user");
+  saveChat();
+
+  userInput.value = "";
+  isWaiting = true;
+  showTyping();
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text })
+    });
+
+    const data = await res.json();
+    hideTyping();
+
+    if (data.reply === "🔄 تم بدء جلسة جديدة.") {
+      return;
+    }
+
+    if (data.reply) {
+      addMessage(data.reply, "ai");
+      saveChat();
+    } else {
+      addMessage("⚠️ حدث خطأ في الرد من السيرفر.", "ai");
+    }
+  } catch (err) {
+    hideTyping();
+    addMessage("⚠️ خطأ في الاتصال: " + err.message, "ai");
+  }
+
+  isWaiting = false;
+}
+
+/* ============================
+   BUTTONS
+============================ */
+sendBtn.onclick = sendMessage;
+
+newChatBtn.onclick = async () => {
+  chatArea.innerHTML = "";
+  localStorage.removeItem("chatHistory");
+
+  await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reset: true })
+  });
+
+  welcomeScreen.style.display = "block";
+};
+
+clearChatBtn.onclick = () => {
+  chatArea.innerHTML = "";
+  localStorage.removeItem("chatHistory");
+  welcomeScreen.style.display = "block";
+};
+
+/* ============================
+   ENTER BEHAVIOR
+============================ */
+userInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.ctrlKey) {
+    e.preventDefault();
+    const textarea = e.target;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    textarea.value =
+      textarea.value.substring(0, start) +
+      "\n" +
+      textarea.value.substring(end);
+
+    textarea.selectionStart = textarea.selectionEnd = start + 1;
+  }
+
+  if (e.key === "Enter" && e.ctrlKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+  const reader = new FileReader();
+
+  reader.onload = async () => {
+    const base64 = reader.result.split(",")[1];
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          data: base64
+        })
+      });
+
+      const data = await res.json();
+
+      window.lastUploadedExcel = data.content;
+
+      addMessage(`📄 تم قراءة الملف.\nاكتب الآن ما تريد فعله به.`, "ai");
+
+    } catch (err) {
+      addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
+    }
+  };
+
+  reader.readAsDataURL(file);
+};
+
+/* ============================
+   PROCESS EXCEL (MODIFY)
+============================ */
+async function processExcel(instruction) {
+  if (!window.lastUploadedExcel) {
+    addMessage("⚠️ لا يوجد ملف Excel مرفوع.", "ai");
+    return;
+  }
+
+  showTyping();
+
+  try {
+    const res = await fetch("/api/excel/modify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: window.lastUploadedExcel,
+        instruction
+      })
+    });
+
+    hideTyping();
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
     addMessage(`⬇️ <a href="${url}" download="modified.xlsx">تحميل الملف المعدّل</a>`, "ai");
 
   } catch (err) {
