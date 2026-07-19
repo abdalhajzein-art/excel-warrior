@@ -4,7 +4,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const { message, reset } = req.body;
+    const { message, reset, excelContent } = req.body;
     const apiKey = process.env.GROQ_API_KEY;
 
     if (!apiKey) {
@@ -18,9 +18,21 @@ export default async function handler(req, res) {
       return res.status(200).json({ reply: "🔄 تم بدء جلسة جديدة." });
     }
 
+    // إذا في ملف مرفوع → نرسله للذكاء ليحلله
+    let fileContext = "";
+    if (excelContent) {
+      fileContext = `
+      هذا هو محتوى ملف Excel الذي رفعه المستخدم:
+      ${JSON.stringify(excelContent, null, 2)}
+
+      حلّل الملف، افهمه، اقترح تعديلات، ناقش، واسأل المستخدم.
+      لا تنفّذ أي تعديل الآن.
+      `;
+    }
+
     sessionHistory.push({
       role: "user",
-      content: message
+      content: fileContext + "\n\n" + message
     });
 
     const messagesToSend = [
@@ -32,6 +44,8 @@ export default async function handler(req, res) {
         لا تتحدث عن خطط اشتراك أو حدود منصات أخرى.
         اعتبر كل جلسة جديدة مستقلة تمامًا عن السابقة.
         استخدم لهجة شامية إذا طلب المستخدم ذلك.
+        إذا أعطاك المستخدم ملف Excel، حلّله واقترح تعديلات.
+        لا تنفّذ أي تعديل بنفسك.
         `
       },
       ...sessionHistory
@@ -73,4 +87,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
-}
+        }
