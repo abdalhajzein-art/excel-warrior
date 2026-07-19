@@ -91,11 +91,118 @@ function hideTyping() {
 }
 
 /* ============================
+   FILE UPLOAD BUTTON 📎
+============================ */
+const fileInput = document.createElement("input");
+fileInput.type = "file";
+fileInput.accept = ".xlsx,.xls,.csv";
+fileInput.style.display = "none";
+document.body.appendChild(fileInput);
+
+const attachBtn = document.getElementById("attachBtn");
+attachBtn.onclick = () => fileInput.click();
+
+fileInput.onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  addMessage(`📎 تم رفع الملف: ${file.name}`, "user");
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await res.json();
+
+    window.lastUploadedExcel = data.content;
+
+    addMessage(`📄 تم قراءة الملف.\nاكتب الآن ما تريد فعله به.`, "ai");
+
+  } catch (err) {
+    addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
+  }
+};
+
+/* ============================
+   PROCESS EXCEL (MODIFY)
+============================ */
+async function processExcel(instruction) {
+  if (!window.lastUploadedExcel) {
+    addMessage("⚠️ لا يوجد ملف Excel مرفوع.", "ai");
+    return;
+  }
+
+  showTyping();
+
+  try {
+    const res = await fetch("/api/excel/modify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: window.lastUploadedExcel,
+        instruction
+      })
+    });
+
+    hideTyping();
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    addMessage(`⬇️ <a href="${url}" download="modified.xlsx">تحميل الملف المعدّل</a>`, "ai");
+
+  } catch (err) {
+    hideTyping();
+    addMessage("⚠️ خطأ أثناء تعديل الملف: " + err.message, "ai");
+  }
+}
+
+/* ============================
+   GENERATE EXCEL
+============================ */
+async function generateExcel(instruction) {
+  showTyping();
+
+  try {
+    const res = await fetch("/api/excel/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction })
+    });
+
+    hideTyping();
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    addMessage(`⬇️ <a href="${url}" download="generated.xlsx">تحميل الملف الجديد</a>`, "ai");
+
+  } catch (err) {
+    hideTyping();
+    addMessage("⚠️ خطأ أثناء توليد الملف: " + err.message, "ai");
+  }
+}
+
+/* ============================
    SEND MESSAGE
 ============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || isWaiting) return;
+
+  // أوامر Excel
+  if (text.startsWith("عدل") || text.startsWith("تعديل")) {
+    return processExcel(text);
+  }
+
+  if (text.startsWith("ولد") || text.startsWith("توليد")) {
+    return generateExcel(text);
+  }
 
   addMessage(text, "user");
   saveChat();
