@@ -108,24 +108,33 @@ fileInput.onchange = async (e) => {
 
   addMessage(`📎 تم رفع الملف: ${file.name}`, "user");
 
-  const formData = new FormData();
-  formData.append("file", file);
+  const reader = new FileReader();
 
-  try {
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      body: formData
-    });
+  reader.onload = async () => {
+    const base64 = reader.result.split(",")[1];
 
-    const data = await res.json();
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          data: base64
+        })
+      });
 
-    window.lastUploadedExcel = data.content;
+      const data = await res.json();
 
-    addMessage(`📄 تم قراءة الملف.\nاكتب الآن ما تريد فعله به.`, "ai");
+      window.lastUploadedExcel = data.content;
 
-  } catch (err) {
-    addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
-  }
+      addMessage(`📄 تم قراءة الملف.\nاكتب الآن ما تريد فعله به.`, "ai");
+
+    } catch (err) {
+      addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
+    }
+  };
+
+  reader.readAsDataURL(file);
 };
 
 /* ============================
