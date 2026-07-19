@@ -75,12 +75,12 @@ function hideTyping() {
 }
 
 /* ============================
-   FILE ATTACHMENT BOX (NEW)
+   ATTACHMENT BOX
 ============================ */
-const attachmentBox = document.getElementById("attachmentBox"); // NEW
+const attachmentBox = document.getElementById("attachmentBox");
 
 /* ============================
-   FILE UPLOAD (UPDATED)
+   FILE UPLOAD
 ============================ */
 const fileInput = document.createElement("input");
 fileInput.type = "file";
@@ -95,7 +95,7 @@ fileInput.onchange = async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
-  // عرض الملف داخل صندوق الرسالة (NEW)
+  // عرض الملف داخل صندوق الرسالة
   attachmentBox.innerHTML = `
     <span>📎 ${file.name}</span>
     <button id="removeAttachment">❌</button>
@@ -125,7 +125,7 @@ fileInput.onchange = async (e) => {
       const data = await res.json();
       window.lastUploadedExcelJSON = data;
 
-      // رد تلقائي بعد رفع الملف (NEW)
+      // رد تلقائي بعد رفع الملف
       const autoRes = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,7 +147,7 @@ fileInput.onchange = async (e) => {
 };
 
 /* ============================
-   CHECK IF AI REQUESTED A TOOL
+   TOOL CALL PARSER
 ============================ */
 function extractToolCall(text) {
   try {
@@ -167,7 +167,7 @@ function extractToolCall(text) {
 }
 
 /* ============================
-   EXECUTE TOOL REQUEST
+   EXECUTE TOOL (FIXED)
 ============================ */
 async function executeTool(toolCall) {
   showTyping();
@@ -181,27 +181,37 @@ async function executeTool(toolCall) {
 
     hideTyping();
 
-    const contentType = res.headers.get("Content-Type");
+    // نحاول نقرأ Blob أولاً
+    const clone = res.clone();
+    let blob;
 
-    if (contentType?.includes("application/vnd.openxmlformats")) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+    try {
+      blob = await clone.blob();
 
-      addMessage("📥 تم تنفيذ الأداة. الملف جاهز للتحميل:", "ai");
+      // إذا كان Blob فعليًا ملف Excel
+      if (blob.type.includes("sheet") || blob.type.includes("excel") || blob.size > 50_000) {
+        const url = URL.createObjectURL(blob);
 
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "result.xlsx";
-      link.textContent = "تحميل الملف";
-      link.style.display = "inline-block";
-      link.style.marginTop = "10px";
-      link.style.color = "#007bff";
-      link.style.fontWeight = "bold";
+        addMessage("📥 تم تنفيذ الأداة. الملف جاهز للتحميل:", "ai");
 
-      chatArea.lastChild.appendChild(link);
-      return;
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "result.xlsx";
+        link.textContent = "تحميل الملف";
+        link.style.display = "inline-block";
+        link.style.marginTop = "10px";
+        link.style.color = "#2d6cff";
+        link.style.fontWeight = "bold";
+
+        chatArea.lastChild.appendChild(link);
+
+        return;
+      }
+    } catch (err) {
+      console.log("Blob read failed, fallback to JSON");
     }
 
+    // إذا ما كان ملف → نقرأ JSON
     const data = await res.json();
     addMessage(`🔧 نتيجة تنفيذ الأداة:\n${JSON.stringify(data, null, 2)}`, "ai");
 
@@ -212,7 +222,7 @@ async function executeTool(toolCall) {
 }
 
 /* ============================
-   SEND MESSAGE (UPDATED)
+   SEND MESSAGE
 ============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
@@ -229,7 +239,7 @@ async function sendMessage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        excelJSON: window.lastUploadedExcelJSON || null // NEW
+        excelJSON: window.lastUploadedExcelJSON || null
       })
     });
 
@@ -261,15 +271,15 @@ async function sendMessage() {
 }
 
 /* ============================
-   BUTTONS (UPDATED)
+   BUTTONS
 ============================ */
 sendBtn.onclick = sendMessage;
 
 newChatBtn.onclick = async () => {
   chatArea.innerHTML = "";
   window.lastEditMap = null;
-  window.lastUploadedExcelJSON = null; // NEW
-  attachmentBox.classList.add("hidden"); // NEW
+  window.lastUploadedExcelJSON = null;
+  attachmentBox.classList.add("hidden");
 
   await fetch(API_URL, {
     method: "POST",
@@ -282,8 +292,8 @@ newChatBtn.onclick = async () => {
 
 clearChatBtn.onclick = () => {
   chatArea.innerHTML = "";
-  window.lastUploadedExcelJSON = null; // NEW
-  attachmentBox.classList.add("hidden"); // NEW
+  window.lastUploadedExcelJSON = null;
+  attachmentBox.classList.add("hidden");
   welcomeScreen.style.display = "block";
 };
 
