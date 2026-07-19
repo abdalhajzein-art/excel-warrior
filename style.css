@@ -126,21 +126,21 @@ body {
   background: #1a1a1d;
   color: #e6e6e6;
   border: 1px solid #2a2a2d;
+  position: relative;
 }
 
 /* COPY BUTTON */
 .copy-btn {
   position: absolute;
-  left: -32px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 6px;
+  left: 6px;
   background: #2a2a2d;
   color: #fff;
   border: none;
-  padding: 6px;
+  padding: 4px 6px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .copy-btn:hover {
@@ -194,4 +194,4 @@ body {
   0%   { opacity: 0.2; }
   50%  { opacity: 1; }
   100% { opacity: 0.2; }
-    }
+}
