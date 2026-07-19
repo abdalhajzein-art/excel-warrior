@@ -95,7 +95,7 @@ fileInput.onchange = async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
-  // عرض الملف داخل صندوق الرسالة
+  // عرض الملف داخل صندوق الرسالة فقط
   attachmentBox.innerHTML = `
     <span>📎 ${file.name}</span>
     <button id="removeAttachment">❌</button>
@@ -124,19 +124,6 @@ fileInput.onchange = async (e) => {
 
       const data = await res.json();
       window.lastUploadedExcelJSON = data;
-
-      // رد تلقائي بعد رفع الملف
-      const autoRes = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: "تم رفع ملف جديد",
-          excelJSON: window.lastUploadedExcelJSON
-        })
-      });
-
-      const autoData = await autoRes.json();
-      addMessage(autoData.reply, "ai");
 
     } catch (err) {
       addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
@@ -181,14 +168,12 @@ async function executeTool(toolCall) {
 
     hideTyping();
 
-    // نحاول نقرأ Blob أولاً
     const clone = res.clone();
     let blob;
 
     try {
       blob = await clone.blob();
 
-      // إذا كان Blob فعليًا ملف Excel
       if (blob.type.includes("sheet") || blob.type.includes("excel") || blob.size > 50_000) {
         const url = URL.createObjectURL(blob);
 
@@ -211,7 +196,6 @@ async function executeTool(toolCall) {
       console.log("Blob read failed, fallback to JSON");
     }
 
-    // إذا ما كان ملف → نقرأ JSON
     const data = await res.json();
     addMessage(`🔧 نتيجة تنفيذ الأداة:\n${JSON.stringify(data, null, 2)}`, "ai");
 
