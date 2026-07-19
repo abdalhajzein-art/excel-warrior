@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT } from "../agent/system.js";
+import { SYSTEM_PROMPT } from "./agent/system.js";
 let sessionHistory = [];
 
 /* ============================
