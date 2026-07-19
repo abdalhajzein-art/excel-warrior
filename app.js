@@ -10,7 +10,6 @@ const clearChatBtn = document.getElementById("clearChatBtn");
 
 let isWaiting = false;
 let typingMsg = null;
-let firstMessage = true;
 
 /* ============================
    AUTO SCROLL
@@ -37,7 +36,6 @@ const saved = localStorage.getItem("chatHistory");
 if (saved) {
   const messages = JSON.parse(saved);
   messages.forEach(m => addMessage(m.text, m.sender));
-  firstMessage = false;
 }
 
 /* ============================
@@ -108,23 +106,16 @@ async function sendMessage() {
   showTyping();
 
   try {
-    let payload = { message: text };
-
-    if (firstMessage) {
-      payload.reset = true;
-      firstMessage = false;
-    }
-
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ message: text })
     });
 
     const data = await res.json();
     hideTyping();
 
-    /* تجاهل رد "تم بدء جلسة جديدة" */
+    /* تجاهل رد "تم بدء جلسة جديدة" إذا وصل من زر الجلسة */
     if (data.reply === "🔄 تم بدء جلسة جديدة.") {
       return;
     }
@@ -152,7 +143,6 @@ sendBtn.onclick = sendMessage;
 newChatBtn.onclick = async () => {
   chatArea.innerHTML = "";
   localStorage.removeItem("chatHistory");
-  firstMessage = true;
 
   await fetch(API_URL, {
     method: "POST",
