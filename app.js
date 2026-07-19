@@ -75,7 +75,12 @@ function hideTyping() {
 }
 
 /* ============================
-   FILE UPLOAD
+   FILE ATTACHMENT BOX (NEW)
+============================ */
+const attachmentBox = document.getElementById("attachmentBox"); // NEW
+
+/* ============================
+   FILE UPLOAD (UPDATED)
 ============================ */
 const fileInput = document.createElement("input");
 fileInput.type = "file";
@@ -90,7 +95,17 @@ fileInput.onchange = async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
-  addMessage(`📎 تم رفع الملف: ${file.name}`, "user");
+  // عرض الملف داخل صندوق الرسالة (NEW)
+  attachmentBox.innerHTML = `
+    <span>📎 ${file.name}</span>
+    <button id="removeAttachment">❌</button>
+  `;
+  attachmentBox.classList.remove("hidden");
+
+  document.getElementById("removeAttachment").onclick = () => {
+    attachmentBox.classList.add("hidden");
+    window.lastUploadedExcelJSON = null;
+  };
 
   const reader = new FileReader();
 
@@ -110,7 +125,18 @@ fileInput.onchange = async (e) => {
       const data = await res.json();
       window.lastUploadedExcelJSON = data;
 
-      addMessage(`📄 تم قراءة الملف.\nاحكي معي لنناقش التعديلات.`, "ai");
+      // رد تلقائي بعد رفع الملف (NEW)
+      const autoRes = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: "تم رفع ملف جديد",
+          excelJSON: window.lastUploadedExcelJSON
+        })
+      });
+
+      const autoData = await autoRes.json();
+      addMessage(autoData.reply, "ai");
 
     } catch (err) {
       addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
@@ -157,7 +183,6 @@ async function executeTool(toolCall) {
 
     const contentType = res.headers.get("Content-Type");
 
-    // إذا رجع ملف Excel
     if (contentType?.includes("application/vnd.openxmlformats")) {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -177,7 +202,6 @@ async function executeTool(toolCall) {
       return;
     }
 
-    // إذا رجع JSON
     const data = await res.json();
     addMessage(`🔧 نتيجة تنفيذ الأداة:\n${JSON.stringify(data, null, 2)}`, "ai");
 
@@ -188,7 +212,7 @@ async function executeTool(toolCall) {
 }
 
 /* ============================
-   SEND MESSAGE
+   SEND MESSAGE (UPDATED)
 ============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
@@ -205,7 +229,7 @@ async function sendMessage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        excelJSON: window.lastUploadedExcelJSON || null
+        excelJSON: window.lastUploadedExcelJSON || null // NEW
       })
     });
 
@@ -220,7 +244,6 @@ async function sendMessage() {
 
     addMessage(data.reply, "ai");
 
-    // هل الـ Agent طلب أداة؟
     const toolCall = extractToolCall(data.reply);
 
     if (toolCall) {
@@ -238,13 +261,15 @@ async function sendMessage() {
 }
 
 /* ============================
-   BUTTONS
+   BUTTONS (UPDATED)
 ============================ */
 sendBtn.onclick = sendMessage;
 
 newChatBtn.onclick = async () => {
   chatArea.innerHTML = "";
   window.lastEditMap = null;
+  window.lastUploadedExcelJSON = null; // NEW
+  attachmentBox.classList.add("hidden"); // NEW
 
   await fetch(API_URL, {
     method: "POST",
@@ -257,6 +282,8 @@ newChatBtn.onclick = async () => {
 
 clearChatBtn.onclick = () => {
   chatArea.innerHTML = "";
+  window.lastUploadedExcelJSON = null; // NEW
+  attachmentBox.classList.add("hidden"); // NEW
   welcomeScreen.style.display = "block";
 };
 
