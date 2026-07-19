@@ -103,7 +103,9 @@ export default async function handler(req, res) {
       });
     });
 
+    // 🔥 أهم شيء: الذكاء يحتاج file_id ليتعامل مع الملف
     return res.status(200).json({
+      file_id: "latest_uploaded_excel",
       filename,
       base64: data,
       sheets: sheetsJSON
@@ -114,4 +116,4 @@ export default async function handler(req, res) {
       error: "فشل قراءة الملف: " + err.message
     });
   }
-          }
+        }
