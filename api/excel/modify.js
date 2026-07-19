@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 /* ============================
    المطابقة الذكية للهيدر
@@ -42,33 +42,27 @@ export default async function handler(req, res) {
   try {
     const { base64, editMap } = req.body;
 
-    if (!base64) {
-      return res.status(400).json({ error: "لا يوجد ملف Excel مرفوع." });
-    }
-
-    if (!editMap) {
-      return res.status(400).json({ error: "لا يوجد خريطة تعديل (editMap)." });
-    }
+    if (!base64) return res.status(400).json({ error: "لا يوجد ملف Excel مرفوع." });
+    if (!editMap) return res.status(400).json({ error: "لا يوجد خريطة تعديل (editMap)." });
 
     // فك ترميز الملف
-    const fileBuffer = Buffer.from(base64, "base64");
-    const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+    const buffer = Buffer.from(base64, "base64");
 
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
 
-    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const sheet = workbook.worksheets[0];
 
-    const headers = json[0]; // صف الهيدر الحقيقي
+    // قراءة الهيدر الحقيقي
+    const headers = sheet.getRow(1).values.slice(1); // إزالة أول عنصر فارغ
 
     /* ============================
-       معالجة نوع التعديل
+       تنفيذ التعديل
 ============================ */
     if (editMap.action === "add_column") {
       const headerName = editMap.headerName || "عمود جديد";
       const userReference = editMap.positionAfter;
 
-      // مطابقة ذكية للعمود
       const matchedHeader = findClosestHeader(userReference, headers);
 
       if (!matchedHeader) {
@@ -77,33 +71,30 @@ export default async function handler(req, res) {
         });
       }
 
-      const insertIndex = headers.indexOf(matchedHeader) + 1;
+      const insertIndex = headers.indexOf(matchedHeader) + 2; // +2 لأن ExcelJS يبدأ من 1
 
       // إضافة الهيدر الجديد
-      headers.splice(insertIndex, 0, headerName);
+      sheet.getRow(1).splice(insertIndex, 0, headerName);
 
-      // إضافة القيم الافتراضية لكل صف
-      for (let i = 1; i < json.length; i++) {
-        json[i].splice(insertIndex, 0, editMap.defaultValue || "");
-      }
+      // إضافة القيم الافتراضية
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        row.splice(insertIndex, 0, editMap.defaultValue || "—");
+      });
     }
 
     /* ============================
        إعادة بناء الملف
 ============================ */
-    const newSheet = XLSX.utils.aoa_to_sheet(json);
-    const newWorkbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(newWorkbook, newSheet, sheetName);
-
-    const excelBuffer = XLSX.write(newWorkbook, { type: "buffer", bookType: "xlsx" });
+    const outputBuffer = await workbook.xlsx.writeBuffer();
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", "attachment; filename=modified.xlsx");
 
-    return res.send(excelBuffer);
+    return res.send(Buffer.from(outputBuffer));
 
   } catch (error) {
     console.error("خطأ أثناء تعديل الملف:", error);
     return res.status(500).json({ error: "خطأ أثناء تعديل الملف." });
   }
-      }
+         }
