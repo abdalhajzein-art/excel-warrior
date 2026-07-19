@@ -1,12 +1,13 @@
 // api/chat.js
 
 let sessionHistory = []; 
+// ذاكرة الجلسة — رح نعملها Reset حسب طلب الواجهة
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const { message } = req.body;
+    const { message, reset } = req.body;
     const apiKey = process.env.GROQ_API_KEY;
 
     if (!apiKey) {
@@ -15,6 +16,13 @@ export default async function handler(req, res) {
       });
     }
 
+    // 🔥 إذا الواجهة طلبت جلسة جديدة → امسح الذاكرة
+    if (reset === true) {
+      sessionHistory = [];
+      return res.status(200).json({ reply: "🔄 تم بدء جلسة جديدة." });
+    }
+
+    // أضف رسالة المستخدم للذاكرة
     sessionHistory.push({
       role: "user",
       content: message
@@ -24,11 +32,11 @@ export default async function handler(req, res) {
       {
         role: "system",
         content: `
-        رد بأسلوب طبيعي يشبه الإنسان، قدّم اقتراحات، ناقش،
-        اسأل المستخدم إذا كان يفضّل خيار معيّن، واطرح بدائل عندما يكون ذلك مناسباً.
-        لا تنشئ هوية أو اسم لنفسك، ولا تقدّم ردود حازمة على الأمور التي لا تستطيع تنفيذها.
-        تفاعل مع المستخدم بطريقة مرنة ولطيفة، وركّز دائماً على مساعدته ضمن قدراتك.
-        يمكنك استخدام إيموجي خفيفة عندما يكون ذلك مناسباً لتلطيف الأسلوب، بدون مبالغة أو إكثار.
+        رد بأسلوب طبيعي يشبه الإنسان، ناقش، اسأل، واقترح.
+        لا تنشئ هوية أو اسم لنفسك.
+        لا تتحدث عن خطط اشتراك أو حدود منصات أخرى.
+        اعتبر كل جلسة جديدة مستقلة تمامًا عن السابقة.
+        استخدم لهجة شامية إذا طلب المستخدم ذلك.
         `
       },
       ...sessionHistory
@@ -41,7 +49,7 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b",   // ← الموديل الصحيح والمتاح فعلياً
+        model: "openai/gpt-oss-120b",   // ← الموديل الصحيح والمتاح فعليًا
         messages: messagesToSend,
         temperature: 0.4
       })
