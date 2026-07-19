@@ -4,9 +4,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const { base64, instruction } = req.body;
+    const { base64, editMap } = req.body;
 
-    if (!base64 || !instruction) {
+    if (!base64 || !editMap) {
       return res.status(400).json({ error: "البيانات غير كاملة" });
     }
 
@@ -23,39 +23,117 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "لا يوجد ورقة عمل في الملف" });
     }
 
-    // نبحث عن صف الهيدر (عادة الصف الثاني)
-    const headerRow = sheet.getRow(2);
+    /* -------------------------------------------------------
+       1) إضافة عمود جديد
+------------------------------------------------------- */
+    if (editMap.action === "add_column") {
+      const { headerName, positionAfter } = editMap;
 
-    // تحديد مكان العمود الجديد
-    let insertIndex = sheet.columnCount + 1;
-    let newHeaderName = "عمود جديد";
+      const headerRow = sheet.getRow(2);
+      let insertIndex = sheet.columnCount + 1;
 
-    // إذا طلب المستخدم "سبب الغياب"
-    if (instruction.includes("سبب الغياب")) {
-      newHeaderName = "سبب الغياب";
+      // إذا بدنا نضيف العمود بعد عمود معيّن
+      if (positionAfter) {
+        for (let col = 1; col <= sheet.columnCount; col++) {
+          const cellValue = headerRow.getCell(col).value;
+          if (cellValue === positionAfter) {
+            insertIndex = col + 1;
+            break;
+          }
+        }
+      }
+
+      // إضافة العمود
+      sheet.spliceColumns(insertIndex, 0, []);
+
+      // كتابة الهيدر
+      sheet.getRow(2).getCell(insertIndex).value = headerName;
+
+      // تعبئة الصفوف بقيمة افتراضية
+      for (let r = 3; r <= sheet.rowCount; r++) {
+        const cell = sheet.getRow(r).getCell(insertIndex);
+        if (!cell.value) cell.value = editMap.defaultValue || "—";
+      }
+    }
+
+    /* -------------------------------------------------------
+       2) تعديل صف معيّن
+------------------------------------------------------- */
+    if (editMap.action === "modify_row") {
+      const { rowNumber, updates } = editMap;
+
+      const row = sheet.getRow(rowNumber);
+      if (!row) {
+        return res.status(400).json({ error: "الصف المطلوب غير موجود" });
+      }
+
+      Object.keys(updates).forEach((colName) => {
+        const headerRow = sheet.getRow(2);
+
+        let colIndex = null;
+        for (let col = 1; col <= sheet.columnCount; col++) {
+          if (headerRow.getCell(col).value === colName) {
+            colIndex = col;
+            break;
+          }
+        }
+
+        if (colIndex) {
+          row.getCell(colIndex).value = updates[colName];
+        }
+      });
+
+      row.commit();
+    }
+
+    /* -------------------------------------------------------
+       3) حذف عمود
+------------------------------------------------------- */
+    if (editMap.action === "delete_column") {
+      const { columnName } = editMap;
+
+      const headerRow = sheet.getRow(2);
+      let deleteIndex = null;
 
       for (let col = 1; col <= sheet.columnCount; col++) {
-        const cellValue = headerRow.getCell(col).value;
-        if (cellValue === "الغياب") {
-          insertIndex = col + 1;
+        if (headerRow.getCell(col).value === columnName) {
+          deleteIndex = col;
           break;
+        }
+      }
+
+      if (deleteIndex) {
+        sheet.spliceColumns(deleteIndex, 1);
+      }
+    }
+
+    /* -------------------------------------------------------
+       4) تعديل صيغة
+------------------------------------------------------- */
+    if (editMap.action === "modify_formula") {
+      const { columnName, newFormula } = editMap;
+
+      const headerRow = sheet.getRow(2);
+      let colIndex = null;
+
+      for (let col = 1; col <= sheet.columnCount; col++) {
+        if (headerRow.getCell(col).value === columnName) {
+          colIndex = col;
+          break;
+        }
+      }
+
+      if (colIndex) {
+        for (let r = 3; r <= sheet.rowCount; r++) {
+          const cell = sheet.getRow(r).getCell(colIndex);
+          cell.value = { formula: newFormula };
         }
       }
     }
 
-    // إضافة العمود الجديد
-    sheet.spliceColumns(insertIndex, 0, []);
-
-    // كتابة الهيدر
-    sheet.getRow(2).getCell(insertIndex).value = newHeaderName;
-
-    // تعبئة الصفوف بقيمة افتراضية
-    for (let r = 3; r <= sheet.rowCount; r++) {
-      const cell = sheet.getRow(r).getCell(insertIndex);
-      if (!cell.value) cell.value = "—";
-    }
-
-    // إخراج الملف المعدّل
+    /* -------------------------------------------------------
+       إخراج الملف المعدّل
+------------------------------------------------------- */
     const outBuffer = await workbook.xlsx.writeBuffer();
 
     res.setHeader("Content-Disposition", "attachment; filename=modified.xlsx");
@@ -66,4 +144,4 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
-      }
+        }
