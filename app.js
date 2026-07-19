@@ -18,6 +18,12 @@ function autoScroll() {
   chatArea.scrollTop = chatArea.scrollHeight;
 }
 
+function scrollAfterRender() {
+  requestAnimationFrame(() => {
+    autoScroll();
+  });
+}
+
 /* ============================
    SAVE CHAT LOCALLY
 ============================ */
@@ -71,7 +77,7 @@ function addMessage(text, sender) {
     msg.appendChild(copyBtn);
   }
 
-  autoScroll();
+  scrollAfterRender();
 }
 
 /* ============================
@@ -82,13 +88,13 @@ function showTyping() {
   typingMsg.className = "typing";
   typingMsg.textContent = "جاري الرد...";
   chatArea.appendChild(typingMsg);
-  autoScroll();
+  scrollAfterRender();
 }
 
 function hideTyping() {
   if (typingMsg) typingMsg.remove();
   typingMsg = null;
-  autoScroll();
+  scrollAfterRender();
 }
 
 /* ============================
@@ -98,7 +104,16 @@ async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || isWaiting) return;
 
+  /* سلوك Copilot — رجّع الشاشة لفوق قبل عرض رسالتك */
+  chatArea.scrollTop = 0;
+
   addMessage(text, "user");
+
+  /* تأكيد إنو رسالتك تظهر بأعلى الشاشة */
+  requestAnimationFrame(() => {
+    chatArea.scrollTop = 0;
+  });
+
   saveChat();
 
   userInput.value = "";
