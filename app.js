@@ -10,11 +10,14 @@ const clearChatBtn = document.getElementById("clearChatBtn");
 
 let isWaiting = false;
 let typingMsg = null;
+let isInitialLoad = true;   // ← أهم نقطة
 
 /* ============================
    AUTO SCROLL (Copilot style)
 ============================ */
 function smoothScrollToBottom() {
+  if (isInitialLoad) return; // ← لا تعمل scroll أثناء التحميل الأولي
+
   requestAnimationFrame(() => {
     chatArea.scrollTop = chatArea.scrollHeight;
     requestAnimationFrame(() => {
@@ -24,36 +27,9 @@ function smoothScrollToBottom() {
 }
 
 /* ============================
-   SAVE CHAT LOCALLY
-============================ */
-function saveChat() {
-  const messages = [...chatArea.querySelectorAll(".message")].map(m => ({
-    sender: m.classList.contains("user") ? "user" : "ai",
-    text: m.textContent.replace("📋", "").trim()
-  }));
-  localStorage.setItem("chatHistory", JSON.stringify(messages));
-}
-
-/* ============================
-   LOAD CHAT ON PAGE RELOAD
-============================ */
-const saved = localStorage.getItem("chatHistory");
-if (saved) {
-  const messages = JSON.parse(saved);
-  messages.forEach(m => addMessage(m.text, m.sender));
-}
-
-/* ============================
-   WELCOME SCREEN
-============================ */
-function hideWelcome() {
-  if (welcomeScreen) welcomeScreen.style.display = "none";
-}
-
-/* ============================
    ADD MESSAGE
 ============================ */
-function addMessage(text, sender) {
+function addMessage(text, sender, doScroll = true) {
   hideWelcome();
 
   const msg = document.createElement("div");
@@ -67,7 +43,6 @@ function addMessage(text, sender) {
 
   chatArea.appendChild(msg);
 
-  /* زر نسخ لرسائل الذكاء */
   if (sender === "ai") {
     const copyBtn = document.createElement("button");
     copyBtn.className = "copy-btn";
@@ -76,8 +51,24 @@ function addMessage(text, sender) {
     msg.appendChild(copyBtn);
   }
 
-  smoothScrollToBottom();
+  if (doScroll) smoothScrollToBottom();
 }
+
+/* ============================
+   LOAD CHAT ON PAGE RELOAD
+============================ */
+const saved = localStorage.getItem("chatHistory");
+if (saved) {
+  const messages = JSON.parse(saved);
+
+  // نضيف الرسائل القديمة بدون scroll
+  messages.forEach(m => addMessage(m.text, m.sender, false));
+
+  // بعد انتهاء التحميل → رجّع الشات لفوق
+  chatArea.scrollTop = 0;
+}
+
+isInitialLoad = false; // ← انتهى التحميل الأولي
 
 /* ============================
    TYPING
@@ -97,7 +88,7 @@ function hideTyping() {
 }
 
 /* ============================
-   SEND MESSAGE (Copilot behavior)
+   SEND MESSAGE
 ============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
@@ -121,9 +112,7 @@ async function sendMessage() {
     const data = await res.json();
     hideTyping();
 
-    if (data.reply === "🔄 تم بدء جلسة جديدة.") {
-      return;
-    }
+    if (data.reply === "🔄 تم بدء جلسة جديدة.") return;
 
     if (data.reply) {
       addMessage(data.reply, "ai");
@@ -144,7 +133,6 @@ async function sendMessage() {
 ============================ */
 sendBtn.onclick = sendMessage;
 
-/* جلسة جديدة */
 newChatBtn.onclick = async () => {
   chatArea.innerHTML = "";
   localStorage.removeItem("chatHistory");
@@ -158,14 +146,15 @@ newChatBtn.onclick = async () => {
   welcomeScreen.style.display = "block";
 };
 
-/* حذف المحادثة */
 clearChatBtn.onclick = () => {
   chatArea.innerHTML = "";
   localStorage.removeItem("chatHistory");
   welcomeScreen.style.display = "block";
 };
 
-/* ENTER BEHAVIOR */
+/* ============================
+   ENTER BEHAVIOR
+============================ */
 userInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.ctrlKey) {
     e.preventDefault();
