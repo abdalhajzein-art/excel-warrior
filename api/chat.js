@@ -78,9 +78,32 @@ export default async function handler(req, res) {
       });
     }
 
+    /* ============================
+       إصلاح زر جلسة جديدة
+============================ */
     if (reset === true) {
       sessionHistory = [];
       return res.status(200).json({ reply: "🔄 تم بدء جلسة جديدة." });
+    }
+
+    if (!message) {
+      return res.status(400).json({ reply: "⚠️ الرسالة فارغة." });
+    }
+
+    /* ============================
+       مسح الجلسة إذا الرسالة ليست تعديل
+============================ */
+    const msg = message.toLowerCase();
+    const isEditIntent =
+      msg.includes("ضيف") ||
+      msg.includes("اضافة") ||
+      msg.includes("عمود") ||
+      msg.includes("تعديل") ||
+      msg.includes("غياب") ||
+      msg.includes("اجازة");
+
+    if (!isEditIntent) {
+      sessionHistory = [];
     }
 
     const intent = detectIntent(message);
@@ -172,4 +195,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
-          }
+         }
