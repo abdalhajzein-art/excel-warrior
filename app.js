@@ -25,7 +25,7 @@ function autoScroll() {
 function saveChat() {
   const messages = [...chatArea.querySelectorAll(".message")].map(m => ({
     sender: m.classList.contains("user") ? "user" : "ai",
-    text: m.textContent
+    text: m.textContent.replace("📋", "").trim()
   }));
   localStorage.setItem("chatHistory", JSON.stringify(messages));
 }
@@ -123,6 +123,11 @@ async function sendMessage() {
 
     const data = await res.json();
     hideTyping();
+
+    /* تجاهل رد "تم بدء جلسة جديدة" */
+    if (data.reply === "🔄 تم بدء جلسة جديدة.") {
+      return;
+    }
 
     if (data.reply) {
       addMessage(data.reply, "ai");
