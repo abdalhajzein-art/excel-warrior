@@ -106,7 +106,8 @@ fileInput.onchange = async (e) => {
 
       const data = await res.json();
 
-      window.lastUploadedExcel = data.content;
+      // تخزين الملف الحقيقي بدل JSON
+      window.lastUploadedExcelBase64 = data.base64;
 
       addMessage(`📄 تم قراءة الملف.\nاحكي معي لنناقش التعديلات.`, "ai");
 
@@ -122,7 +123,7 @@ fileInput.onchange = async (e) => {
    EXECUTE FINAL EXCEL CHANGE
 ============================ */
 async function processExcel(instruction) {
-  if (!window.lastUploadedExcel) {
+  if (!window.lastUploadedExcelBase64) {
     addMessage("⚠️ لا يوجد ملف Excel مرفوع.", "ai");
     return;
   }
@@ -134,7 +135,7 @@ async function processExcel(instruction) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        content: window.lastUploadedExcel,
+        base64: window.lastUploadedExcelBase64,
         instruction
       })
     });
@@ -183,7 +184,7 @@ async function sendMessage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        excelContent: window.lastUploadedExcel || null
+        excelContent: null // لم نعد نستخدم JSON
       })
     });
 
@@ -193,13 +194,11 @@ async function sendMessage() {
     if (data.reply) {
       addMessage(data.reply, "ai");
 
-      // إذا الذكاء قال جملة تدل على إنه رح يجهّز نسخة جديدة → نفّذ التعديل من السيرفر
       if (
         data.reply.includes("حضّرلك النسخة الجديدة") ||
         data.reply.includes("جهّزلك النسخة المعدّلة") ||
         data.reply.includes("أرتّبلك النسخة الجديدة")
       ) {
-        // نستخدم آخر طلب للمستخدم كتعليمات للتعديل
         processExcel(lastUserRequest);
       }
 
