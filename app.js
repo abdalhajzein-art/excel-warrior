@@ -10,6 +10,7 @@ const clearChatBtn = document.getElementById("clearChatBtn");
 
 let isWaiting = false;
 let typingMsg = null;
+let lastUserRequest = "";
 
 /* ============================
    AUTO SCROLL
@@ -143,7 +144,7 @@ async function processExcel(instruction) {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
 
-    addMessage("⬇️ تم تنفيذ التعديل، حمل الملف:", "ai");
+    addMessage("تم تجهيز النسخة المعدّلة، تقدر تحملها من هون:", "ai");
 
     const link = document.createElement("a");
     link.href = url;
@@ -169,11 +170,7 @@ async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || isWaiting) return;
 
-  // تنفيذ التعديل النهائي
-  if (text.startsWith("نفذ") || text.startsWith("تنفيذ")) {
-    const finalInstruction = text.replace("نفذ", "").replace("تنفيذ", "").trim();
-    return processExcel(finalInstruction);
-  }
+  lastUserRequest = text;
 
   addMessage(text, "user");
   userInput.value = "";
@@ -195,6 +192,17 @@ async function sendMessage() {
 
     if (data.reply) {
       addMessage(data.reply, "ai");
+
+      // إذا الذكاء قال جملة تدل على إنه رح يجهّز نسخة جديدة → نفّذ التعديل من السيرفر
+      if (
+        data.reply.includes("حضّرلك النسخة الجديدة") ||
+        data.reply.includes("جهّزلك النسخة المعدّلة") ||
+        data.reply.includes("أرتّبلك النسخة الجديدة")
+      ) {
+        // نستخدم آخر طلب للمستخدم كتعليمات للتعديل
+        processExcel(lastUserRequest);
+      }
+
     } else {
       addMessage("⚠️ خطأ في الرد من السيرفر.", "ai");
     }
