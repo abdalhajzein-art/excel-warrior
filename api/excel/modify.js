@@ -1,147 +1,109 @@
-import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
+
+/* ============================
+   المطابقة الذكية للهيدر
+============================ */
+function normalizeArabic(text) {
+  return text
+    .replace(/[أإآا]/g, "ا")
+    .replace(/[ة]/g, "ه")
+    .replace(/[ى]/g, "ي")
+    .replace(/[^ء-ي0-9 ]/g, "")
+    .trim();
+}
+
+function findClosestHeader(userWord, headers) {
+  const normalizedUser = normalizeArabic(userWord);
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  headers.forEach(h => {
+    const normalizedHeader = normalizeArabic(h);
+
+    let score = 0;
+
+    if (normalizedHeader === normalizedUser) score += 5;
+    if (normalizedHeader.includes(normalizedUser)) score += 3;
+    if (normalizedUser.includes(normalizedHeader)) score += 2;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = h;
+    }
+  });
+
+  return bestMatch;
+}
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
     const { base64, editMap } = req.body;
 
-    if (!base64 || !editMap) {
-      return res.status(400).json({ error: "البيانات غير كاملة" });
+    if (!base64) {
+      return res.status(400).json({ error: "لا يوجد ملف Excel مرفوع." });
     }
 
-    // فك Base64 إلى Buffer
-    const buffer = Buffer.from(base64, "base64");
-
-    // قراءة ملف Excel الحقيقي
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-
-    // نفترض أول ورقة هي المستهدفة
-    const sheet = workbook.worksheets[0];
-    if (!sheet) {
-      return res.status(400).json({ error: "لا يوجد ورقة عمل في الملف" });
+    if (!editMap) {
+      return res.status(400).json({ error: "لا يوجد خريطة تعديل (editMap)." });
     }
 
-    /* -------------------------------------------------------
-       1) إضافة عمود جديد
-------------------------------------------------------- */
+    // فك ترميز الملف
+    const fileBuffer = Buffer.from(base64, "base64");
+    const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    const headers = json[0]; // صف الهيدر الحقيقي
+
+    /* ============================
+       معالجة نوع التعديل
+============================ */
     if (editMap.action === "add_column") {
-      const { headerName, positionAfter } = editMap;
+      const headerName = editMap.headerName || "عمود جديد";
+      const userReference = editMap.positionAfter;
 
-      const headerRow = sheet.getRow(2);
-      let insertIndex = sheet.columnCount + 1;
+      // مطابقة ذكية للعمود
+      const matchedHeader = findClosestHeader(userReference, headers);
 
-      // إذا بدنا نضيف العمود بعد عمود معيّن
-      if (positionAfter) {
-        for (let col = 1; col <= sheet.columnCount; col++) {
-          const cellValue = headerRow.getCell(col).value;
-          if (cellValue === positionAfter) {
-            insertIndex = col + 1;
-            break;
-          }
-        }
+      if (!matchedHeader) {
+        return res.status(400).json({
+          error: `لم يتم العثور على عمود مطابق لـ "${userReference}".`
+        });
       }
 
-      // إضافة العمود
-      sheet.spliceColumns(insertIndex, 0, []);
+      const insertIndex = headers.indexOf(matchedHeader) + 1;
 
-      // كتابة الهيدر
-      sheet.getRow(2).getCell(insertIndex).value = headerName;
+      // إضافة الهيدر الجديد
+      headers.splice(insertIndex, 0, headerName);
 
-      // تعبئة الصفوف بقيمة افتراضية
-      for (let r = 3; r <= sheet.rowCount; r++) {
-        const cell = sheet.getRow(r).getCell(insertIndex);
-        if (!cell.value) cell.value = editMap.defaultValue || "—";
+      // إضافة القيم الافتراضية لكل صف
+      for (let i = 1; i < json.length; i++) {
+        json[i].splice(insertIndex, 0, editMap.defaultValue || "");
       }
     }
 
-    /* -------------------------------------------------------
-       2) تعديل صف معيّن
-------------------------------------------------------- */
-    if (editMap.action === "modify_row") {
-      const { rowNumber, updates } = editMap;
+    /* ============================
+       إعادة بناء الملف
+============================ */
+    const newSheet = XLSX.utils.aoa_to_sheet(json);
+    const newWorkbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(newWorkbook, newSheet, sheetName);
 
-      const row = sheet.getRow(rowNumber);
-      if (!row) {
-        return res.status(400).json({ error: "الصف المطلوب غير موجود" });
-      }
+    const excelBuffer = XLSX.write(newWorkbook, { type: "buffer", bookType: "xlsx" });
 
-      Object.keys(updates).forEach((colName) => {
-        const headerRow = sheet.getRow(2);
-
-        let colIndex = null;
-        for (let col = 1; col <= sheet.columnCount; col++) {
-          if (headerRow.getCell(col).value === colName) {
-            colIndex = col;
-            break;
-          }
-        }
-
-        if (colIndex) {
-          row.getCell(colIndex).value = updates[colName];
-        }
-      });
-
-      row.commit();
-    }
-
-    /* -------------------------------------------------------
-       3) حذف عمود
-------------------------------------------------------- */
-    if (editMap.action === "delete_column") {
-      const { columnName } = editMap;
-
-      const headerRow = sheet.getRow(2);
-      let deleteIndex = null;
-
-      for (let col = 1; col <= sheet.columnCount; col++) {
-        if (headerRow.getCell(col).value === columnName) {
-          deleteIndex = col;
-          break;
-        }
-      }
-
-      if (deleteIndex) {
-        sheet.spliceColumns(deleteIndex, 1);
-      }
-    }
-
-    /* -------------------------------------------------------
-       4) تعديل صيغة
-------------------------------------------------------- */
-    if (editMap.action === "modify_formula") {
-      const { columnName, newFormula } = editMap;
-
-      const headerRow = sheet.getRow(2);
-      let colIndex = null;
-
-      for (let col = 1; col <= sheet.columnCount; col++) {
-        if (headerRow.getCell(col).value === columnName) {
-          colIndex = col;
-          break;
-        }
-      }
-
-      if (colIndex) {
-        for (let r = 3; r <= sheet.rowCount; r++) {
-          const cell = sheet.getRow(r).getCell(colIndex);
-          cell.value = { formula: newFormula };
-        }
-      }
-    }
-
-    /* -------------------------------------------------------
-       إخراج الملف المعدّل
-------------------------------------------------------- */
-    const outBuffer = await workbook.xlsx.writeBuffer();
-
-    res.setHeader("Content-Disposition", "attachment; filename=modified.xlsx");
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", "attachment; filename=modified.xlsx");
 
-    return res.status(200).send(outBuffer);
+    return res.send(excelBuffer);
 
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("خطأ أثناء تعديل الملف:", error);
+    return res.status(500).json({ error: "خطأ أثناء تعديل الملف." });
   }
-        }
+      }
