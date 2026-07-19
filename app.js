@@ -1,4 +1,5 @@
 const API_URL = "/api/chat";
+const EXECUTOR_URL = "/api/tools/execute";
 
 const chatArea = document.getElementById("chatArea");
 const userInput = document.getElementById("userInput");
@@ -11,8 +12,8 @@ const clearChatBtn = document.getElementById("clearChatBtn");
 let isWaiting = false;
 let typingMsg = null;
 
-// نخزن آخر خريطة تعديل
 window.lastEditMap = null;
+window.lastUploadedExcelJSON = null;
 
 /* ============================
    AUTO SCROLL
@@ -29,7 +30,7 @@ function hideWelcome() {
 }
 
 /* ============================
-   ADD MESSAGE (HTML)
+   ADD MESSAGE
 ============================ */
 function addMessage(text, sender) {
   hideWelcome();
@@ -107,8 +108,6 @@ fileInput.onchange = async (e) => {
       });
 
       const data = await res.json();
-
-      // تخزين JSON كامل
       window.lastUploadedExcelJSON = data;
 
       addMessage(`📄 تم قراءة الملف.\nاحكي معي لنناقش التعديلات.`, "ai");
@@ -122,65 +121,74 @@ fileInput.onchange = async (e) => {
 };
 
 /* ============================
-   EXTRACT JSON FROM AI MESSAGE
+   CHECK IF AI REQUESTED A TOOL
 ============================ */
-function extractJSON(text) {
+function extractToolCall(text) {
   try {
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return null;
-    return JSON.parse(match[0]);
+
+    const json = JSON.parse(match[0]);
+
+    if (json.tool && json.payload) {
+      return json;
+    }
+
+    return null;
   } catch {
     return null;
   }
 }
 
 /* ============================
-   EXECUTE FINAL EXCEL CHANGE
+   EXECUTE TOOL REQUEST
 ============================ */
-async function processExcel(editMap) {
-  if (!window.lastUploadedExcelJSON) {
-    addMessage("⚠️ لا يوجد ملف Excel مرفوع.", "ai");
-    return;
-  }
-
+async function executeTool(toolCall) {
   showTyping();
 
   try {
-    const res = await fetch("/api/excel/modify", {   // ← المسار الصحيح
+    const res = await fetch(EXECUTOR_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        base64: window.lastUploadedExcelJSON.base64,
-        editMap
-      })
+      body: JSON.stringify(toolCall)
     });
 
     hideTyping();
 
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    const contentType = res.headers.get("Content-Type");
 
-    addMessage("تم تجهيز النسخة المعدّلة، تقدر تحملها من هون:", "ai");
+    // إذا رجع ملف Excel
+    if (contentType?.includes("application/vnd.openxmlformats")) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
 
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "modified.xlsx";
-    link.textContent = "تحميل الملف المعدّل";
-    link.style.display = "inline-block";
-    link.style.marginTop = "10px";
-    link.style.color = "#007bff";
-    link.style.fontWeight = "bold";
+      addMessage("📥 تم تنفيذ الأداة. الملف جاهز للتحميل:", "ai");
 
-    chatArea.lastChild.appendChild(link);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "result.xlsx";
+      link.textContent = "تحميل الملف";
+      link.style.display = "inline-block";
+      link.style.marginTop = "10px";
+      link.style.color = "#007bff";
+      link.style.fontWeight = "bold";
+
+      chatArea.lastChild.appendChild(link);
+      return;
+    }
+
+    // إذا رجع JSON
+    const data = await res.json();
+    addMessage(`🔧 نتيجة تنفيذ الأداة:\n${JSON.stringify(data, null, 2)}`, "ai");
 
   } catch (err) {
     hideTyping();
-    addMessage("⚠️ خطأ أثناء تعديل الملف: " + err.message, "ai");
+    addMessage("⚠️ خطأ أثناء تنفيذ الأداة: " + err.message, "ai");
   }
 }
 
 /* ============================
-   SEND MESSAGE (CHAT + FILE ANALYSIS)
+   SEND MESSAGE
 ============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
@@ -190,22 +198,6 @@ async function sendMessage() {
   userInput.value = "";
   isWaiting = true;
   showTyping();
-
-  // إذا المستخدم قال "إي" أو "نعم" أو "نفّذ"
-  if (
-    text === "اي" ||
-    text === "نعم" ||
-    text.includes("نفذ") ||
-    text.includes("نفّذ")
-  ) {
-    if (window.lastEditMap) {
-      hideTyping();
-      addMessage("تمام… رح حضّرلك النسخة المعدّلة.", "ai");
-      processExcel(window.lastEditMap);
-      isWaiting = false;
-      return;
-    }
-  }
 
   try {
     const res = await fetch(API_URL, {
@@ -220,21 +212,23 @@ async function sendMessage() {
     const data = await res.json();
     hideTyping();
 
-    if (data.reply) {
-      addMessage(data.reply, "ai");
-
-      const editMap = extractJSON(data.reply);
-
-      if (editMap) {
-        window.lastEditMap = editMap;
-        addMessage("تمام… هذا التعديل جاهز. بدك أنفّذ؟", "ai");
-        isWaiting = false;
-        return;
-      }
-
-    } else {
+    if (!data.reply) {
       addMessage("⚠️ خطأ في الرد من السيرفر.", "ai");
+      isWaiting = false;
+      return;
     }
+
+    addMessage(data.reply, "ai");
+
+    // هل الـ Agent طلب أداة؟
+    const toolCall = extractToolCall(data.reply);
+
+    if (toolCall) {
+      await executeTool(toolCall);
+      isWaiting = false;
+      return;
+    }
+
   } catch (err) {
     hideTyping();
     addMessage("⚠️ خطأ في الاتصال: " + err.message, "ai");
