@@ -56,6 +56,7 @@ body {
   border: 1px solid #2a2a2d;
   border-radius: 8px;
   cursor: pointer;
+  transition: 0.2s;
 }
 
 .control-bar button:hover {
@@ -98,6 +99,15 @@ body {
   padding-bottom: 20px;
 }
 
+/* SCROLLBAR (NEW) */
+.chat-area::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-area::-webkit-scrollbar-thumb {
+  background: #2a2a2d;
+  border-radius: 10px;
+}
+
 /* MESSAGES */
 .message {
   max-width: 80%;
@@ -107,6 +117,7 @@ body {
   font-size: 15px;
   position: relative;
   animation: fadeIn 0.25s ease;
+  box-shadow: 0 0 4px rgba(0,0,0,0.2); /* NEW */
 }
 
 @keyframes fadeIn {
@@ -141,6 +152,7 @@ body {
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
+  transition: 0.2s;
 }
 
 .copy-btn:hover {
@@ -150,6 +162,7 @@ body {
 /* INPUT AREA */
 .input-area {
   display: flex;
+  flex-direction: column; /* NEW */
   padding: 12px;
   gap: 10px;
   background: #0f0f11;
@@ -158,6 +171,39 @@ body {
   bottom: 0;
 }
 
+/* ATTACHMENT BOX (NEW) */
+#attachmentBox {
+  background: #1a1a1d;
+  border: 1px solid #2a2a2d;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #e6e6e6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  animation: fadeIn 0.25s ease;
+}
+
+#attachmentBox.hidden {
+  display: none;
+}
+
+#attachmentBox button {
+  background: none;
+  border: none;
+  color: #ff6b6b;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+/* INPUT ROW (NEW) */
+.input-area-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* TEXTAREA */
 #userInput {
   flex: 1;
   resize: none;
@@ -167,6 +213,27 @@ body {
   background: #1a1a1d;
   color: #fff;
   font-size: 15px;
+  transition: 0.2s;
+}
+
+#userInput:focus {
+  border-color: #2d6cff;
+  box-shadow: 0 0 0 2px rgba(45,108,255,0.3); /* NEW */
+}
+
+/* BUTTONS */
+#attachBtn {
+  padding: 12px;
+  background: #1f1f22;
+  border: 1px solid #2a2a2d;
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+#attachBtn:hover {
+  background: #2a2a2d;
 }
 
 #sendBtn {
@@ -176,6 +243,12 @@ body {
   border-radius: 10px;
   color: #fff;
   font-size: 15px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+#sendBtn:hover {
+  background: #1f5cff;
 }
 
 /* TYPING EFFECT */
@@ -194,4 +267,4 @@ body {
   0%   { opacity: 0.2; }
   50%  { opacity: 1; }
   100% { opacity: 0.2; }
-}
+  }
