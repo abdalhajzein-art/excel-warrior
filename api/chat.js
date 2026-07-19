@@ -1,7 +1,6 @@
 // api/chat.js
 
 let sessionHistory = []; 
-// تخزين سياق الجلسة
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
@@ -16,13 +15,11 @@ export default async function handler(req, res) {
       });
     }
 
-    // إضافة رسالة المستخدم للجلسة
     sessionHistory.push({
       role: "user",
       content: message
     });
 
-    // بناء الرسائل المرسلة للذكاء
     const messagesToSend = [
       {
         role: "system",
@@ -44,7 +41,7 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "mixtral-8x7b-instruct",   // ← الموديل الصحيح والمتاح حالياً
+        model: "openai/gpt-oss-120b",   // ← الموديل الصحيح والمتاح فعلياً
         messages: messagesToSend,
         temperature: 0.4
       })
@@ -54,7 +51,6 @@ export default async function handler(req, res) {
     const aiReply = data?.choices?.[0]?.message?.content;
 
     if (aiReply) {
-      // إضافة رد الذكاء للجلسة
       sessionHistory.push({
         role: "assistant",
         content: aiReply
@@ -74,4 +70,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
-        }
+}
