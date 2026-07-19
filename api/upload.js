@@ -1,3 +1,9 @@
+export const config = {
+  api: {
+    bodyParser: true
+  }
+};
+
 import xlsx from "xlsx";
 
 export default async function handler(req, res) {
@@ -10,8 +16,10 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "لا يوجد بيانات ملف" });
     }
 
+    // فك Base64 إلى Buffer
     const buffer = Buffer.from(data, "base64");
 
+    // قراءة Excel
     const workbook = xlsx.read(buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
