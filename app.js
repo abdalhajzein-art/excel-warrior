@@ -12,15 +12,14 @@ let isWaiting = false;
 let typingMsg = null;
 
 /* ============================
-   AUTO SCROLL
+   AUTO SCROLL (Copilot style)
 ============================ */
-function autoScroll() {
-  chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-function scrollAfterRender() {
+function smoothScrollToBottom() {
   requestAnimationFrame(() => {
-    autoScroll();
+    chatArea.scrollTop = chatArea.scrollHeight;
+    requestAnimationFrame(() => {
+      chatArea.scrollTop = chatArea.scrollHeight;
+    });
   });
 }
 
@@ -77,7 +76,7 @@ function addMessage(text, sender) {
     msg.appendChild(copyBtn);
   }
 
-  scrollAfterRender();
+  smoothScrollToBottom();
 }
 
 /* ============================
@@ -88,36 +87,28 @@ function showTyping() {
   typingMsg.className = "typing";
   typingMsg.textContent = "جاري الرد...";
   chatArea.appendChild(typingMsg);
-  scrollAfterRender();
+  smoothScrollToBottom();
 }
 
 function hideTyping() {
   if (typingMsg) typingMsg.remove();
   typingMsg = null;
-  scrollAfterRender();
+  smoothScrollToBottom();
 }
 
 /* ============================
-   SEND MESSAGE
+   SEND MESSAGE (Copilot behavior)
 ============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || isWaiting) return;
 
-  /* سلوك Copilot — رجّع الشاشة لفوق قبل عرض رسالتك */
-  chatArea.scrollTop = 0;
-
   addMessage(text, "user");
-
-  /* تأكيد إنو رسالتك تظهر بأعلى الشاشة */
-  requestAnimationFrame(() => {
-    chatArea.scrollTop = 0;
-  });
-
   saveChat();
 
   userInput.value = "";
   isWaiting = true;
+
   showTyping();
 
   try {
@@ -130,7 +121,6 @@ async function sendMessage() {
     const data = await res.json();
     hideTyping();
 
-    /* تجاهل رد "تم بدء جلسة جديدة" إذا وصل من زر الجلسة */
     if (data.reply === "🔄 تم بدء جلسة جديدة.") {
       return;
     }
