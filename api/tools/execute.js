@@ -38,15 +38,15 @@ export default async function handler(req, res) {
       body: JSON.stringify(payload)
     });
 
-    // إذا الأداة رجعت ملف (Blob)
-    const contentType = response.headers.get("Content-Type");
+    // 🔥 أهم تعديل: إذا رجعت الأداة ملف → رجّعو مباشرة بدون فحص Content-Type
+    const buffer = await response.arrayBuffer();
 
-    if (contentType?.includes("application/vnd.openxmlformats-officedocument")) {
-      const buffer = await response.arrayBuffer();
+    // إذا الحجم كبير → هذا ملف Excel
+    if (buffer.byteLength > 5000) {
       return res.status(200).send(Buffer.from(buffer));
     }
 
-    // إذا الأداة رجعت JSON
+    // إذا الرد صغير → غالبًا JSON
     const data = await response.json();
     return res.status(200).json({
       tool,
@@ -58,4 +58,4 @@ export default async function handler(req, res) {
       error: "خطأ أثناء تنفيذ الأداة: " + err.message
     });
   }
-  }
+}
