@@ -1,3 +1,4 @@
+import { SYSTEM_PROMPT } from "../agent/system.js";   // ← أهم سطر
 let sessionHistory = [];
 
 /* ============================
@@ -37,18 +38,7 @@ function findClosestHeader(userWord, headers) {
 }
 
 /* ============================
-   استخراج اسم العمود من كلام المستخدم
-============================ */
-function extractColumnNameFromMessage(msg) {
-  const keywords = ["بعد", "جنب", "بجانب", "following", "next to"];
-  let cleaned = msg;
-
-  keywords.forEach(k => cleaned = cleaned.replace(k, ""));
-  return cleaned.trim();
-}
-
-/* ============================
-   فهم النية
+   فهم النية (ممكن نلغيه لاحقًا لأن الـ Agent صار حر)
 ============================ */
 function detectIntent(message) {
   const msg = message.toLowerCase();
@@ -79,7 +69,7 @@ export default async function handler(req, res) {
     }
 
     /* ============================
-       إصلاح زر جلسة جديدة
+       جلسة جديدة
 ============================ */
     if (reset === true) {
       sessionHistory = [];
@@ -91,50 +81,26 @@ export default async function handler(req, res) {
     }
 
     /* ============================
-       مسح الجلسة إذا الرسالة ليست تعديل
-============================ */
-    const msg = message.toLowerCase();
-    const isEditIntent =
-      msg.includes("ضيف") ||
-      msg.includes("اضافة") ||
-      msg.includes("عمود") ||
-      msg.includes("تعديل") ||
-      msg.includes("غياب") ||
-      msg.includes("اجازة");
-
-    if (!isEditIntent) {
-      sessionHistory = [];
-    }
-
-    const intent = detectIntent(message);
-
-    /* ============================
-       قراءة الهيدر الحقيقي
+       بناء سياق الملف
 ============================ */
     const headers = excelJSON?.sheets?.[0]?.header || [];
 
-    /* ============================
-       بناء سياق الملف
-============================ */
     let fileContext = "";
     if (excelJSON) {
       fileContext = `
       الهيدر الحقيقي:
       ${headers.join(", ")}
 
-      مهمتك:
-      - افهم الهيدر الحقيقي.
-      - استخدم المطابقة الذكية لاختيار العمود الصحيح.
-      - لا تعتمد على ما يكتبه المستخدم حرفيًا.
-      - ابنِ خريطة تعديل واضحة (editMap).
-      - اسأل المستخدم قبل التنفيذ.
+      سياق الملف جاهز للاستخدام عبر الأدوات.
       `;
     }
 
+    /* ============================
+       إضافة رسالة المستخدم للجلسة
+============================ */
     sessionHistory.push({
       role: "user",
       content: `
-      نية المستخدم: ${intent}
       رسالة المستخدم:
       ${message}
 
@@ -144,19 +110,12 @@ export default async function handler(req, res) {
     });
 
     /* ============================
-       بناء الرسالة للذكاء
+       بناء الرسالة للذكاء (Agent حر)
 ============================ */
     const messagesToSend = [
       {
         role: "system",
-        content: `
-        أنت مساعد ذكي يفهم النية، ويستخدم الهيدر الحقيقي من JSON.
-        استخدم المطابقة الذكية لاختيار العمود الصحيح.
-        لا تعتمد على الكتابة الحرفية للمستخدم.
-        لا تنفّذ أي تعديل بنفسك.
-        فقط ابنِ editMap واسأل المستخدم:
-        "تمام… هذا التعديل جاهز. بدك أنفّذ؟"
-        `
+        content: SYSTEM_PROMPT   // ← هنا صار الـ Agent حرّ
       },
       ...sessionHistory
     ];
@@ -186,6 +145,9 @@ export default async function handler(req, res) {
       });
     }
 
+    /* ============================
+       حفظ رد الذكاء
+============================ */
     sessionHistory.push({ role: "assistant", content: aiReply });
 
     return res.status(200).json({ reply: aiReply });
