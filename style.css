@@ -309,10 +309,31 @@ body {
 @keyframes downloadAppear {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
-        }
+}
 
 /* ============================
-   SIDEBAR
+   SIDEBAR TOGGLE BUTTON
+============================ */
+.sidebar-toggle {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 9999;
+  background: #1f1f22;
+  color: #fff;
+  border: 1px solid #2a2a2d;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: 0.25s;
+}
+
+.sidebar-toggle:hover {
+  background: #2a2a2d;
+}
+
+/* ============================
+   SIDEBAR COLLAPSIBLE
 ============================ */
 .sidebar {
   width: 260px;
@@ -326,73 +347,11 @@ body {
   top: 0;
   bottom: 0;
   left: 0;
+  transition: 0.3s ease;
 }
 
-.sidebar-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.sidebar-title {
-  font-size: 22px;
-  font-weight: 600;
-  color: #ffffff;
-}
-
-.sidebar-sub {
-  font-size: 13px;
-  color: #9ca3af;
-}
-
-.sidebar-btn {
-  background: #1f1f22;
-  color: #fff;
-  padding: 10px 14px;
-  border: 1px solid #2a2a2d;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: 0.2s;
-  font-size: 15px;
-}
-
-.sidebar-btn:hover {
-  background: #2a2a2d;
-}
-
-.sidebar-section-title {
-  font-size: 14px;
-  color: #9ca3af;
-  margin-top: 10px;
-}
-
-.sessions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  padding-right: 6px;
-}
-
-.session-item {
-  background: #1a1a1d;
-  border: 1px solid #2a2a2d;
-  padding: 10px 12px;
-  border-radius: 10px;
-  color: #e6e6e6;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.session-item:hover {
-  background: #2a2a2d;
-}
-
-.sidebar-footer {
-  margin-top: auto;
-  text-align: center;
-  color: #6f6f72;
-  font-size: 13px;
+.sidebar.collapsed {
+  transform: translateX(-260px);
 }
 
 /* MAIN AREA SHIFT */
@@ -401,4 +360,9 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  }
+  transition: 0.3s ease;
+}
+
+.main-area.expanded {
+  margin-left: 0;
+}
