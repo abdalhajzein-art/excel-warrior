@@ -53,7 +53,7 @@ function addMessage(text, sender) {
 
   const msg = document.createElement("div");
   msg.className = `message ${sender}`;
-  msg.textContent = text;
+  msg.innerHTML = text;
 
   if (/[\u0600-\u06FF]/.test(text)) {
     msg.style.direction = "rtl";
