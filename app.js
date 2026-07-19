@@ -11,6 +11,9 @@ const clearChatBtn = document.getElementById("clearChatBtn");
 let isWaiting = false;
 let typingMsg = null;
 
+// نخزن آخر خريطة تعديل
+window.lastEditMap = null;
+
 /* ============================
    AUTO SCROLL
 ============================ */
@@ -188,6 +191,22 @@ async function sendMessage() {
   isWaiting = true;
   showTyping();
 
+  // إذا المستخدم قال "إي" أو "نعم" أو "نفّذ"
+  if (
+    text === "اي" ||
+    text === "نعم" ||
+    text.includes("نفذ") ||
+    text.includes("نفّذ")
+  ) {
+    if (window.lastEditMap) {
+      hideTyping();
+      addMessage("تمام… رح حضّرلك النسخة المعدّلة.", "ai");
+      processExcel(window.lastEditMap);
+      isWaiting = false;
+      return;
+    }
+  }
+
   try {
     const res = await fetch(API_URL, {
       method: "POST",
@@ -207,7 +226,10 @@ async function sendMessage() {
       const editMap = extractJSON(data.reply);
 
       if (editMap) {
-        processExcel(editMap);
+        window.lastEditMap = editMap;
+        addMessage("تمام… هذا التعديل جاهز. بدك أنفّذ؟", "ai");
+        isWaiting = false;
+        return;
       }
 
     } else {
