@@ -50,12 +50,6 @@ export default async function handler(req, res) {
       return res.end(JSON.stringify({ error: "لا يوجد ملف Excel مرفوع." }));
     }
 
-    if (!editMap) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ error: "لا يوجد خريطة تعديل (editMap)." }));
-    }
-
-    // فك ترميز الملف
     const buffer = Buffer.from(base64, "base64");
 
     const workbook = new ExcelJS.Workbook();
@@ -63,15 +57,14 @@ export default async function handler(req, res) {
 
     const sheet = workbook.worksheets[0];
 
-    // قراءة الهيدر الحقيقي
     const headers = sheet.getRow(1).values.slice(1);
 
     /* ============================
        تنفيذ التعديل
 ============================ */
-    if (editMap.action === "add_column") {
-      const headerName = editMap.headerName || "عمود جديد";
-      const userReference = editMap.positionAfter;
+    if (editMap.operation === "add_column") {
+      const newColumnName = editMap.new_column.name || editMap.new_column;
+      const userReference = editMap.position.after;
 
       const matchedHeader = findClosestHeader(userReference, headers);
 
@@ -84,14 +77,25 @@ export default async function handler(req, res) {
 
       const insertIndex = headers.indexOf(matchedHeader) + 2;
 
-      // إضافة الهيدر الجديد
-      sheet.getRow(1).splice(insertIndex, 0, headerName);
+      // إضافة عمود جديد بالكامل
+      sheet.spliceColumns(insertIndex, 0, [newColumnName]);
 
-      // إضافة القيم الافتراضية
-      sheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-        row.splice(insertIndex, 0, editMap.defaultValue || "—");
-      });
+      // تلوين العمود إذا طلب المستخدم
+      if (editMap.new_column.style) {
+        const col = sheet.getColumn(insertIndex);
+
+        col.eachCell((cell, rowNumber) => {
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: editMap.new_column.style.backgroundColor.replace("#", "") }
+          };
+
+          if (editMap.new_column.style.fontWeight === "bold") {
+            cell.font = { bold: true };
+          }
+        });
+      }
     }
 
     /* ============================
@@ -113,4 +117,4 @@ export default async function handler(req, res) {
     res.writeHead(500, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ error: "خطأ أثناء تعديل الملف." }));
   }
-}
+    }
