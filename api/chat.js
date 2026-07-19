@@ -2,42 +2,6 @@ import { SYSTEM_PROMPT } from "./agent/system.js";
 let sessionHistory = [];
 
 /* ============================
-   المطابقة الذكية للهيدر
-============================ */
-function normalizeArabic(text) {
-  return text
-    .replace(/[أإآا]/g, "ا")
-    .replace(/[ة]/g, "ه")
-    .replace(/[ى]/g, "ي")
-    .replace(/[^ء-ي0-9 ]/g, "")
-    .trim();
-}
-
-function findClosestHeader(userWord, headers) {
-  const normalizedUser = normalizeArabic(userWord);
-
-  let bestMatch = null;
-  let bestScore = 0;
-
-  headers.forEach(h => {
-    const normalizedHeader = normalizeArabic(h);
-
-    let score = 0;
-
-    if (normalizedHeader === normalizedUser) score += 5;
-    if (normalizedHeader.includes(normalizedUser)) score += 3;
-    if (normalizedUser.includes(normalizedHeader)) score += 2;
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = h;
-    }
-  });
-
-  return bestMatch;
-}
-
-/* ============================
    فهم النية (ممكن نلغيه لاحقًا)
 ============================ */
 function detectIntent(message) {
@@ -81,18 +45,28 @@ export default async function handler(req, res) {
     }
 
     /* ============================
-       بناء سياق الملف
+       بناء سياق الملف الحقيقي
 ============================ */
-    const headers = excelJSON?.sheets?.[0]?.header || [];
-
     let fileContext = "";
-    if (excelJSON) {
-      fileContext = `
-      الهيدر الحقيقي:
-      ${headers.join(", ")}
 
-      سياق الملف جاهز للاستخدام عبر الأدوات.
-      `;
+    if (excelJSON) {
+      if (!excelJSON.file_id || !excelJSON.base64) {
+        return res.status(400).json({
+          reply: "⚠️ الملف لم يُرفع بشكل صحيح."
+        });
+      }
+
+      fileContext = `
+🔹 معلومات الملف:
+- file_id: ${excelJSON.file_id}
+- filename: ${excelJSON.filename}
+- عدد الشيتات: ${excelJSON.sheets.length}
+
+🔹 الهيدر:
+${excelJSON.sheets[0].header.join(", ")}
+
+🔹 الملف جاهز للتعديل عبر الأدوات.
+`;
     }
 
     /* ============================
@@ -101,16 +75,19 @@ export default async function handler(req, res) {
     sessionHistory.push({
       role: "user",
       content: `
-      رسالة المستخدم:
-      ${message}
+رسالة المستخدم:
+${message}
 
-      سياق الملف:
-      ${fileContext}
-      `
+سياق الملف:
+${fileContext}
+
+بيانات الملف:
+${excelJSON ? JSON.stringify(excelJSON) : "لا يوجد ملف"}
+`
     });
 
     /* ============================
-       بناء الرسالة للذكاء (Agent حر)
+       بناء الرسالة للذكاء
 ============================ */
     const messagesToSend = [
       {
@@ -169,4 +146,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
-  }
+         }
