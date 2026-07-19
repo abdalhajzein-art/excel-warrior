@@ -44,7 +44,7 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "llama-3.1-70b-specdec-uncensored",   // ← التعديل المهم هون
+        model: "llama-3.1-70b-instruct",   // ← الموديل الصحيح والمتاح حالياً
         messages: messagesToSend,
         temperature: 0.4
       })
@@ -74,4 +74,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
-      }
+}
