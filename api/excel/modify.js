@@ -54,7 +54,7 @@ export default async function handler(req, res) {
     const sheet = workbook.worksheets[0];
 
     // قراءة الهيدر الحقيقي
-    const headers = sheet.getRow(1).values.slice(1); // إزالة أول عنصر فارغ
+    const headers = sheet.getRow(1).values.slice(1);
 
     /* ============================
        تنفيذ التعديل
@@ -71,7 +71,7 @@ export default async function handler(req, res) {
         });
       }
 
-      const insertIndex = headers.indexOf(matchedHeader) + 2; // +2 لأن ExcelJS يبدأ من 1
+      const insertIndex = headers.indexOf(matchedHeader) + 2;
 
       // إضافة الهيدر الجديد
       sheet.getRow(1).splice(insertIndex, 0, headerName);
@@ -88,13 +88,21 @@ export default async function handler(req, res) {
 ============================ */
     const outputBuffer = await workbook.xlsx.writeBuffer();
 
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", "attachment; filename=modified.xlsx");
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=modified.xlsx"
+    );
+    res.setHeader("Content-Length", Buffer.byteLength(outputBuffer));
 
-    return res.send(Buffer.from(outputBuffer));
+    // أهم سطر: يمنع تحويل الملف إلى JSON
+    return res.end(Buffer.from(outputBuffer));
 
   } catch (error) {
     console.error("خطأ أثناء تعديل الملف:", error);
     return res.status(500).json({ error: "خطأ أثناء تعديل الملف." });
   }
-         }
+           }
