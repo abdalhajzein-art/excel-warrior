@@ -1,23 +1,17 @@
 import xlsx from "xlsx";
 
-export const config = {
-  api: {
-    bodyParser: false
-  }
-};
-
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const chunks = [];
-    for await (const chunk of req) {
-      chunks.push(chunk);
+    const { data } = req.body;
+
+    if (!data) {
+      return res.status(400).json({ error: "لا يوجد بيانات ملف" });
     }
 
-    const buffer = Buffer.concat(chunks);
+    const buffer = Buffer.from(data, "base64");
 
-    // قراءة ملف Excel من البفر
     const workbook = xlsx.read(buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
