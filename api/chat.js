@@ -22,7 +22,7 @@ export default async function handler(req, res) {
         messages: [
           {
             role: "system",
-            content: "أنت مساعد ذكي داخل منصة الأثير. رد بشكل طبيعي حسب أسلوب المستخدم."
+            content: "رد بشكل طبيعي حسب أسلوب المستخدم، ولا تنشئ هوية أو اسم لنفسك."
           },
           {
             role: "user",
