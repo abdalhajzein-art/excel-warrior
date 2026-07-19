@@ -1,7 +1,4 @@
-// api/chat.js
-
-let sessionHistory = []; 
-// ذاكرة الجلسة — رح نعملها Reset حسب طلب الواجهة
+let sessionHistory = [];
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
@@ -16,13 +13,11 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🔥 إذا الواجهة طلبت جلسة جديدة → امسح الذاكرة
     if (reset === true) {
       sessionHistory = [];
       return res.status(200).json({ reply: "🔄 تم بدء جلسة جديدة." });
     }
 
-    // أضف رسالة المستخدم للذاكرة
     sessionHistory.push({
       role: "user",
       content: message
@@ -49,7 +44,7 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b",   // ← الموديل الصحيح والمتاح فعليًا
+        model: "openai/gpt-oss-120b",
         messages: messagesToSend,
         temperature: 0.4
       })
