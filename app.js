@@ -16,6 +16,69 @@ window.lastEditMap = null;
 window.lastUploadedExcelJSON = null;
 
 /* ============================
+   SESSIONS SYSTEM
+============================ */
+const sessionsList = document.getElementById("sessionsList");
+const newSessionBtn = document.getElementById("newSessionBtn");
+
+let sessions = [];
+let currentSessionId = null;
+
+function createSession() {
+  const id = Date.now();
+
+  sessions.push({
+    id,
+    title: "جلسة جديدة",
+    messages: [],
+    file: null
+  });
+
+  currentSessionId = id;
+  renderSessions();
+
+  chatArea.innerHTML = "";
+  welcomeScreen.style.display = "block";
+}
+
+function renderSessions() {
+  sessionsList.innerHTML = "";
+
+  sessions.forEach(s => {
+    const item = document.createElement("div");
+    item.className = "session-item";
+    item.textContent = s.title;
+
+    item.onclick = () => {
+      currentSessionId = s.id;
+      chatArea.innerHTML = "";
+      welcomeScreen.style.display = "none";
+
+      s.messages.forEach(m => addMessage(m.text, m.sender));
+
+      if (s.file) {
+        window.lastUploadedExcelJSON = s.file;
+        attachmentBox.innerHTML = `
+          <span>📎 ${s.file.filename}</span>
+          <button id="removeAttachment">❌</button>
+        `;
+        attachmentBox.classList.remove("hidden");
+
+        document.getElementById("removeAttachment").onclick = () => {
+          attachmentBox.classList.add("hidden");
+          window.lastUploadedExcelJSON = null;
+          s.file = null;
+        };
+      }
+    };
+
+    sessionsList.appendChild(item);
+  });
+}
+
+newSessionBtn.onclick = createSession;
+
+/* ============================
    AUTO SCROLL
 ============================ */
 function autoScroll() {
@@ -52,6 +115,12 @@ function addMessage(text, sender) {
     copyBtn.textContent = "📋";
     copyBtn.onclick = () => navigator.clipboard.writeText(msg.textContent.trim());
     msg.appendChild(copyBtn);
+  }
+
+  /* حفظ الرسالة داخل الجلسة */
+  if (currentSessionId) {
+    const session = sessions.find(s => s.id === currentSessionId);
+    session.messages.push({ text, sender });
   }
 
   autoScroll();
@@ -95,7 +164,6 @@ fileInput.onchange = async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
-  // عرض الملف داخل صندوق الرسالة فقط
   attachmentBox.innerHTML = `
     <span>📎 ${file.name}</span>
     <button id="removeAttachment">❌</button>
@@ -105,6 +173,11 @@ fileInput.onchange = async (e) => {
   document.getElementById("removeAttachment").onclick = () => {
     attachmentBox.classList.add("hidden");
     window.lastUploadedExcelJSON = null;
+
+    if (currentSessionId) {
+      const session = sessions.find(s => s.id === currentSessionId);
+      session.file = null;
+    }
   };
 
   const reader = new FileReader();
@@ -124,6 +197,11 @@ fileInput.onchange = async (e) => {
 
       const data = await res.json();
       window.lastUploadedExcelJSON = data;
+
+      if (currentSessionId) {
+        const session = sessions.find(s => s.id === currentSessionId);
+        session.file = data;
+      }
 
     } catch (err) {
       addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
@@ -154,7 +232,7 @@ function extractToolCall(text) {
 }
 
 /* ============================
-   EXECUTE TOOL (FIXED)
+   EXECUTE TOOL
 ============================ */
 async function executeTool(toolCall) {
   showTyping();
@@ -260,18 +338,7 @@ async function sendMessage() {
 sendBtn.onclick = sendMessage;
 
 newChatBtn.onclick = async () => {
-  chatArea.innerHTML = "";
-  window.lastEditMap = null;
-  window.lastUploadedExcelJSON = null;
-  attachmentBox.classList.add("hidden");
-
-  await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reset: true })
-  });
-
-  welcomeScreen.style.display = "block";
+  createSession();
 };
 
 clearChatBtn.onclick = () => {
@@ -279,6 +346,12 @@ clearChatBtn.onclick = () => {
   window.lastUploadedExcelJSON = null;
   attachmentBox.classList.add("hidden");
   welcomeScreen.style.display = "block";
+
+  if (currentSessionId) {
+    const session = sessions.find(s => s.id === currentSessionId);
+    session.messages = [];
+    session.file = null;
+  }
 };
 
 /* ============================
