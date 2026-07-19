@@ -10,7 +10,6 @@ const clearChatBtn = document.getElementById("clearChatBtn");
 
 let isWaiting = false;
 let typingMsg = null;
-let lastUserRequest = "";
 
 /* ============================
    AUTO SCROLL
@@ -106,8 +105,8 @@ fileInput.onchange = async (e) => {
 
       const data = await res.json();
 
-      // تخزين الملف الحقيقي بدل JSON
-      window.lastUploadedExcelBase64 = data.base64;
+      // تخزين JSON كامل
+      window.lastUploadedExcelJSON = data;
 
       addMessage(`📄 تم قراءة الملف.\nاحكي معي لنناقش التعديلات.`, "ai");
 
@@ -120,10 +119,23 @@ fileInput.onchange = async (e) => {
 };
 
 /* ============================
+   EXTRACT JSON FROM AI MESSAGE
+============================ */
+function extractJSON(text) {
+  try {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
+/* ============================
    EXECUTE FINAL EXCEL CHANGE
 ============================ */
-async function processExcel(instruction) {
-  if (!window.lastUploadedExcelBase64) {
+async function processExcel(editMap) {
+  if (!window.lastUploadedExcelJSON) {
     addMessage("⚠️ لا يوجد ملف Excel مرفوع.", "ai");
     return;
   }
@@ -135,8 +147,8 @@ async function processExcel(instruction) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        base64: window.lastUploadedExcelBase64,
-        instruction
+        base64: window.lastUploadedExcelJSON.base64,
+        editMap
       })
     });
 
@@ -171,8 +183,6 @@ async function sendMessage() {
   const text = userInput.value.trim();
   if (!text || isWaiting) return;
 
-  lastUserRequest = text;
-
   addMessage(text, "user");
   userInput.value = "";
   isWaiting = true;
@@ -184,7 +194,7 @@ async function sendMessage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        excelContent: null // لم نعد نستخدم JSON
+        excelJSON: window.lastUploadedExcelJSON || null
       })
     });
 
@@ -194,12 +204,10 @@ async function sendMessage() {
     if (data.reply) {
       addMessage(data.reply, "ai");
 
-      if (
-        data.reply.includes("حضّرلك النسخة الجديدة") ||
-        data.reply.includes("جهّزلك النسخة المعدّلة") ||
-        data.reply.includes("أرتّبلك النسخة الجديدة")
-      ) {
-        processExcel(lastUserRequest);
+      const editMap = extractJSON(data.reply);
+
+      if (editMap) {
+        processExcel(editMap);
       }
 
     } else {
