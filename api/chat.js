@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT } from "../agent/system.js";   // ← أهم سطر
+import { SYSTEM_PROMPT } from "../agent/system.js";
 let sessionHistory = [];
 
 /* ============================
@@ -38,7 +38,7 @@ function findClosestHeader(userWord, headers) {
 }
 
 /* ============================
-   فهم النية (ممكن نلغيه لاحقًا لأن الـ Agent صار حر)
+   فهم النية (ممكن نلغيه لاحقًا)
 ============================ */
 function detectIntent(message) {
   const msg = message.toLowerCase();
@@ -115,7 +115,7 @@ export default async function handler(req, res) {
     const messagesToSend = [
       {
         role: "system",
-        content: SYSTEM_PROMPT   // ← هنا صار الـ Agent حرّ
+        content: SYSTEM_PROMPT
       },
       ...sessionHistory
     ];
@@ -136,7 +136,19 @@ export default async function handler(req, res) {
       })
     });
 
-    const data = await response.json();
+    /* ============================
+       إصلاح خطأ JSON
+============================ */
+    let data;
+    try {
+      data = await response.json();
+    } catch (err) {
+      const rawText = await response.text();
+      return res.status(500).json({
+        reply: "⚠️ خطأ من Groq: الرد ليس JSON.\nالنص الكامل:\n" + rawText
+      });
+    }
+
     const aiReply = data?.choices?.[0]?.message?.content;
 
     if (!aiReply) {
@@ -157,4 +169,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
-}
+  }
