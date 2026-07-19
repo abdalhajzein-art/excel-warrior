@@ -1,14 +1,66 @@
 let sessionHistory = [];
 
-/* طبقة فهم النية نفسها تماماً */
+/* ============================
+   المطابقة الذكية للهيدر
+============================ */
+function normalizeArabic(text) {
+  return text
+    .replace(/[أإآا]/g, "ا")
+    .replace(/[ة]/g, "ه")
+    .replace(/[ى]/g, "ي")
+    .replace(/[^ء-ي0-9 ]/g, "")
+    .trim();
+}
+
+function findClosestHeader(userWord, headers) {
+  const normalizedUser = normalizeArabic(userWord);
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  headers.forEach(h => {
+    const normalizedHeader = normalizeArabic(h);
+
+    let score = 0;
+
+    if (normalizedHeader === normalizedUser) score += 5;
+    if (normalizedHeader.includes(normalizedUser)) score += 3;
+    if (normalizedUser.includes(normalizedHeader)) score += 2;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = h;
+    }
+  });
+
+  return bestMatch;
+}
+
+/* ============================
+   استخراج اسم العمود من كلام المستخدم
+============================ */
+function extractColumnNameFromMessage(msg) {
+  const keywords = ["بعد", "جنب", "بجانب", "following", "next to"];
+  let cleaned = msg;
+
+  keywords.forEach(k => cleaned = cleaned.replace(k, ""));
+  return cleaned.trim();
+}
+
+/* ============================
+   فهم النية
+============================ */
 function detectIntent(message) {
   const msg = message.toLowerCase();
 
-  if (msg.includes("ضيف") || msg.includes("إضافة") || msg.includes("عمود")) return "add_column";
-  if (msg.includes("احذف") || msg.includes("حذف") || msg.includes("شيل")) return "delete_column";
-  if (msg.includes("عدل") || msg.includes("تعديل") || msg.includes("غير")) return "modify_data";
-  if (msg.includes("ولدلي") || msg.includes("انشئ") || msg.includes("ملف جديد") || msg.includes("نظام")) return "create_file";
-  if (msg.includes("رجعلي") || msg.includes("عطيني الملف") || msg.includes("النسخة الجديدة") || msg.includes("الملف المعدل")) return "request_modified_file";
+  if (msg.includes("ضيف") || msg.includes("اضافة") || msg.includes("عمود"))
+    return "add_column";
+
+  if (msg.includes("احذف") || msg.includes("حذف") || msg.includes("شيل"))
+    return "delete_column";
+
+  if (msg.includes("عدل") || msg.includes("تعديل") || msg.includes("غير"))
+    return "modify_data";
 
   return "chat";
 }
@@ -17,7 +69,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const { message, reset, excelJSON } = req.body; // ⬅ بدل excelContent
+    const { message, excelJSON, reset } = req.body;
     const apiKey = process.env.GROQ_API_KEY;
 
     if (!apiKey) {
@@ -33,22 +85,26 @@ export default async function handler(req, res) {
 
     const intent = detectIntent(message);
 
+    /* ============================
+       قراءة الهيدر الحقيقي
+============================ */
+    const headers = excelJSON?.sheets?.[0]?.header || [];
+
+    /* ============================
+       بناء سياق الملف
+============================ */
     let fileContext = "";
     if (excelJSON) {
       fileContext = `
-      المستخدم أرفق ملف Excel وتم تحويله إلى JSON منظّم.
+      الهيدر الحقيقي:
+      ${headers.join(", ")}
 
-      معلومات سريعة:
-      - عدد الأوراق: ${excelJSON.sheets?.length || 0}
-
-      مهمتك كخبير جداول عام ومتكيّف:
-      - افهم الهيدر من JSON.
-      - افهم الصفوف الأساسية.
-      - افهم الصفوف التعليمية (teachingRows).
-      - افهم الصفوف الملخصة (summaryRows).
-      - افهم أنواع الأعمدة (types).
-      - افهم الصيغ (formulas).
-      - إذا وُجدت charts، افهم وصفها فقط ولا تحاول توليد مخطط فعلي.
+      مهمتك:
+      - افهم الهيدر الحقيقي.
+      - استخدم المطابقة الذكية لاختيار العمود الصحيح.
+      - لا تعتمد على ما يكتبه المستخدم حرفيًا.
+      - ابنِ خريطة تعديل واضحة (editMap).
+      - اسأل المستخدم قبل التنفيذ.
       `;
     }
 
@@ -64,25 +120,27 @@ export default async function handler(req, res) {
       `
     });
 
+    /* ============================
+       بناء الرسالة للذكاء
+============================ */
     const messagesToSend = [
       {
         role: "system",
         content: `
-        أنت مساعد ذكي عام ومتكيّف، موظّف خبير ومحارب شغل.
-
-        - رد بأسلوب طبيعي يشبه الإنسان.
-        - اشتغل كخبير جداول يفهم JSON القادم من السيرفر.
-        - لا تنفّذ أي تعديل بنفسك.
-        - لا تولّد ملف Excel بنفسك.
-        - لما المستخدم يطلب تنفيذ تعديل، فكّر بخريطة تعديل (editMap) واضحة يمكن للسيرفر تنفيذها.
-
-        مثال لخريطة تعديل:
-        { "action": "add_column", "headerName": "سبب الغياب", "positionAfter": "الغياب", "defaultValue": "—" }
+        أنت مساعد ذكي يفهم النية، ويستخدم الهيدر الحقيقي من JSON.
+        استخدم المطابقة الذكية لاختيار العمود الصحيح.
+        لا تعتمد على الكتابة الحرفية للمستخدم.
+        لا تنفّذ أي تعديل بنفسك.
+        فقط ابنِ editMap واسأل المستخدم:
+        "تمام… هذا التعديل جاهز. بدك أنفّذ؟"
         `
       },
       ...sessionHistory
     ];
 
+    /* ============================
+       استدعاء Groq
+============================ */
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -99,22 +157,19 @@ export default async function handler(req, res) {
     const data = await response.json();
     const aiReply = data?.choices?.[0]?.message?.content;
 
-    if (aiReply) {
-      sessionHistory.push({
-        role: "assistant",
-        content: aiReply
-      });
-
-      return res.status(200).json({ reply: aiReply });
-    } else {
+    if (!aiReply) {
       return res.status(500).json({
-        reply: "⚠️ الخطأ الكامل من Groq: " + JSON.stringify(data)
+        reply: "⚠️ خطأ من Groq: " + JSON.stringify(data)
       });
     }
+
+    sessionHistory.push({ role: "assistant", content: aiReply });
+
+    return res.status(200).json({ reply: aiReply });
 
   } catch (error) {
     return res.status(500).json({
       reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
-}
+          }
