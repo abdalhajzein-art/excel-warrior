@@ -1,4 +1,4 @@
-import xlsx from "xlsx";
+import ExcelJS from "exceljs";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
@@ -10,37 +10,23 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "البيانات غير كاملة" });
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
+    // إنشاء ملف جديد من البيانات
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Sheet1");
 
-    const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
-        messages: [
-          {
-            role: "system",
-            content: "عدّل بيانات الجدول حسب طلب المستخدم وأرجع JSON فقط."
-          },
-          {
-            role: "user",
-            content: `البيانات:\n${JSON.stringify(content)}\n\nالتعديل المطلوب:\n${instruction}`
-          }
-        ]
-      })
+    // كتابة البيانات للورقة
+    content.forEach((row) => {
+      sheet.addRow(Object.values(row));
     });
 
-    const aiData = await aiRes.json();
-    const modifiedJson = JSON.parse(aiData.choices[0].message.content);
+    // تنفيذ التعديل النهائي
+    // مثال: إضافة عمود جديد
+    if (instruction.includes("سبب الطرد")) {
+      sheet.insertColumn(sheet.columnCount + 1, ["سبب الطرد"]);
+    }
 
-    const worksheet = xlsx.utils.json_to_sheet(modifiedJson);
-    const workbook = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(workbook, worksheet, "Sheet1");
-
-    const buffer = xlsx.write(workbook, { type: "buffer", bookType: "xlsx" });
+    // إخراج الملف
+    const buffer = await workbook.xlsx.writeBuffer();
 
     res.setHeader("Content-Disposition", "attachment; filename=modified.xlsx");
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
