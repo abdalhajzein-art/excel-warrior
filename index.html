@@ -11,10 +11,13 @@
 
   <div class="app-container">
 
+    <!-- زر فتح/إغلاق السايدبار -->
+    <button id="sidebarToggle" class="sidebar-toggle">☰</button>
+
     <!-- ============================
          SIDEBAR
     ============================= -->
-    <aside class="sidebar">
+    <aside class="sidebar collapsed" id="sidebar">
       <div class="sidebar-header">
         <div class="sidebar-title">الأثـــير</div>
         <div class="sidebar-sub">منصة ذكاء</div>
@@ -31,9 +34,9 @@
     </aside>
 
     <!-- ============================
-         MAIN AREA (YOUR ORIGINAL UI)
+         MAIN AREA
     ============================= -->
-    <div class="main-area">
+    <div class="main-area expanded">
 
       <header class="top-bar">
         <div class="title">AI الأثـــير</div>
@@ -53,21 +56,10 @@
 
       <main id="chatArea" class="chat-area"></main>
 
-      <!-- ============================
-           INPUT AREA (UPDATED)
-      ============================= -->
       <div class="input-area">
-
-        <!-- NEW: صندوق الإرفاق -->
         <div id="attachmentBox" class="hidden"></div>
-
-        <!-- زر الإرفاق -->
         <button id="attachBtn">📎</button>
-
-        <!-- صندوق الكتابة -->
         <textarea id="userInput" placeholder="اكتب رسالتك هنا..." rows="1"></textarea>
-
-        <!-- زر الإرسال -->
         <button id="sendBtn">إرسال</button>
       </div>
 
