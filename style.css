@@ -179,7 +179,7 @@ body {
   position: fixed;
   top: 14px;
   left: 14px;
-  z-index: 9999;
+  z-index: 10000;
   background: #1f1f22;
   color: #fff;
   border: 1px solid #2a2a2d;
@@ -193,64 +193,54 @@ body {
   background: #2a2a2d;
 }
 
-/* SIDEBAR */
+/* SIDEBAR — MOBILE FIRST */
 .sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 260px;
+  height: 100vh;
   background: #0d0d0f;
   border-right: 1px solid #1c1c1f;
   padding: 20px 16px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
+  transform: translateX(-260px);
+  transition: transform 0.3s ease;
+  z-index: 9999;
+}
+
+.sidebar.open {
+  transform: translateX(0);
+}
+
+/* MAIN AREA — موبايل فيرست */
+.main-area {
+  margin-left: 0 !important;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   transition: 0.3s ease;
 }
 
-.sidebar.collapsed {
-  transform: translateX(-260px);
+/* DESKTOP MODE */
+@media (min-width: 900px) {
+  .sidebar {
+    position: static;
+    transform: translateX(0);
+  }
+
+  .main-area {
+    margin-left: 260px !important;
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
 }
 
-.sidebar-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.sidebar-title {
-  font-size: 22px;
-  font-weight: 600;
-  color: #ffffff;
-}
-
-.sidebar-sub {
-  font-size: 13px;
-  color: #9ca3af;
-}
-
-.sidebar-btn {
-  background: #1f1f22;
-  color: #fff;
-  padding: 10px 14px;
-  border: 1px solid #2a2a2d;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: 0.2s;
-  font-size: 15px;
-}
-
-.sidebar-btn:hover {
-  background: #2a2a2d;
-}
-
-.sidebar-section-title {
-  font-size: 14px;
-  color: #9ca3af;
-  margin-top: 10px;
-}
-
+/* SESSIONS */
 .sessions-list {
   display: flex;
   flex-direction: column;
@@ -319,27 +309,7 @@ body {
   color: #ffffff;
 }
 
-.sidebar-footer {
-  margin-top: auto;
-  text-align: center;
-  color: #6f6f72;
-  font-size: 13px;
-}
-
-/* MAIN AREA */
-.main-area {
-  margin-left: 260px;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  transition: 0.3s ease;
-}
-
-.main-area.expanded {
-  margin-left: 0;
-}
-
-/* INPUT AREA – COPILOT APP STYLE */
+/* INPUT AREA */
 .input-area {
   padding: 16px;
   background: #0f0f11;
@@ -349,7 +319,6 @@ body {
   gap: 10px;
 }
 
-/* FILE BUBBLES */
 .file-bubbles {
   display: flex;
   flex-wrap: wrap;
@@ -365,23 +334,8 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  animation: bubbleIn 0.25s ease;
 }
 
-@keyframes bubbleIn {
-  from { opacity: 0; transform: scale(0.9); }
-  to   { opacity: 1; transform: scale(1); }
-}
-
-.file-bubble button {
-  background: none;
-  border: none;
-  color: #ff6b6b;
-  font-size: 16px;
-  cursor: pointer;
-}
-
-/* INPUT BOX */
 .input-box {
   background: #1a1a1d;
   border: 1px solid #2a2a2d;
@@ -390,18 +344,6 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.attach-icon {
-  background: none;
-  border: none;
-  color: #9ca3af;
-  font-size: 20px;
-  cursor: pointer;
-}
-
-.attach-icon:hover {
-  color: #ffffff;
 }
 
 #userInput {
@@ -418,35 +360,7 @@ body {
   background: #2d6cff;
   border: none;
   color: #fff;
-  font-size: 18px;
   padding: 10px 14px;
   border-radius: 50%;
   cursor: pointer;
-  transition: 0.2s;
-}
-
-.send-icon:hover {
-  background: #1f5cff;
-}
-
-.send-icon:active {
-  transform: scale(0.9);
-}
-
-/* TYPING */
-.typing {
-  color: #9ca3af;
-  font-size: 15px;
-  padding: 12px 14px;
-  background: #1a1a1d;
-  border-radius: 14px;
-  width: fit-content;
-  border: 1px solid #2a2a2d;
-  animation: typingPulseDark 1.4s infinite ease-in-out;
-}
-
-@keyframes typingPulseDark {
-  0%   { opacity: 0.25; transform: scale(0.97); }
-  50%  { opacity: 1;    transform: scale(1); }
-  100% { opacity: 0.25; transform: scale(0.97); }
-}
+  }
