@@ -14,6 +14,9 @@
     <!-- زر فتح/إغلاق السايدبار -->
     <button id="sidebarToggle" class="sidebar-toggle">☰</button>
 
+    <!-- OVERLAY خلف السايدبار -->
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
     <!-- SIDEBAR -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
@@ -21,6 +24,7 @@
         <div class="sidebar-sub">منصة ذكاء</div>
       </div>
 
+      <!-- زر الجلسة الجديدة الأساسي -->
       <button class="sidebar-btn" id="newSessionBtn">جلسة جديدة</button>
 
       <div class="sidebar-section-title">الجلسات</div>
@@ -40,8 +44,8 @@
       </header>
 
       <div class="control-bar">
+        <!-- هذا الزر صار Shortcut فقط -->
         <button id="newChatBtn">جلسة جديدة</button>
-        <button id="clearChatBtn">حذف المحادثة</button>
       </div>
 
       <div id="welcomeScreen" class="welcome-screen">
