@@ -83,7 +83,7 @@ function removeFile(i) {
 }
 
 /* ============================
-   SESSIONS SYSTEM
+   SESSIONS SYSTEM (COPILOT STYLE)
 ============================ */
 const sessionsList = document.getElementById("sessionsList");
 const newSessionBtn = document.getElementById("newSessionBtn");
@@ -94,47 +94,180 @@ let currentSessionId = null;
 function createSession() {
   const id = Date.now();
 
-  sessions.push({
+  const newSession = {
     id,
     title: "جلسة جديدة",
+    pinned: false,
     messages: [],
     files: []
-  });
+  };
 
+  sessions.push(newSession);
   currentSessionId = id;
-  renderSessions();
 
+  resetUIForSession();
+  renderSessions();
+}
+
+function resetUIForSession() {
   chatArea.innerHTML = "";
   welcomeScreen.style.display = "block";
 
   attachedFiles = [];
   renderFileBubbles();
+
+  userInput.value = "";
 }
 
 function renderSessions() {
   sessionsList.innerHTML = "";
 
-  sessions.forEach(s => {
+  const ordered = [
+    ...sessions.filter(s => s.pinned),
+    ...sessions.filter(s => !s.pinned)
+  ];
+
+  ordered.forEach(s => {
     const item = document.createElement("div");
     item.className = "session-item";
-    item.textContent = s.title;
+    if (s.id === currentSessionId) item.classList.add("active");
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "session-title-row";
+
+    const titleSpan = document.createElement("span");
+    titleSpan.className = "session-title";
+    titleSpan.textContent = s.title;
+
+    const badges = document.createElement("div");
+    badges.className = "session-badges";
+
+    if (s.pinned) {
+      const pinBadge = document.createElement("span");
+      pinBadge.className = "session-badge";
+      pinBadge.textContent = "مثبّتة";
+      badges.appendChild(pinBadge);
+    }
+
+    if (s.files.length > 0) {
+      const fileBadge = document.createElement("span");
+      fileBadge.className = "session-badge";
+      fileBadge.textContent = `${s.files.length} ملف`;
+      badges.appendChild(fileBadge);
+    }
+
+    titleRow.appendChild(titleSpan);
+    titleRow.appendChild(badges);
+
+    const actions = document.createElement("div");
+    actions.className = "session-actions";
+
+    const pinBtn = document.createElement("button");
+    pinBtn.className = "session-action-btn";
+    pinBtn.textContent = s.pinned ? "Unpin" : "Pin";
+    pinBtn.onclick = (e) => {
+      e.stopPropagation();
+      s.pinned = !s.pinned;
+      renderSessions();
+    };
+
+    const dupBtn = document.createElement("button");
+    dupBtn.className = "session-action-btn";
+    dupBtn.textContent = "Duplicate";
+    dupBtn.onclick = (e) => {
+      e.stopPropagation();
+      duplicateSession(s.id);
+    };
+
+    const renameBtn = document.createElement("button");
+    renameBtn.className = "session-action-btn";
+    renameBtn.textContent = "Rename";
+    renameBtn.onclick = (e) => {
+      e.stopPropagation();
+      const newTitle = prompt("اسم الجلسة:", s.title);
+      if (newTitle && newTitle.trim()) {
+        s.title = newTitle.trim();
+        renderSessions();
+      }
+    };
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "session-action-btn";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+      deleteSession(s.id);
+    };
+
+    actions.appendChild(pinBtn);
+    actions.appendChild(dupBtn);
+    actions.appendChild(renameBtn);
+    actions.appendChild(deleteBtn);
+
+    item.appendChild(titleRow);
+    item.appendChild(actions);
 
     item.onclick = () => {
-      currentSessionId = s.id;
-      chatArea.innerHTML = "";
-      welcomeScreen.style.display = "none";
-
-      attachedFiles = [...s.files];
-      renderFileBubbles();
-
-      s.messages.forEach(m => addMessage(m.text, m.sender));
+      switchSession(s.id);
     };
 
     sessionsList.appendChild(item);
   });
 }
 
-newSessionBtn.onclick = createSession;
+function switchSession(id) {
+  currentSessionId = id;
+
+  const session = sessions.find(s => s.id === id);
+  if (!session) return;
+
+  chatArea.innerHTML = "";
+  welcomeScreen.style.display = "none";
+
+  attachedFiles = [...session.files];
+  renderFileBubbles();
+
+  session.messages.forEach(m => addMessage(m.text, m.sender));
+
+  renderSessions();
+}
+
+function deleteSession(id) {
+  sessions = sessions.filter(s => s.id !== id);
+
+  if (sessions.length === 0) {
+    currentSessionId = null;
+    resetUIForSession();
+  } else {
+    currentSessionId = sessions[sessions.length - 1].id;
+    switchSession(currentSessionId);
+  }
+
+  renderSessions();
+}
+
+function duplicateSession(id) {
+  const original = sessions.find(s => s.id === id);
+  if (!original) return;
+
+  const copy = {
+    id: Date.now(),
+    title: original.title + " (نسخة)",
+    pinned: original.pinned,
+    messages: [...original.messages],
+    files: [...original.files]
+  };
+
+  sessions.push(copy);
+  currentSessionId = copy.id;
+
+  switchSession(copy.id);
+  renderSessions();
+}
+
+newSessionBtn.onclick = () => {
+  createSession();
+};
 
 /* ============================
    SIDEBAR TOGGLE
@@ -297,6 +430,11 @@ async function sendMessage() {
 
   if (currentSessionId) {
     const session = sessions.find(s => s.id === currentSessionId);
+
+    if (session.messages.length === 0 && text) {
+      session.title = text.length > 30 ? text.slice(0, 30) + "…" : text;
+    }
+
     session.files = [...attachedFiles];
   }
 
@@ -320,6 +458,12 @@ async function sendMessage() {
     const data = await res.json();
     hideTyping();
 
+    if (!data.reply) {
+      addMessage("⚠️ خطأ في الرد من السيرفر.", "ai");
+      isWaiting = false;
+      return;
+    }
+
     addMessage(data.reply, "ai");
 
     const toolCall = extractToolCall(data.reply);
@@ -340,7 +484,7 @@ async function sendMessage() {
 ============================ */
 sendBtn.onclick = sendMessage;
 
-newChatBtn.onclick = async () => {
+newChatBtn.onclick = () => {
   createSession();
 };
 
