@@ -38,9 +38,6 @@ let typingMsg = null;
    MULTI FILE ATTACH SYSTEM
 ============================ */
 const fileBubbles = document.getElementById("fileBubbles");
-
-// الشكل الصحيح للملفات:
-// attachedFiles = [{ name, payload }]
 let attachedFiles = [];
 
 const fileInput = document.createElement("input");
@@ -56,50 +53,31 @@ fileInput.onchange = async (e) => {
   if (!file) return;
 
   const reader = new FileReader();
-
   reader.onload = async () => {
     const base64 = reader.result.split(",")[1];
-
     try {
       const res = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          data: base64
-        })
+        body: JSON.stringify({ filename: file.name, data: base64 })
       });
-
       const data = await res.json();
-
-      // نتوقع أن upload.js يرجّع مصفوفة فيها عنصر واحد
       const payload = Array.isArray(data) ? data[0] : data;
-
-      attachedFiles.push({
-        name: file.name,
-        payload
-      });
-
+      attachedFiles.push({ name: file.name, payload });
       renderFileBubbles();
-
     } catch (err) {
       addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
     }
   };
-
   reader.readAsDataURL(file);
 };
 
 function renderFileBubbles() {
   fileBubbles.innerHTML = "";
-
   attachedFiles.forEach((f, index) => {
     const bubble = document.createElement("div");
     bubble.className = "file-bubble";
-    bubble.innerHTML = `
-      <span>📎 ${f.name}</span>
-      <button onclick="removeFile(${index})">❌</button>
-    `;
+    bubble.innerHTML = `<span>📎 ${f.name}</span> <button onclick="removeFile(${index})">❌</button>`;
     fileBubbles.appendChild(bubble);
   });
 }
@@ -112,38 +90,25 @@ function removeFile(i) {
 /* ============================
    LOCAL STORAGE — UNIFIED STORAGE
 ============================ */
-
 const STORAGE_KEY = "excel-warrior-sessions";
 const CURRENT_KEY = "excel-warrior-current-session";
 
 function loadSessionsFromStorage() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
+  return raw ? JSON.parse(raw) : [];
 }
 
 function saveSessionsToStorage() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
 }
 
-function loadCurrentSessionId() {
-  return localStorage.getItem(CURRENT_KEY);
-}
-
 function saveCurrentSessionId() {
-  if (currentSessionId) {
-    localStorage.setItem(CURRENT_KEY, currentSessionId);
-  }
+  if (currentSessionId) localStorage.setItem(CURRENT_KEY, currentSessionId);
 }
 
 function trimOldSessions() {
   const pinned = sessions.filter(s => s.pinned);
   const normal = sessions.filter(s => !s.pinned);
-
   if (normal.length > 20) {
     const keep = normal.slice(-20);
     sessions = [...pinned, ...keep];
@@ -157,35 +122,20 @@ function updateSessionMeta(session, lastMessage = null) {
 
 function createStoredSession() {
   const id = Date.now();
-
-  const newSession = {
-    id,
-    title: "جلسة جديدة",
-    pinned: false,
-    files: [],          // [{ name, payload }]
-    messages: [],       // [{ sender, text }]
-    lastMessage: null,
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-
+  const newSession = { id, title: "جلسة جديدة", pinned: false, files: [], messages: [], lastMessage: null, createdAt: Date.now(), updatedAt: Date.now() };
   sessions.push(newSession);
   trimOldSessions();
   saveSessionsToStorage();
-
   currentSessionId = id;
   saveCurrentSessionId();
-
   return newSession;
 }
 
 /* ============================
-   SESSIONS SYSTEM — COPILOT STYLE
+   SESSIONS SYSTEM
 ============================ */
-
 const sessionsList = document.getElementById("sessionsList");
 const newSessionBtn = document.getElementById("newSessionBtn");
-
 let sessions = [];
 let currentSessionId = null;
 
@@ -198,231 +148,77 @@ function createSession() {
 function resetUIForSession() {
   chatArea.innerHTML = "";
   welcomeScreen.style.display = "block";
-
   attachedFiles = [];
   renderFileBubbles();
-
   userInput.value = "";
 }
 
 function formatTime(ts) {
-  const d = new Date(ts);
-  return d.toLocaleString("ar", {
-    hour: "2-digit",
-    minute: "2-digit",
-    day: "numeric",
-    month: "short"
-  });
+  return new Date(ts).toLocaleString("ar", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
 }
 
 function renderSessions() {
   sessionsList.innerHTML = "";
-
-  const ordered = [
-    ...sessions.filter(s => s.pinned).sort((a, b) => b.updatedAt - a.updatedAt),
-    ...sessions.filter(s => !s.pinned).sort((a, b) => b.updatedAt - a.updatedAt)
-  ];
+  const ordered = [...sessions.filter(s => s.pinned).sort((a,b) => b.updatedAt - a.updatedAt), ...sessions.filter(s => !s.pinned).sort((a,b) => b.updatedAt - a.updatedAt)];
 
   ordered.forEach(s => {
     const item = document.createElement("div");
-    item.className = "session-item";
-    if (s.id === currentSessionId) item.classList.add("active");
-
-    const titleRow = document.createElement("div");
-    titleRow.className = "session-title-row";
-
-    const titleSpan = document.createElement("span");
-    titleSpan.className = "session-title";
-    titleSpan.textContent = s.title;
-
-    const badges = document.createElement("div");
-    badges.className = "session-badges";
-
-    if (s.pinned) {
-      const pinBadge = document.createElement("span");
-      pinBadge.className = "session-badge";
-      pinBadge.textContent = "📌";
-      badges.appendChild(pinBadge);
-    }
-
-    if (s.files && s.files.length > 0) {
-      const fileBadge = document.createElement("span");
-      fileBadge.className = "session-badge";
-      fileBadge.textContent = `${s.files.length} ملف`;
-      badges.appendChild(fileBadge);
-    }
-
-    titleRow.appendChild(titleSpan);
-    titleRow.appendChild(badges);
-
-    const lastMsg = document.createElement("div");
-    lastMsg.className = "session-last-msg";
-    lastMsg.textContent = s.lastMessage
-      ? s.lastMessage.slice(0, 40) + (s.lastMessage.length > 40 ? "…" : "")
-      : "لا توجد رسائل بعد";
-
-    const timeRow = document.createElement("div");
-    timeRow.className = "session-time";
-    timeRow.textContent = formatTime(s.updatedAt);
-
+    item.className = `session-item ${s.id === currentSessionId ? "active" : ""}`;
+    item.innerHTML = `
+      <div class="session-title-row">
+        <span class="session-title">${s.title}</span>
+        <div class="session-badges">
+          ${s.pinned ? '<span class="session-badge">📌</span>' : ''}
+          ${s.files && s.files.length > 0 ? `<span class="session-badge">${s.files.length} ملف</span>` : ''}
+        </div>
+      </div>
+      <div class="session-last-msg">${s.lastMessage ? s.lastMessage.slice(0, 40) + (s.lastMessage.length > 40 ? "…" : "") : "لا توجد رسائل بعد"}</div>
+      <div class="session-time">${formatTime(s.updatedAt)}</div>
+    `;
+    
     const actions = document.createElement("div");
     actions.className = "session-actions";
-
+    
     const pinBtn = document.createElement("button");
     pinBtn.className = "session-action-btn";
     pinBtn.textContent = s.pinned ? "Unpin" : "Pin";
-    pinBtn.onclick = (e) => {
-      e.stopPropagation();
-      s.pinned = !s.pinned;
-      saveSessionsToStorage();
-      renderSessions();
-    };
-
+    pinBtn.onclick = (e) => { e.stopPropagation(); s.pinned = !s.pinned; saveSessionsToStorage(); renderSessions(); };
+    
     const dupBtn = document.createElement("button");
     dupBtn.className = "session-action-btn";
     dupBtn.textContent = "Duplicate";
-    dupBtn.onclick = (e) => {
-      e.stopPropagation();
-      duplicateSession(s.id);
-    };
-
+    dupBtn.onclick = (e) => { e.stopPropagation(); duplicateSession(s.id); };
+    
     const renameBtn = document.createElement("button");
     renameBtn.className = "session-action-btn";
     renameBtn.textContent = "Rename";
-    renameBtn.onclick = (e) => {
-      e.stopPropagation();
-      const newTitle = prompt("اسم الجلسة:", s.title);
-      if (newTitle && newTitle.trim()) {
-        s.title = newTitle.trim();
-        saveSessionsToStorage();
-        renderSessions();
-      }
-    };
-
+    renameBtn.onclick = (e) => { e.stopPropagation(); const t = prompt("اسم الجلسة:", s.title); if(t) { s.title = t; saveSessionsToStorage(); renderSessions(); } };
+    
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "session-action-btn";
     deleteBtn.textContent = "Delete";
-    deleteBtn.onclick = (e) => {
-      e.stopPropagation();
-      deleteSession(s.id);
-    };
-
-    actions.appendChild(pinBtn);
-    actions.appendChild(dupBtn);
-    actions.appendChild(renameBtn);
-    actions.appendChild(deleteBtn);
-
-    item.appendChild(titleRow);
-    item.appendChild(lastMsg);
-    item.appendChild(timeRow);
+    deleteBtn.onclick = (e) => { e.stopPropagation(); deleteSession(s.id); };
+    
+    actions.append(pinBtn, dupBtn, renameBtn, deleteBtn);
     item.appendChild(actions);
-
-    item.onclick = () => {
-      switchSession(s.id);
-    };
-
+    item.onclick = () => switchSession(s.id);
     sessionsList.appendChild(item);
   });
 }
 
 function loadSessionIntoUI(session) {
   if (!session) return;
-
   chatArea.innerHTML = "";
-  welcomeScreen.style.display = session.messages && session.messages.length > 0 ? "none" : "block";
-
-  // إعادة الرسائل
-  if (session.messages && session.messages.length > 0) {
-    session.messages.forEach(m => {
-      const msg = document.createElement("div");
-      msg.className = `message ${m.sender}`;
-      msg.innerHTML = m.text;
-
-      if (m.sender === "ai") {
-        const copyBtn = document.createElement("button");
-        copyBtn.className = "copy-btn";
-        copyBtn.textContent = "📋";
-        copyBtn.onclick = () => navigator.clipboard.writeText(msg.textContent.trim());
-        msg.appendChild(copyBtn);
-      }
-
-      chatArea.appendChild(msg);
-    });
-  }
-
-  // إعادة الملفات
+  welcomeScreen.style.display = session.messages.length > 0 ? "none" : "block";
+  session.messages.forEach(m => addMessageToUI(m.text, m.sender));
   attachedFiles = session.files ? [...session.files] : [];
   renderFileBubbles();
 }
 
-function switchSession(id) {
-  currentSessionId = id;
-  saveCurrentSessionId();
-
-  const session = sessions.find(s => s.id === id);
-  if (!session) return;
-
-  loadSessionIntoUI(session);
-  renderSessions();
-}
-
-function deleteSession(id) {
-  sessions = sessions.filter(s => s.id !== id);
-  saveSessionsToStorage();
-
-  if (sessions.length === 0) {
-    currentSessionId = null;
-    saveCurrentSessionId();
-    resetUIForSession();
-    renderSessions();
-    return;
-  }
-
-  currentSessionId = sessions[sessions.length - 1].id;
-  saveCurrentSessionId();
-
-  const session = sessions.find(s => s.id === currentSessionId);
-  loadSessionIntoUI(session);
-  renderSessions();
-}
-
-function duplicateSession(id) {
-  const original = sessions.find(s => s.id === id);
-  if (!original) return;
-
-  const copy = {
-    id: Date.now(),
-    title: original.title + " (نسخة)",
-    pinned: original.pinned,
-    files: original.files ? [...original.files] : [],
-    messages: original.messages ? [...original.messages] : [],
-    lastMessage: original.lastMessage,
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-
-  sessions.push(copy);
-  saveSessionsToStorage();
-
-  currentSessionId = copy.id;
-  saveCurrentSessionId();
-
-  loadSessionIntoUI(copy);
-  renderSessions();
-}
-
-/* ============================
-   CHAT SYSTEM
-============================ */
-function addMessage(text, sender) {
-  welcomeScreen.style.display = "none";
-
+function addMessageToUI(text, sender) {
   const msg = document.createElement("div");
   msg.className = `message ${sender}`;
   msg.innerHTML = text;
-
-  chatArea.appendChild(msg);
-
   if (sender === "ai") {
     const copyBtn = document.createElement("button");
     copyBtn.className = "copy-btn";
@@ -430,202 +226,123 @@ function addMessage(text, sender) {
     copyBtn.onclick = () => navigator.clipboard.writeText(msg.textContent.trim());
     msg.appendChild(copyBtn);
   }
+  chatArea.appendChild(msg);
+}
 
-  if (currentSessionId) {
-    const session = sessions.find(s => s.id === currentSessionId);
+function switchSession(id) {
+  currentSessionId = id;
+  saveCurrentSessionId();
+  loadSessionIntoUI(sessions.find(s => s.id === id));
+  renderSessions();
+}
 
-    if (!session.messages) session.messages = [];
-    session.messages.push({ sender, text });
-
-    updateSessionMeta(session, text);
-    saveSessionsToStorage();
+function deleteSession(id) {
+  sessions = sessions.filter(s => s.id !== id);
+  saveSessionsToStorage();
+  if (sessions.length === 0) {
+    currentSessionId = null;
+    resetUIForSession();
+  } else {
+    currentSessionId = sessions[sessions.length - 1].id;
+    loadSessionIntoUI(sessions.find(s => s.id === currentSessionId));
   }
+  renderSessions();
 }
 
-function showTyping() {
-  typingMsg = document.createElement("div");
-  typingMsg.className = "typing";
-  typingMsg.textContent = "جاري الرد...";
-  chatArea.appendChild(typingMsg);
+function duplicateSession(id) {
+  const original = sessions.find(s => s.id === id);
+  const copy = { ...original, id: Date.now(), title: original.title + " (نسخة)", messages: [...original.messages], files: [...original.files], createdAt: Date.now(), updatedAt: Date.now() };
+  sessions.push(copy);
+  saveSessionsToStorage();
+  currentSessionId = copy.id;
+  loadSessionIntoUI(copy);
+  renderSessions();
 }
 
-function hideTyping() {
-  if (typingMsg) typingMsg.remove();
-  typingMsg = null;
-}
-
-function extractToolCall(text) {
-  try {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-
-    const json = JSON.parse(match[0]);
-
-    if (json.tool && json.payload) {
-      return json;
-    }
-
-    return null;
-  } catch {
-    return null;
+/* ============================
+   CHAT & TOOL SYSTEM (CORRECTED)
+============================ */
+function addMessage(text, sender) {
+  welcomeScreen.style.display = "none";
+  addMessageToUI(text, sender);
+  if (currentSessionId) {
+    const s = sessions.find(i => i.id == currentSessionId);
+    s.messages.push({ sender, text });
+    updateSessionMeta(s, text);
+    saveSessionsToStorage();
   }
 }
 
 async function executeTool(toolCall) {
   showTyping();
-
   try {
     const res = await fetch(EXECUTOR_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(toolCall)
     });
-
     hideTyping();
-
-    const clone = res.clone();
-    let blob;
-
-    try {
-      blob = await clone.blob();
-
-      if (blob.type.includes("sheet") || blob.type.includes("excel") || blob.size > 50_000) {
-        const url = URL.createObjectURL(blob);
-
-        addMessage("📥 تم تنفيذ الأداة. الملف جاهز للتحميل:", "ai");
-
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "result.xlsx";
-        link.textContent = "تحميل الملف";
-        link.style.display = "inline-block";
-        link.style.marginTop = "10px";
-        link.style.color = "#2d6cff";
-        link.style.fontWeight = "bold";
-
-        chatArea.lastChild.appendChild(link);
-
-        return;
-      }
-    } catch (err) {
-      console.log("Blob read failed, fallback to JSON");
+    const blob = await res.blob();
+    if (blob.type.includes("excel") || blob.type.includes("sheet")) {
+      const url = URL.createObjectURL(blob);
+      addMessage('📥 تم تنفيذ الأداة. <a href="'+url+'" download="result.xlsx">تحميل الملف</a>', "ai");
+    } else {
+      const txt = await blob.text();
+      addMessage(`🔧 نتيجة: ${txt}`, "ai");
     }
-
-    const data = await res.json();
-    addMessage(`🔧 نتيجة تنفيذ الأداة:\n${JSON.stringify(data, null, 2)}`, "ai");
-
   } catch (err) {
     hideTyping();
-    addMessage("⚠️ خطأ أثناء تنفيذ الأداة: " + err.message, "ai");
+    addMessage("⚠️ خطأ في الأداة: " + err.message, "ai");
   }
 }
 
-/* ============================
-   SEND MESSAGE — FIXED
-============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
   if (!text && attachedFiles.length === 0) return;
-
   addMessage(text || "📎 ملفات مرفقة", "user");
-
-  // نحضّر JSON الملفات قبل أي مسح
   const excelJSON = attachedFiles.map(f => f.payload);
-
-  if (currentSessionId) {
-    const session = sessions.find(s => s.id === currentSessionId);
-
-    if (!session.lastMessage && text) {
-      session.title = text.length > 30 ? text.slice(0, 30) + "…" : text;
-    }
-
-    session.files = attachedFiles.map(f => ({ name: f.name, payload: f.payload }));
-
-    updateSessionMeta(session, text);
-    saveSessionsToStorage();
-  }
-
   userInput.value = "";
-
-  // نمسح الملفات من الواجهة بعد ما جهزنا excelJSON
-  attachedFiles = [];
-  renderFileBubbles();
-
-  isWaiting = true;
+  attachedFiles = []; renderFileBubbles();
   showTyping();
 
   try {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: text,
-        excelJSON,
-        sessionId: currentSessionId
-      })
+      body: JSON.stringify({ message: text, excelJSON, sessionId: currentSessionId })
     });
-
     const data = await res.json();
     hideTyping();
 
-    if (!data.reply) {
-      addMessage("⚠️ خطأ في الرد من السيرفر.", "ai");
-      isWaiting = false;
-      return;
+    if (data.reply) addMessage(data.reply, "ai");
+    
+    // الحل الجذري: التعامل مع tool_calls التي يرسلها السيرفر مباشرة
+    if (data.tool_calls) {
+      for (const call of data.tool_calls) {
+        await executeTool({ tool: call.function.name, payload: JSON.parse(call.function.arguments) });
+      }
     }
-
-    addMessage(data.reply, "ai");
-
-    if (currentSessionId) {
-      const session = sessions.find(s => s.id === currentSessionId);
-      updateSessionMeta(session, data.reply);
-      saveSessionsToStorage();
-    }
-
-    const toolCall = extractToolCall(data.reply);
-    if (toolCall) {
-      await executeTool(toolCall);
-    }
-
   } catch (err) {
     hideTyping();
-    addMessage("⚠️ خطأ في الاتصال: " + err.message, "ai");
+    addMessage("⚠️ خطأ: " + err.message, "ai");
   }
-
-  isWaiting = false;
 }
 
-/* ============================
-   BUTTONS
-============================ */
-sendBtn.onclick = sendMessage;
-
-newChatBtn.onclick = () => {
-  createSession();
-};
-
-newSessionBtn.onclick = () => {
-  createSession();
-};
-
-clearChatBtn.onclick = () => {
-  chatArea.innerHTML = "";
-  welcomeScreen.style.display = "block";
-
-  attachedFiles = [];
-  renderFileBubbles();
-
-  if (currentSessionId) {
-    const session = sessions.find(s => s.id === currentSessionId);
-    session.files = [];
-    session.messages = [];
-    session.lastMessage = null;
-    updateSessionMeta(session);
-    saveSessionsToStorage();
-    renderSessions();
+// Initializers
+document.addEventListener("DOMContentLoaded", () => {
+  sessions = loadSessionsFromStorage();
+  currentSessionId = localStorage.getItem(CURRENT_KEY);
+  if (sessions.length > 0) {
+    const s = sessions.find(i => i.id == currentSessionId) || sessions[sessions.length - 1];
+    switchSession(s.id);
   }
-};
+  sendBtn.onclick = sendMessage;
+  newChatBtn.onclick = newSessionBtn.onclick = createSession;
+  clearChatBtn.onclick = () => { if(confirm("مسح؟")) { deleteSession(currentSessionId); } };
+});
 
+function showTyping() { typingMsg = document.createElement("div"); typingMsg.className = "typing"; typingMsg.innerText = "جاري المعالجة..."; chatArea.appendChild(typingMsg); }
+function hideTyping() { if(typingMsg) typingMsg.remove(); }
 /* ============================
    ENTER BEHAVIOR
 ============================ */
@@ -650,36 +367,3 @@ userInput.addEventListener("keydown", (e) => {
   }
 });
 
-/* ============================
-   INITIAL LOAD — FIXED
-============================ */
-document.addEventListener("DOMContentLoaded", () => {
-  sessions = loadSessionsFromStorage();
-  currentSessionId = loadCurrentSessionId();
-
-  if (!sessions || sessions.length === 0) {
-    sessions = [];
-    currentSessionId = null;
-    resetUIForSession();
-    renderSessions();
-    return;
-  }
-
-  if (!currentSessionId) {
-    currentSessionId = sessions[sessions.length - 1].id;
-    saveCurrentSessionId();
-  }
-
-  const session = sessions.find(s => s.id === currentSessionId);
-
-  if (!session) {
-    currentSessionId = null;
-    resetUIForSession();
-    renderSessions();
-    return;
-  }
-
-  // بدل ما نمسح، نحمّل الجلسة الحالية
-  loadSessionIntoUI(session);
-  renderSessions();
-});
