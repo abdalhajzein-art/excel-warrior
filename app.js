@@ -549,42 +549,42 @@ async function sendMessage() {
   showTyping();
 
   try {
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: text,
-        excelJSON
-      })
-    });
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: text,
+      excelJSON,
+      sessionId: currentSessionId   // ✅ هذا السطر هو المفتاح
+    })
+  });
 
-    const data = await res.json();
-    hideTyping();
+  const data = await res.json();
+  hideTyping();
 
-    if (!data.reply) {
-      addMessage("⚠️ خطأ في الرد من السيرفر.", "ai");
-      isWaiting = false;
-      return;
-    }
-
-    addMessage(data.reply, "ai");
-
-    /* تحديث التخزين بعد رد الذكاء */
-    if (currentSessionId) {
-      const session = sessions.find(s => s.id === currentSessionId);
-      updateSessionMeta(session, data.reply);
-      saveSessionsToStorage();
-    }
-
-    const toolCall = extractToolCall(data.reply);
-    if (toolCall) {
-      await executeTool(toolCall);
-    }
-
-  } catch (err) {
-    hideTyping();
-    addMessage("⚠️ خطأ في الاتصال: " + err.message, "ai");
+  if (!data.reply) {
+    addMessage("⚠️ خطأ في الرد من السيرفر.", "ai");
+    isWaiting = false;
+    return;
   }
+
+  addMessage(data.reply, "ai");
+
+  if (currentSessionId) {
+    const session = sessions.find(s => s.id === currentSessionId);
+    updateSessionMeta(session, data.reply);
+    saveSessionsToStorage();
+  }
+
+  const toolCall = extractToolCall(data.reply);
+  if (toolCall) {
+    await executeTool(toolCall);
+  }
+
+} catch (err) {
+  hideTyping();
+  addMessage("⚠️ خطأ في الاتصال: " + err.message, "ai");
+}
 
   isWaiting = false;
 }
