@@ -79,6 +79,18 @@ function renderSessions() {
 newSessionBtn.onclick = createSession;
 
 /* ============================
+   SIDEBAR TOGGLE
+============================ */
+const sidebar = document.getElementById("sidebar");
+const sidebarToggle = document.getElementById("sidebarToggle");
+const mainArea = document.querySelector(".main-area");
+
+sidebarToggle.onclick = () => {
+  sidebar.classList.toggle("collapsed");
+  mainArea.classList.toggle("expanded");
+};
+
+/* ============================
    AUTO SCROLL
 ============================ */
 function autoScroll() {
