@@ -4,12 +4,10 @@
 const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebarToggle");
 
-// فتح / إغلاق السايدبار (toggle)
 sidebarToggle.onclick = () => {
   sidebar.classList.toggle("open");
 };
 
-// إغلاق عند الضغط خارج السايدبار
 document.addEventListener("click", (e) => {
   const insideSidebar = sidebar.contains(e.target);
   const insideToggle = sidebarToggle.contains(e.target);
@@ -112,7 +110,6 @@ function removeFile(i) {
 const STORAGE_KEY = "excel-warrior-sessions";
 const CURRENT_KEY = "excel-warrior-current-session";
 
-/* تحميل الجلسات من التخزين */
 function loadSessionsFromStorage() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return [];
@@ -123,24 +120,20 @@ function loadSessionsFromStorage() {
   }
 }
 
-/* حفظ الجلسات داخل التخزين */
 function saveSessionsToStorage() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
 }
 
-/* تحميل الجلسة الحالية */
 function loadCurrentSessionId() {
   return localStorage.getItem(CURRENT_KEY);
 }
 
-/* حفظ الجلسة الحالية */
 function saveCurrentSessionId() {
   if (currentSessionId) {
     localStorage.setItem(CURRENT_KEY, currentSessionId);
   }
 }
 
-/* حذف الجلسات القديمة — آخر 20 فقط (غير المثبّتة) */
 function trimOldSessions() {
   const pinned = sessions.filter(s => s.pinned);
   const normal = sessions.filter(s => !s.pinned);
@@ -151,13 +144,11 @@ function trimOldSessions() {
   }
 }
 
-/* تحديث بيانات الجلسة */
 function updateSessionMeta(session, lastMessage = null) {
   session.updatedAt = Date.now();
   if (lastMessage) session.lastMessage = lastMessage;
 }
 
-/* إنشاء جلسة جديدة داخل التخزين */
 function createStoredSession() {
   const id = Date.now();
 
@@ -165,8 +156,8 @@ function createStoredSession() {
     id,
     title: "جلسة جديدة",
     pinned: false,
-    files: [],          // أسماء الملفات فقط
-    lastMessage: null,  // آخر رسالة فقط
+    files: [],
+    lastMessage: null,
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -182,7 +173,7 @@ function createStoredSession() {
 }
 
 /* ============================
-   SESSIONS SYSTEM — COPILOT STYLE (NEW)
+   SESSIONS SYSTEM — COPILOT STYLE
 ============================ */
 
 const sessionsList = document.getElementById("sessionsList");
@@ -191,14 +182,12 @@ const newSessionBtn = document.getElementById("newSessionBtn");
 let sessions = [];
 let currentSessionId = null;
 
-/* إنشاء جلسة جديدة */
 function createSession() {
   const session = createStoredSession();
   resetUIForSession();
   renderSessions();
 }
 
-/* إعادة ضبط الواجهة عند فتح جلسة */
 function resetUIForSession() {
   chatArea.innerHTML = "";
   welcomeScreen.style.display = "block";
@@ -209,7 +198,6 @@ function resetUIForSession() {
   userInput.value = "";
 }
 
-/* تنسيق الوقت مثل Copilot */
 function formatTime(ts) {
   const d = new Date(ts);
   return d.toLocaleString("ar", {
@@ -220,11 +208,9 @@ function formatTime(ts) {
   });
 }
 
-/* عرض الجلسات داخل السايدبار — نسخة محسّنة */
 function renderSessions() {
   sessionsList.innerHTML = "";
 
-  /* ترتيب الجلسات: المثبّتة أولًا ثم حسب آخر تحديث */
   const ordered = [
     ...sessions.filter(s => s.pinned).sort((a, b) => b.updatedAt - a.updatedAt),
     ...sessions.filter(s => !s.pinned).sort((a, b) => b.updatedAt - a.updatedAt)
@@ -235,7 +221,6 @@ function renderSessions() {
     item.className = "session-item";
     if (s.id === currentSessionId) item.classList.add("active");
 
-    /* الصف العلوي: العنوان + البادجات */
     const titleRow = document.createElement("div");
     titleRow.className = "session-title-row";
 
@@ -263,19 +248,16 @@ function renderSessions() {
     titleRow.appendChild(titleSpan);
     titleRow.appendChild(badges);
 
-    /* الصف الثاني: آخر رسالة */
     const lastMsg = document.createElement("div");
     lastMsg.className = "session-last-msg";
     lastMsg.textContent = s.lastMessage
       ? s.lastMessage.slice(0, 40) + (s.lastMessage.length > 40 ? "…" : "")
       : "لا توجد رسائل بعد";
 
-    /* الصف الثالث: وقت آخر تحديث */
     const timeRow = document.createElement("div");
     timeRow.className = "session-time";
     timeRow.textContent = formatTime(s.updatedAt);
 
-    /* أزرار الجلسة */
     const actions = document.createElement("div");
     actions.className = "session-actions";
 
@@ -323,7 +305,6 @@ function renderSessions() {
     actions.appendChild(renameBtn);
     actions.appendChild(deleteBtn);
 
-    /* تجميع العناصر */
     item.appendChild(titleRow);
     item.appendChild(lastMsg);
     item.appendChild(timeRow);
@@ -337,7 +318,6 @@ function renderSessions() {
   });
 }
 
-/* تبديل الجلسة */
 function switchSession(id) {
   currentSessionId = id;
   saveCurrentSessionId();
@@ -354,13 +334,13 @@ function switchSession(id) {
   renderSessions();
 }
 
-/* حذف جلسة */
 function deleteSession(id) {
   sessions = sessions.filter(s => s.id !== id);
   saveSessionsToStorage();
 
   if (sessions.length === 0) {
-    const s = createStoredSession();
+    currentSessionId = null;
+    saveCurrentSessionId();
     resetUIForSession();
     renderSessions();
     return;
@@ -373,7 +353,6 @@ function deleteSession(id) {
   renderSessions();
 }
 
-/* نسخ جلسة */
 function duplicateSession(id) {
   const original = sessions.find(s => s.id === id);
   if (!original) return;
@@ -399,7 +378,7 @@ function duplicateSession(id) {
 }
 
 /* ============================
-   CHAT SYSTEM — UPDATED FOR STORAGE
+   CHAT SYSTEM
 ============================ */
 function addMessage(text, sender) {
   welcomeScreen.style.display = "none";
@@ -418,7 +397,6 @@ function addMessage(text, sender) {
     msg.appendChild(copyBtn);
   }
 
-  /* تحديث التخزين */
   if (currentSessionId) {
     const session = sessions.find(s => s.id === currentSessionId);
     updateSessionMeta(session, text);
@@ -426,9 +404,6 @@ function addMessage(text, sender) {
   }
 }
 
-/* ============================
-   TYPING
-============================ */
 function showTyping() {
   typingMsg = document.createElement("div");
   typingMsg.className = "typing";
@@ -441,9 +416,6 @@ function hideTyping() {
   typingMsg = null;
 }
 
-/* ============================
-   TOOL CALL PARSER
-============================ */
 function extractToolCall(text) {
   try {
     const match = text.match(/\{[\s\S]*\}/);
@@ -461,9 +433,6 @@ function extractToolCall(text) {
   }
 }
 
-/* ============================
-   EXECUTE TOOL
-============================ */
 async function executeTool(toolCall) {
   showTyping();
 
@@ -514,7 +483,7 @@ async function executeTool(toolCall) {
 }
 
 /* ============================
-   SEND MESSAGE — UPDATED FOR STORAGE
+   SEND MESSAGE — FIXED
 ============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
@@ -527,15 +496,12 @@ async function sendMessage() {
   if (currentSessionId) {
     const session = sessions.find(s => s.id === currentSessionId);
 
-    /* تحديث عنوان الجلسة عند أول رسالة */
     if (!session.lastMessage && text) {
       session.title = text.length > 30 ? text.slice(0, 30) + "…" : text;
     }
 
-    /* حفظ أسماء الملفات فقط */
     session.files = attachedFiles.map(f => f.name);
 
-    /* تحديث وقت آخر تعديل + آخر رسالة */
     updateSessionMeta(session, text);
 
     saveSessionsToStorage();
@@ -549,42 +515,42 @@ async function sendMessage() {
   showTyping();
 
   try {
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message: text,
-      excelJSON,
-      sessionId: currentSessionId   // ✅ هذا السطر هو المفتاح
-    })
-  });
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: text,
+        excelJSON,
+        sessionId: currentSessionId   // FIXED
+      })
+    });
 
-  const data = await res.json();
-  hideTyping();
+    const data = await res.json();
+    hideTyping();
 
-  if (!data.reply) {
-    addMessage("⚠️ خطأ في الرد من السيرفر.", "ai");
-    isWaiting = false;
-    return;
+    if (!data.reply) {
+      addMessage("⚠️ خطأ في الرد من السيرفر.", "ai");
+      isWaiting = false;
+      return;
+    }
+
+    addMessage(data.reply, "ai");
+
+    if (currentSessionId) {
+      const session = sessions.find(s => s.id === currentSessionId);
+      updateSessionMeta(session, data.reply);
+      saveSessionsToStorage();
+    }
+
+    const toolCall = extractToolCall(data.reply);
+    if (toolCall) {
+      await executeTool(toolCall);
+    }
+
+  } catch (err) {
+    hideTyping();
+    addMessage("⚠️ خطأ في الاتصال: " + err.message, "ai");
   }
-
-  addMessage(data.reply, "ai");
-
-  if (currentSessionId) {
-    const session = sessions.find(s => s.id === currentSessionId);
-    updateSessionMeta(session, data.reply);
-    saveSessionsToStorage();
-  }
-
-  const toolCall = extractToolCall(data.reply);
-  if (toolCall) {
-    await executeTool(toolCall);
-  }
-
-} catch (err) {
-  hideTyping();
-  addMessage("⚠️ خطأ في الاتصال: " + err.message, "ai");
-}
 
   isWaiting = false;
 }
@@ -595,6 +561,10 @@ async function sendMessage() {
 sendBtn.onclick = sendMessage;
 
 newChatBtn.onclick = () => {
+  createSession();
+};
+
+newSessionBtn.onclick = () => {
   createSession();
 };
 
@@ -640,40 +610,34 @@ userInput.addEventListener("keydown", (e) => {
 });
 
 /* ============================
-   INITIAL LOAD — DOMContentLoaded
+   INITIAL LOAD — FIXED
 ============================ */
 document.addEventListener("DOMContentLoaded", () => {
-  // تحميل الجلسات من التخزين
   sessions = loadSessionsFromStorage();
-
-  // تحميل الجلسة الحالية
   currentSessionId = loadCurrentSessionId();
 
-  // إذا لا يوجد جلسات → إنشاء جلسة جديدة
   if (!sessions || sessions.length === 0) {
-    const s = createStoredSession();
+    sessions = [];
+    currentSessionId = null;
     resetUIForSession();
     renderSessions();
     return;
   }
 
-  // إذا يوجد جلسات لكن لا يوجد جلسة حالية → افتح آخر جلسة
   if (!currentSessionId) {
     currentSessionId = sessions[sessions.length - 1].id;
     saveCurrentSessionId();
   }
 
-  // تحميل الجلسة الحالية
   const session = sessions.find(s => s.id === currentSessionId);
 
   if (!session) {
-    const s = createStoredSession();
+    currentSessionId = null;
     resetUIForSession();
     renderSessions();
     return;
   }
 
-  // عرض الجلسة الحالية
   resetUIForSession();
   renderSessions();
 });
