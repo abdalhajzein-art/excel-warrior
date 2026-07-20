@@ -20,7 +20,7 @@ document.addEventListener("click", (e) => {
 /* ============================
    BASE ELEMENTS
 ============================ */
-const API_URL = "/api/chat";
+const API_URL = "/.netlify/functions/chat";
 const EXECUTOR_URL = "/api/tools/execute";
 
 const chatArea = document.getElementById("chatArea");
