@@ -1,3 +1,27 @@
+/* ============================
+   SIDEBAR — MOBILE FIRST OVERLAY
+============================ */
+const sidebar = document.getElementById("sidebar");
+const sidebarToggle = document.getElementById("sidebarToggle");
+
+// فتح السايدبار
+sidebarToggle.onclick = () => {
+  sidebar.classList.add("open");
+};
+
+// إغلاق عند الضغط خارج السايدبار
+document.addEventListener("click", (e) => {
+  const insideSidebar = sidebar.contains(e.target);
+  const insideToggle = sidebarToggle.contains(e.target);
+
+  if (!insideSidebar && !insideToggle) {
+    sidebar.classList.remove("open");
+  }
+});
+
+/* ============================
+   BASE ELEMENTS
+============================ */
 const API_URL = "/api/chat";
 const EXECUTOR_URL = "/api/tools/execute";
 
@@ -21,7 +45,6 @@ let attachedFiles = [];
 const fileInput = document.createElement("input");
 fileInput.type = "file";
 fileInput.accept = ".xlsx,.xls,.csv";
-fileInput.multiple = false;
 fileInput.style.display = "none";
 document.body.appendChild(fileInput);
 
@@ -265,50 +288,15 @@ function duplicateSession(id) {
   renderSessions();
 }
 
-newSessionBtn.onclick = () => {
-  createSession();
-};
-
 /* ============================
-   SIDEBAR TOGGLE
-============================ */
-const sidebar = document.getElementById("sidebar");
-const sidebarToggle = document.getElementById("sidebarToggle");
-const mainArea = document.querySelector(".main-area");
-
-sidebarToggle.onclick = () => {
-  sidebar.classList.toggle("collapsed");
-  mainArea.classList.toggle("expanded");
-};
-
-/* ============================
-   AUTO SCROLL
-============================ */
-function autoScroll() {
-  chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-/* ============================
-   WELCOME SCREEN
-============================ */
-function hideWelcome() {
-  if (welcomeScreen) welcomeScreen.style.display = "none";
-}
-
-/* ============================
-   ADD MESSAGE
+   CHAT SYSTEM
 ============================ */
 function addMessage(text, sender) {
-  hideWelcome();
+  welcomeScreen.style.display = "none";
 
   const msg = document.createElement("div");
   msg.className = `message ${sender}`;
   msg.innerHTML = text;
-
-  if (/[\u0600-\u06FF]/.test(text)) {
-    msg.style.direction = "rtl";
-    msg.style.textAlign = "right";
-  }
 
   chatArea.appendChild(msg);
 
@@ -324,8 +312,6 @@ function addMessage(text, sender) {
     const session = sessions.find(s => s.id === currentSessionId);
     session.messages.push({ text, sender });
   }
-
-  autoScroll();
 }
 
 /* ============================
@@ -336,13 +322,11 @@ function showTyping() {
   typingMsg.className = "typing";
   typingMsg.textContent = "جاري الرد...";
   chatArea.appendChild(typingMsg);
-  autoScroll();
 }
 
 function hideTyping() {
   if (typingMsg) typingMsg.remove();
   typingMsg = null;
-  autoScroll();
 }
 
 /* ============================
