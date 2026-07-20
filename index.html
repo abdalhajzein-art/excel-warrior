@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>منصة الأثـــير</title>
-  <link rel="stylesheet" href="style.css?v=2002">
+  <link rel="stylesheet" href="style.css?v=2003">
 </head>
 
 <body>
@@ -14,9 +14,7 @@
     <!-- زر فتح/إغلاق السايدبار -->
     <button id="sidebarToggle" class="sidebar-toggle">☰</button>
 
-    <!-- ============================
-         SIDEBAR
-    ============================= -->
+    <!-- SIDEBAR -->
     <aside class="sidebar collapsed" id="sidebar">
       <div class="sidebar-header">
         <div class="sidebar-title">الأثـــير</div>
@@ -33,9 +31,7 @@
       </div>
     </aside>
 
-    <!-- ============================
-         MAIN AREA
-    ============================= -->
+    <!-- MAIN AREA -->
     <div class="main-area expanded">
 
       <header class="top-bar">
@@ -56,17 +52,25 @@
 
       <main id="chatArea" class="chat-area"></main>
 
+      <!-- COPILOT APP STYLE INPUT -->
       <div class="input-area">
-        <div id="attachmentBox" class="hidden"></div>
-        <button id="attachBtn">📎</button>
-        <textarea id="userInput" placeholder="اكتب رسالتك هنا..." rows="1"></textarea>
-        <button id="sendBtn">إرسال</button>
+
+        <div id="fileBubbles" class="file-bubbles"></div>
+
+        <div class="input-box">
+          <button id="attachBtn" class="attach-icon">📎</button>
+
+          <textarea id="userInput" placeholder="اكتب رسالتك هنا..." rows="1"></textarea>
+
+          <button id="sendBtn" class="send-icon">➤</button>
+        </div>
+
       </div>
 
-    </div> <!-- END MAIN AREA -->
+    </div>
 
-  </div> <!-- END APP CONTAINER -->
+  </div>
 
-  <script src="app.js?v=2002"></script>
+  <script src="app.js?v=2003"></script>
 </body>
 </html>
