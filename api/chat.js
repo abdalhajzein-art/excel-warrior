@@ -1,4 +1,5 @@
 import { SYSTEM_PROMPT } from "./agent/system.js";
+
 let sessionHistory = [];
 
 /* ============================
@@ -45,12 +46,14 @@ export default async function handler(req, res) {
     }
 
     /* ============================
-       بناء سياق الملف الحقيقي
+       بناء سياق الملف الحقيقي — نسخة جديدة
 ============================ */
     let fileContext = "";
 
-    if (excelJSON) {
-      if (!excelJSON.file_id || !excelJSON.base64) {
+    if (excelJSON && Array.isArray(excelJSON) && excelJSON.length > 0) {
+      const first = excelJSON[0];
+
+      if (!first.file_id || !first.base64 || !first.sheets) {
         return res.status(400).json({
           reply: "⚠️ الملف لم يُرفع بشكل صحيح."
         });
@@ -58,12 +61,12 @@ export default async function handler(req, res) {
 
       fileContext = `
 🔹 معلومات الملف:
-- file_id: ${excelJSON.file_id}
-- filename: ${excelJSON.filename}
-- عدد الشيتات: ${excelJSON.sheets.length}
+- file_id: ${first.file_id}
+- filename: ${first.filename}
+- عدد الشيتات: ${first.sheets.length}
 
 🔹 الهيدر:
-${excelJSON.sheets[0].header.join(", ")}
+${first.sheets[0].header.join(", ")}
 
 🔹 الملف جاهز للتعديل عبر الأدوات.
 `;
@@ -82,7 +85,7 @@ ${message}
 ${fileContext}
 
 بيانات الملف:
-${excelJSON ? JSON.stringify(excelJSON) : "لا يوجد ملف"}
+${excelJSON && excelJSON.length > 0 ? JSON.stringify(excelJSON[0]) : "لا يوجد ملف"}
 `
     });
 
@@ -146,4 +149,4 @@ ${excelJSON ? JSON.stringify(excelJSON) : "لا يوجد ملف"}
       reply: "⚠️ خطأ في الاتصال: " + error.message
     });
   }
-         }
+   }
