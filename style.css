@@ -1,23 +1,39 @@
-/* RESET */
+/* RESET & GLOBAL VARIABLES */
+:root {
+  /* ألوان النظام الفاخرة المريحة للعين */
+  --bg-dark: #070708;          /* خلفية التطبيق الأساسية */
+  --bg-panel: #0d0d0f;         /* خلفية الهيدر والشرائط والقائمة الجانبية */
+  --accent-gold: #c5a059;      /* الذهبي الفاخر */
+  --accent-gold-hover: #e6c075;
+  --text-main: #ededed;        /* النصوص الأساسية */
+  --text-dim: #9ca3af;         /* النصوص الفرعية */
+  --border-color: #2a2216;     /* الحدود بلمسة ذهبية خفيفة */
+  --msg-user-bg: #1a160d;      /* خلفية رسالة المستخدم */
+  --msg-ai-bg: #121214;        /* خلفية رسالة الذكاء الاصطناعي */
+  --btn-bg: #1f1f22;           /* خلفية الأزرار */
+  --btn-hover: #2a2a2d;        /* تفاعل الأزرار */
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: "Segoe UI", sans-serif;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
 }
 
 /* BODY */
 body {
-  background: #0b0b0d;
+  background: var(--bg-dark);
   height: 100vh;
   overflow-y: auto;
+  color: var(--text-main);
 }
 
 /* APP FULL SCREEN */
 .app-container {
   width: 100%;
   min-height: 100vh;
-  background: #0f0f11;
+  background: var(--bg-dark);
   display: flex;
   flex-direction: column;
   animation: darkFadeIn 0.45s ease-out;
@@ -31,8 +47,8 @@ body {
 /* HEADER */
 .top-bar {
   padding: 18px;
-  background: #0f0f11;
-  border-bottom: 1px solid #1c1c1f;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -41,12 +57,12 @@ body {
 .title {
   font-size: 22px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--accent-gold);
 }
 
 .subtitle {
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--text-dim);
 }
 
 /* CONTROL BAR */
@@ -54,41 +70,44 @@ body {
   display: flex;
   gap: 10px;
   padding: 10px;
-  background: #0f0f11;
-  border-bottom: 1px solid #1c1c1f;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .control-bar button {
-  background: #1f1f22;
-  color: #fff;
+  background: var(--btn-bg);
+  color: var(--text-main);
   padding: 8px 14px;
-  border: 1px solid #2a2a2d;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   cursor: pointer;
   transition: 0.2s;
 }
 
 .control-bar button:hover {
-  background: #2a2a2d;
+  background: var(--accent-gold);
+  color: #000000;
+  border-color: var(--accent-gold);
 }
 
 /* WELCOME SCREEN */
 .welcome-screen {
   text-align: center;
   padding: 40px 20px;
-  color: #e6e6e6;
+  color: var(--text-main);
   opacity: 0.85;
 }
 
 .welcome-title {
   font-size: 28px;
   font-weight: bold;
+  color: var(--accent-gold);
   margin-bottom: 10px;
 }
 
 .welcome-subtitle {
   font-size: 16px;
-  color: #9ca3af;
+  color: var(--text-dim);
   margin-bottom: 20px;
 }
 
@@ -112,7 +131,7 @@ body {
   width: 6px;
 }
 .chat-area::-webkit-scrollbar-thumb {
-  background: #2a2a2d;
+  background: var(--border-color);
   border-radius: 10px;
 }
 
@@ -124,7 +143,7 @@ body {
   line-height: 1.6;
   font-size: 15px;
   position: relative;
-  box-shadow: 0 0 6px rgba(0,0,0,0.25);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.4);
   animation: msgEnterDark 0.32s cubic-bezier(0.16, 0.8, 0.44, 1);
 }
 
@@ -143,16 +162,16 @@ body {
 
 .message.user {
   align-self: flex-end;
-  background: #1a1f2b;
-  color: #dbe3ff;
-  border: 1px solid #2a3244;
+  background: var(--msg-user-bg);
+  color: var(--text-main);
+  border: 1px solid var(--accent-gold);
 }
 
 .message.ai {
   align-self: flex-start;
-  background: #1a1a1d;
-  color: #e6e6e6;
-  border: 1px solid #2a2a2d;
+  background: var(--msg-ai-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
 }
 
 /* COPY BUTTON */
@@ -160,9 +179,9 @@ body {
   position: absolute;
   top: 6px;
   left: 6px;
-  background: #2a2a2d;
-  color: #fff;
-  border: none;
+  background: var(--btn-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
   padding: 4px 6px;
   border-radius: 6px;
   cursor: pointer;
@@ -171,7 +190,8 @@ body {
 }
 
 .copy-btn:hover {
-  background: #3a3a3d;
+  background: var(--accent-gold);
+  color: #000;
 }
 
 /* SIDEBAR TOGGLE BUTTON */
@@ -180,9 +200,9 @@ body {
   top: 14px;
   left: 14px;
   z-index: 10000;
-  background: #1f1f22;
-  color: #fff;
-  border: 1px solid #2a2a2d;
+  background: var(--btn-bg);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
   padding: 10px 14px;
   border-radius: 10px;
   cursor: pointer;
@@ -190,7 +210,8 @@ body {
 }
 
 .sidebar-toggle:hover {
-  background: #2a2a2d;
+  background: var(--btn-hover);
+  border-color: var(--accent-gold);
 }
 
 /* SIDEBAR — MOBILE FIRST */
@@ -200,8 +221,8 @@ body {
   left: 0;
   width: 260px;
   height: 100vh;
-  background: #0d0d0f;
-  border-right: 1px solid #1c1c1f;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-color);
   padding: 20px 16px;
   display: flex;
   flex-direction: column;
@@ -215,7 +236,7 @@ body {
   transform: translateX(0);
 }
 
-/* MAIN AREA — موبايل فيرست */
+/* MAIN AREA */
 .main-area {
   margin-left: 0 !important;
   display: flex;
@@ -250,11 +271,11 @@ body {
 }
 
 .session-item {
-  background: #1a1a1d;
-  border: 1px solid #2a2a2d;
+  background: var(--msg-ai-bg);
+  border: 1px solid var(--border-color);
   padding: 8px 10px;
   border-radius: 10px;
-  color: #e6e6e6;
+  color: var(--text-main);
   cursor: pointer;
   transition: 0.2s;
   display: flex;
@@ -262,37 +283,15 @@ body {
   gap: 4px;
 }
 
+.session-item:hover {
+  border-color: var(--accent-gold);
+}
+
 .session-item.active {
-  border-color: #2d6cff;
-  background: #15151a;
+  border-color: var(--accent-gold);
+  background: var(--msg-user-bg);
 }
 
-/* آخر رسالة داخل عنصر الجلسة */
-.session-last-msg {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-top: 4px;
-  line-height: 1.4;
-}
-
-/* وقت آخر تحديث للجلسة */
-.session-time {
-  font-size: 11px;
-  color: #6f6f72;
-  margin-top: 2px;
-}
-
-/* مؤشر "جاري الرد..." */
-.typing {
-  align-self: flex-start;
-  background: #1a1a1d;
-  color: #9ca3af;
-  border: 1px solid #2a2a2d;
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  animation: msgEnterDark 0.32s cubic-bezier(0.16, 0.8, 0.44, 1);
-}
 .session-title-row {
   display: flex;
   justify-content: space-between;
@@ -313,8 +312,21 @@ body {
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 6px;
-  background: #2a2a2d;
-  color: #9ca3af;
+  background: var(--btn-bg);
+  color: var(--text-dim);
+}
+
+.session-last-msg {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.session-time {
+  font-size: 11px;
+  color: #6f6f72;
+  margin-top: 2px;
 }
 
 .session-actions {
@@ -326,20 +338,32 @@ body {
 .session-action-btn {
   background: none;
   border: none;
-  color: #9ca3af;
+  color: var(--text-dim);
   font-size: 13px;
   cursor: pointer;
 }
 
 .session-action-btn:hover {
-  color: #ffffff;
+  color: var(--accent-gold);
+}
+
+/* TYPING INDICATOR */
+.typing {
+  align-self: flex-start;
+  background: var(--msg-ai-bg);
+  color: var(--text-dim);
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  animation: msgEnterDark 0.32s cubic-bezier(0.16, 0.8, 0.44, 1);
 }
 
 /* INPUT AREA */
 .input-area {
   padding: 16px;
-  background: #0f0f11;
-  border-top: 1px solid #1c1c1f;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -352,41 +376,52 @@ body {
 }
 
 .file-bubble {
-  background: #1a1a1d;
-  border: 1px solid #2a2a2d;
+  background: var(--msg-ai-bg);
+  border: 1px solid var(--border-color);
   padding: 8px 12px;
   border-radius: 10px;
-  color: #e6e6e6;
+  color: var(--text-main);
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
 .input-box {
-  background: #1a1a1d;
-  border: 1px solid #2a2a2d;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
   border-radius: 14px;
   padding: 10px 14px;
   display: flex;
   align-items: center;
   gap: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.input-box:focus-within {
+  border-color: var(--accent-gold);
 }
 
 #userInput {
   flex: 1;
   background: transparent;
   border: none;
-  color: #fff;
+  color: var(--text-main);
   resize: none;
   font-size: 15px;
   outline: none;
 }
 
 .send-icon {
-  background: #2d6cff;
+  background: var(--accent-gold);
   border: none;
-  color: #fff;
+  color: #000000;
   padding: 10px 14px;
   border-radius: 50%;
   cursor: pointer;
-  }
+  font-weight: bold;
+  transition: background-color 0.2s ease;
+}
+
+.send-icon:hover {
+  background: var(--accent-gold-hover);
+}
