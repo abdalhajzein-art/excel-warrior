@@ -4,9 +4,9 @@
 const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebarToggle");
 
-// فتح السايدبار
+// فتح / إغلاق السايدبار (toggle)
 sidebarToggle.onclick = () => {
-  sidebar.classList.add("open");
+  sidebar.classList.toggle("open");
 };
 
 // إغلاق عند الضغط خارج السايدبار
@@ -106,32 +106,99 @@ function removeFile(i) {
 }
 
 /* ============================
-   SESSIONS SYSTEM (COPILOT STYLE)
+   LOCAL STORAGE — UNIFIED STORAGE
 ============================ */
-const sessionsList = document.getElementById("sessionsList");
-const newSessionBtn = document.getElementById("newSessionBtn");
 
-let sessions = [];
-let currentSessionId = null;
+const STORAGE_KEY = "excel-warrior-sessions";
+const CURRENT_KEY = "excel-warrior-current-session";
 
-function createSession() {
+/* تحميل الجلسات من التخزين */
+function loadSessionsFromStorage() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+/* حفظ الجلسات داخل التخزين */
+function saveSessionsToStorage() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+}
+
+/* تحميل الجلسة الحالية */
+function loadCurrentSessionId() {
+  return localStorage.getItem(CURRENT_KEY);
+}
+
+/* حفظ الجلسة الحالية */
+function saveCurrentSessionId() {
+  if (currentSessionId) {
+    localStorage.setItem(CURRENT_KEY, currentSessionId);
+  }
+}
+
+/* حذف الجلسات القديمة — آخر 20 فقط (غير المثبّتة) */
+function trimOldSessions() {
+  const pinned = sessions.filter(s => s.pinned);
+  const normal = sessions.filter(s => !s.pinned);
+
+  if (normal.length > 20) {
+    const keep = normal.slice(-20);
+    sessions = [...pinned, ...keep];
+  }
+}
+
+/* تحديث بيانات الجلسة */
+function updateSessionMeta(session, lastMessage = null) {
+  session.updatedAt = Date.now();
+  if (lastMessage) session.lastMessage = lastMessage;
+}
+
+/* إنشاء جلسة جديدة داخل التخزين */
+function createStoredSession() {
   const id = Date.now();
 
   const newSession = {
     id,
     title: "جلسة جديدة",
     pinned: false,
-    messages: [],
-    files: []
+    files: [],          // أسماء الملفات فقط
+    lastMessage: null,  // آخر رسالة فقط
+    createdAt: Date.now(),
+    updatedAt: Date.now()
   };
 
   sessions.push(newSession);
-  currentSessionId = id;
+  trimOldSessions();
+  saveSessionsToStorage();
 
+  currentSessionId = id;
+  saveCurrentSessionId();
+
+  return newSession;
+}
+
+/* ============================
+   SESSIONS SYSTEM — COPILOT STYLE (NEW)
+============================ */
+
+const sessionsList = document.getElementById("sessionsList");
+const newSessionBtn = document.getElementById("newSessionBtn");
+
+let sessions = [];
+let currentSessionId = null;
+
+/* إنشاء جلسة جديدة */
+function createSession() {
+  const session = createStoredSession();
   resetUIForSession();
   renderSessions();
 }
 
+/* إعادة ضبط الواجهة عند فتح جلسة */
 function resetUIForSession() {
   chatArea.innerHTML = "";
   welcomeScreen.style.display = "block";
@@ -142,12 +209,25 @@ function resetUIForSession() {
   userInput.value = "";
 }
 
+/* تنسيق الوقت مثل Copilot */
+function formatTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleString("ar", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "numeric",
+    month: "short"
+  });
+}
+
+/* عرض الجلسات داخل السايدبار — نسخة محسّنة */
 function renderSessions() {
   sessionsList.innerHTML = "";
 
+  /* ترتيب الجلسات: المثبّتة أولًا ثم حسب آخر تحديث */
   const ordered = [
-    ...sessions.filter(s => s.pinned),
-    ...sessions.filter(s => !s.pinned)
+    ...sessions.filter(s => s.pinned).sort((a, b) => b.updatedAt - a.updatedAt),
+    ...sessions.filter(s => !s.pinned).sort((a, b) => b.updatedAt - a.updatedAt)
   ];
 
   ordered.forEach(s => {
@@ -155,6 +235,7 @@ function renderSessions() {
     item.className = "session-item";
     if (s.id === currentSessionId) item.classList.add("active");
 
+    /* الصف العلوي: العنوان + البادجات */
     const titleRow = document.createElement("div");
     titleRow.className = "session-title-row";
 
@@ -168,7 +249,7 @@ function renderSessions() {
     if (s.pinned) {
       const pinBadge = document.createElement("span");
       pinBadge.className = "session-badge";
-      pinBadge.textContent = "مثبّتة";
+      pinBadge.textContent = "📌";
       badges.appendChild(pinBadge);
     }
 
@@ -182,6 +263,19 @@ function renderSessions() {
     titleRow.appendChild(titleSpan);
     titleRow.appendChild(badges);
 
+    /* الصف الثاني: آخر رسالة */
+    const lastMsg = document.createElement("div");
+    lastMsg.className = "session-last-msg";
+    lastMsg.textContent = s.lastMessage
+      ? s.lastMessage.slice(0, 40) + (s.lastMessage.length > 40 ? "…" : "")
+      : "لا توجد رسائل بعد";
+
+    /* الصف الثالث: وقت آخر تحديث */
+    const timeRow = document.createElement("div");
+    timeRow.className = "session-time";
+    timeRow.textContent = formatTime(s.updatedAt);
+
+    /* أزرار الجلسة */
     const actions = document.createElement("div");
     actions.className = "session-actions";
 
@@ -191,6 +285,7 @@ function renderSessions() {
     pinBtn.onclick = (e) => {
       e.stopPropagation();
       s.pinned = !s.pinned;
+      saveSessionsToStorage();
       renderSessions();
     };
 
@@ -210,6 +305,7 @@ function renderSessions() {
       const newTitle = prompt("اسم الجلسة:", s.title);
       if (newTitle && newTitle.trim()) {
         s.title = newTitle.trim();
+        saveSessionsToStorage();
         renderSessions();
       }
     };
@@ -227,7 +323,10 @@ function renderSessions() {
     actions.appendChild(renameBtn);
     actions.appendChild(deleteBtn);
 
+    /* تجميع العناصر */
     item.appendChild(titleRow);
+    item.appendChild(lastMsg);
+    item.appendChild(timeRow);
     item.appendChild(actions);
 
     item.onclick = () => {
@@ -238,8 +337,10 @@ function renderSessions() {
   });
 }
 
+/* تبديل الجلسة */
 function switchSession(id) {
   currentSessionId = id;
+  saveCurrentSessionId();
 
   const session = sessions.find(s => s.id === id);
   if (!session) return;
@@ -250,25 +351,29 @@ function switchSession(id) {
   attachedFiles = [...session.files];
   renderFileBubbles();
 
-  session.messages.forEach(m => addMessage(m.text, m.sender));
-
   renderSessions();
 }
 
+/* حذف جلسة */
 function deleteSession(id) {
   sessions = sessions.filter(s => s.id !== id);
+  saveSessionsToStorage();
 
   if (sessions.length === 0) {
-    currentSessionId = null;
+    const s = createStoredSession();
     resetUIForSession();
-  } else {
-    currentSessionId = sessions[sessions.length - 1].id;
-    switchSession(currentSessionId);
+    renderSessions();
+    return;
   }
 
+  currentSessionId = sessions[sessions.length - 1].id;
+  saveCurrentSessionId();
+
+  switchSession(currentSessionId);
   renderSessions();
 }
 
+/* نسخ جلسة */
 function duplicateSession(id) {
   const original = sessions.find(s => s.id === id);
   if (!original) return;
@@ -277,19 +382,24 @@ function duplicateSession(id) {
     id: Date.now(),
     title: original.title + " (نسخة)",
     pinned: original.pinned,
-    messages: [...original.messages],
-    files: [...original.files]
+    files: [...original.files],
+    lastMessage: original.lastMessage,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
   };
 
   sessions.push(copy);
+  saveSessionsToStorage();
+
   currentSessionId = copy.id;
+  saveCurrentSessionId();
 
   switchSession(copy.id);
   renderSessions();
 }
 
 /* ============================
-   CHAT SYSTEM
+   CHAT SYSTEM — UPDATED FOR STORAGE
 ============================ */
 function addMessage(text, sender) {
   welcomeScreen.style.display = "none";
@@ -308,9 +418,11 @@ function addMessage(text, sender) {
     msg.appendChild(copyBtn);
   }
 
+  /* تحديث التخزين */
   if (currentSessionId) {
     const session = sessions.find(s => s.id === currentSessionId);
-    session.messages.push({ text, sender });
+    updateSessionMeta(session, text);
+    saveSessionsToStorage();
   }
 }
 
@@ -402,7 +514,7 @@ async function executeTool(toolCall) {
 }
 
 /* ============================
-   SEND MESSAGE
+   SEND MESSAGE — UPDATED FOR STORAGE
 ============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
@@ -415,11 +527,18 @@ async function sendMessage() {
   if (currentSessionId) {
     const session = sessions.find(s => s.id === currentSessionId);
 
-    if (session.messages.length === 0 && text) {
+    /* تحديث عنوان الجلسة عند أول رسالة */
+    if (!session.lastMessage && text) {
       session.title = text.length > 30 ? text.slice(0, 30) + "…" : text;
     }
 
-    session.files = [...attachedFiles];
+    /* حفظ أسماء الملفات فقط */
+    session.files = attachedFiles.map(f => f.name);
+
+    /* تحديث وقت آخر تعديل + آخر رسالة */
+    updateSessionMeta(session, text);
+
+    saveSessionsToStorage();
   }
 
   userInput.value = "";
@@ -449,6 +568,13 @@ async function sendMessage() {
     }
 
     addMessage(data.reply, "ai");
+
+    /* تحديث التخزين بعد رد الذكاء */
+    if (currentSessionId) {
+      const session = sessions.find(s => s.id === currentSessionId);
+      updateSessionMeta(session, data.reply);
+      saveSessionsToStorage();
+    }
 
     const toolCall = extractToolCall(data.reply);
     if (toolCall) {
@@ -481,8 +607,11 @@ clearChatBtn.onclick = () => {
 
   if (currentSessionId) {
     const session = sessions.find(s => s.id === currentSessionId);
-    session.messages = [];
     session.files = [];
+    session.lastMessage = null;
+    updateSessionMeta(session);
+    saveSessionsToStorage();
+    renderSessions();
   }
 };
 
@@ -508,4 +637,43 @@ userInput.addEventListener("keydown", (e) => {
     e.preventDefault();
     sendMessage();
   }
+});
+
+/* ============================
+   INITIAL LOAD — DOMContentLoaded
+============================ */
+document.addEventListener("DOMContentLoaded", () => {
+  // تحميل الجلسات من التخزين
+  sessions = loadSessionsFromStorage();
+
+  // تحميل الجلسة الحالية
+  currentSessionId = loadCurrentSessionId();
+
+  // إذا لا يوجد جلسات → إنشاء جلسة جديدة
+  if (!sessions || sessions.length === 0) {
+    const s = createStoredSession();
+    resetUIForSession();
+    renderSessions();
+    return;
+  }
+
+  // إذا يوجد جلسات لكن لا يوجد جلسة حالية → افتح آخر جلسة
+  if (!currentSessionId) {
+    currentSessionId = sessions[sessions.length - 1].id;
+    saveCurrentSessionId();
+  }
+
+  // تحميل الجلسة الحالية
+  const session = sessions.find(s => s.id === currentSessionId);
+
+  if (!session) {
+    const s = createStoredSession();
+    resetUIForSession();
+    renderSessions();
+    return;
+  }
+
+  // عرض الجلسة الحالية
+  resetUIForSession();
+  renderSessions();
 });
