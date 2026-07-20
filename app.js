@@ -12,8 +12,75 @@ const clearChatBtn = document.getElementById("clearChatBtn");
 let isWaiting = false;
 let typingMsg = null;
 
-window.lastEditMap = null;
-window.lastUploadedExcelJSON = null;
+/* ============================
+   MULTI FILE ATTACH SYSTEM
+============================ */
+const fileBubbles = document.getElementById("fileBubbles");
+let attachedFiles = [];
+
+const fileInput = document.createElement("input");
+fileInput.type = "file";
+fileInput.accept = ".xlsx,.xls,.csv";
+fileInput.multiple = false;
+fileInput.style.display = "none";
+document.body.appendChild(fileInput);
+
+document.getElementById("attachBtn").onclick = () => fileInput.click();
+
+fileInput.onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = async () => {
+    const base64 = reader.result.split(",")[1];
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          data: base64
+        })
+      });
+
+      const data = await res.json();
+
+      attachedFiles.push({
+        name: file.name,
+        json: data
+      });
+
+      renderFileBubbles();
+
+    } catch (err) {
+      addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
+    }
+  };
+
+  reader.readAsDataURL(file);
+};
+
+function renderFileBubbles() {
+  fileBubbles.innerHTML = "";
+
+  attachedFiles.forEach((f, index) => {
+    const bubble = document.createElement("div");
+    bubble.className = "file-bubble";
+    bubble.innerHTML = `
+      <span>📎 ${f.name}</span>
+      <button onclick="removeFile(${index})">❌</button>
+    `;
+    fileBubbles.appendChild(bubble);
+  });
+}
+
+function removeFile(i) {
+  attachedFiles.splice(i, 1);
+  renderFileBubbles();
+}
 
 /* ============================
    SESSIONS SYSTEM
@@ -31,7 +98,7 @@ function createSession() {
     id,
     title: "جلسة جديدة",
     messages: [],
-    file: null
+    files: []
   });
 
   currentSessionId = id;
@@ -39,6 +106,9 @@ function createSession() {
 
   chatArea.innerHTML = "";
   welcomeScreen.style.display = "block";
+
+  attachedFiles = [];
+  renderFileBubbles();
 }
 
 function renderSessions() {
@@ -54,22 +124,10 @@ function renderSessions() {
       chatArea.innerHTML = "";
       welcomeScreen.style.display = "none";
 
+      attachedFiles = [...s.files];
+      renderFileBubbles();
+
       s.messages.forEach(m => addMessage(m.text, m.sender));
-
-      if (s.file) {
-        window.lastUploadedExcelJSON = s.file;
-        attachmentBox.innerHTML = `
-          <span>📎 ${s.file.filename}</span>
-          <button id="removeAttachment">❌</button>
-        `;
-        attachmentBox.classList.remove("hidden");
-
-        document.getElementById("removeAttachment").onclick = () => {
-          attachmentBox.classList.add("hidden");
-          window.lastUploadedExcelJSON = null;
-          s.file = null;
-        };
-      }
     };
 
     sessionsList.appendChild(item);
@@ -129,7 +187,6 @@ function addMessage(text, sender) {
     msg.appendChild(copyBtn);
   }
 
-  /* حفظ الرسالة داخل الجلسة */
   if (currentSessionId) {
     const session = sessions.find(s => s.id === currentSessionId);
     session.messages.push({ text, sender });
@@ -154,74 +211,6 @@ function hideTyping() {
   typingMsg = null;
   autoScroll();
 }
-
-/* ============================
-   ATTACHMENT BOX
-============================ */
-const attachmentBox = document.getElementById("attachmentBox");
-
-/* ============================
-   FILE UPLOAD
-============================ */
-const fileInput = document.createElement("input");
-fileInput.type = "file";
-fileInput.accept = ".xlsx,.xls,.csv";
-fileInput.style.display = "none";
-document.body.appendChild(fileInput);
-
-const attachBtn = document.getElementById("attachBtn");
-attachBtn.onclick = () => fileInput.click();
-
-fileInput.onchange = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  attachmentBox.innerHTML = `
-    <span>📎 ${file.name}</span>
-    <button id="removeAttachment">❌</button>
-  `;
-  attachmentBox.classList.remove("hidden");
-
-  document.getElementById("removeAttachment").onclick = () => {
-    attachmentBox.classList.add("hidden");
-    window.lastUploadedExcelJSON = null;
-
-    if (currentSessionId) {
-      const session = sessions.find(s => s.id === currentSessionId);
-      session.file = null;
-    }
-  };
-
-  const reader = new FileReader();
-
-  reader.onload = async () => {
-    const base64 = reader.result.split(",")[1];
-
-    try {
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          data: base64
-        })
-      });
-
-      const data = await res.json();
-      window.lastUploadedExcelJSON = data;
-
-      if (currentSessionId) {
-        const session = sessions.find(s => s.id === currentSessionId);
-        session.file = data;
-      }
-
-    } catch (err) {
-      addMessage("⚠️ فشل رفع الملف: " + err.message, "ai");
-    }
-  };
-
-  reader.readAsDataURL(file);
-};
 
 /* ============================
    TOOL CALL PARSER
@@ -300,10 +289,21 @@ async function executeTool(toolCall) {
 ============================ */
 async function sendMessage() {
   const text = userInput.value.trim();
-  if (!text || isWaiting) return;
+  if (!text && attachedFiles.length === 0) return;
 
-  addMessage(text, "user");
+  addMessage(text || "📎 ملفات مرفقة", "user");
+
+  const excelJSON = attachedFiles.map(f => f.json);
+
+  if (currentSessionId) {
+    const session = sessions.find(s => s.id === currentSessionId);
+    session.files = [...attachedFiles];
+  }
+
   userInput.value = "";
+  attachedFiles = [];
+  renderFileBubbles();
+
   isWaiting = true;
   showTyping();
 
@@ -313,27 +313,18 @@ async function sendMessage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        excelJSON: window.lastUploadedExcelJSON || null
+        excelJSON
       })
     });
 
     const data = await res.json();
     hideTyping();
 
-    if (!data.reply) {
-      addMessage("⚠️ خطأ في الرد من السيرفر.", "ai");
-      isWaiting = false;
-      return;
-    }
-
     addMessage(data.reply, "ai");
 
     const toolCall = extractToolCall(data.reply);
-
     if (toolCall) {
       await executeTool(toolCall);
-      isWaiting = false;
-      return;
     }
 
   } catch (err) {
@@ -355,14 +346,15 @@ newChatBtn.onclick = async () => {
 
 clearChatBtn.onclick = () => {
   chatArea.innerHTML = "";
-  window.lastUploadedExcelJSON = null;
-  attachmentBox.classList.add("hidden");
   welcomeScreen.style.display = "block";
+
+  attachedFiles = [];
+  renderFileBubbles();
 
   if (currentSessionId) {
     const session = sessions.find(s => s.id === currentSessionId);
     session.messages = [];
-    session.file = null;
+    session.files = [];
   }
 };
 
