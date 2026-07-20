@@ -16,10 +16,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "لا يوجد بيانات ملف" });
     }
 
-    // فك Base64 إلى Buffer
     const buffer = Buffer.from(data, "base64");
 
-    // قراءة ملف Excel
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
 
@@ -36,19 +34,16 @@ export default async function handler(req, res) {
       sheet.eachRow((row, rowNumber) => {
         const rowValues = row.values.slice(1);
 
-        // اكتشاف صفوف تعليمية
         if (rowValues.some(v => typeof v === "string" && v.includes("حدّث"))) {
           teachingRows.push(rowValues);
           return;
         }
 
-        // اكتشاف الهيدر
         if (rowNumber === 1 || rowNumber === 2) {
           header.push(...rowValues);
           return;
         }
 
-        // اكتشاف صفوف ملخصة
         if (rowValues.some(v => typeof v === "string" && v.includes("إجمالي"))) {
           summaryRows.push(rowValues);
           return;
@@ -56,7 +51,6 @@ export default async function handler(req, res) {
 
         rows.push(rowValues);
 
-        // أنواع البيانات
         rowValues.forEach((cell, idx) => {
           if (!types[idx]) {
             if (typeof cell === "number") types[idx] = "number";
@@ -65,7 +59,6 @@ export default async function handler(req, res) {
           }
         });
 
-        // الصيغ
         row.eachCell((cell, colNumber) => {
           if (cell.formula) {
             formulas[colNumber - 1] = cell.formula;
@@ -73,7 +66,6 @@ export default async function handler(req, res) {
         });
       });
 
-      // مخططات ذكية مبنية على تحليل الأعمدة الرقمية
       const numericColumns = types
         .map((t, i) => (t === "number" ? i : null))
         .filter(i => i !== null);
@@ -103,7 +95,6 @@ export default async function handler(req, res) {
       });
     });
 
-    // 🔥 الرد النهائي — مصفوفة ملفات
     return res.status(200).json([
       {
         file_id: "latest_uploaded_excel",
@@ -118,4 +109,4 @@ export default async function handler(req, res) {
       error: "فشل قراءة الملف: " + err.message
     });
   }
-                          }
+                    }
