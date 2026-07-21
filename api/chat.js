@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
+import XLSX from 'xlsx'; // مكتبة قراءة ملفات الإكسل
 
 const ai = new GoogleGenAI({});
 
@@ -19,15 +20,43 @@ export default async function handler(req, res) {
     }
 
     let userContent = message || "مساعدة بخصوص الملف المرفق";
-    let fileInfoText = "";
+    let fileContentPreview = "";
 
+    // معالجة الملف المرفق وقراءة محتواه الداخلي بشكل سيادي
     if (excelJSON && excelJSON[0]) {
-      fileInfoText = `\n[معلومات الملف المرفق: اسم الملف: ${excelJSON[0].fileName || 'ملف'}، الحجم: ${excelJSON[0].size || 0} بايت]`;
+      const fileObj = excelJSON[0];
+      const fileName = fileObj.fileName || 'ملف';
+      
+      if (fileObj.fileBase64) {
+        try {
+          const buffer = Buffer.from(fileObj.fileBase64, 'base64');
+          
+          if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
+            // قراءة ملفات الإكسل وجداول البيانات عبر مكتبة XLSX
+            const workbook = XLSX.read(buffer, { type: 'buffer' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            // تحويل ورقة العمل إلى مصفوفة كائنات / نص JSON مصغر ليقرأه الذكاء الاصطناعي
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            fileContentPreview = `\n[محتوى الملف المرفق (${fileName}) الداخلي:\n${JSON.stringify(jsonData.slice(0, 100), null, 2)}\n(ملاحظة: تم عرض أول 100 صف كعينة تحليلية)]`;
+          } else {
+            // للملفات النصية أو الـ JSON المباشرة
+            const textContent = buffer.toString('utf8');
+            fileContentPreview = `\n[محتوى الملف النصي المرفق (${fileName}):\n${textContent.substring(0, 5000)}\n]`;
+          }
+        } catch (parseErr) {
+          console.error("Error parsing attached file content:", parseErr);
+          fileContentPreview = `\n[معلومات الملف المرفق: اسم الملف: ${fileName} (تعذر استخراج محتواه النصي مباشرة، يرجى الاستعانة بالأدوات)]`;
+        }
+      } else if (Array.isArray(fileObj) || fileObj.content) {
+        // لو كانت البيانات مرسلة كنص JSON مُحلل مسبقاً
+        fileContentPreview = `\n[محتوى البيانات المرفقة:\n${JSON.stringify(fileObj).substring(0, 5000)}\n]`;
+      }
     }
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.5-flash',
-      contents: `${SYSTEM_PROMPT}\n${fileInfoText}\n\nUser Request: ${userContent}`,
+      contents: `${SYSTEM_PROMPT}\n${fileContentPreview}\n\nUser Request: ${userContent}`,
       config: {
         temperature: 0.5,
         tools: [{
