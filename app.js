@@ -8,27 +8,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // دعم الـ JSON والملفات الكبيرة للإكسل
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// تقديم ملفات الواجهة من الجذر
+// تقديم ملفات الواجهة من الجذر (index.html, style.css, app.js الأمامي)
 app.use(express.static(__dirname));
 
-// مسار الشات والذكاء الاصطناعي (API)
-app.post('/.netlify/functions/chat', async (req, res) => {
+// مسار الشات والذكاء الاصطناعي (يدعم المسارين لتجنب أي خطأ)
+app.post(['/api/chat', '/.netlify/functions/chat'], async (req, res) => {
   try {
-    const { message, excelJSON } = req.body;
+    // التعامل مع الطلب سواء جاء من Express أو بصيغة Netlify شبيهة
+    const body = req.body.body ? JSON.parse(req.body.body) : req.body;
+    const { message, excelJSON } = body;
     const apiKey = process.env.GROQ_API_KEY;
 
     if (!apiKey) {
       return res.status(500).json({ reply: "⚠️ مفتاح GROQ_API_KEY غير متوفر في بيئة العمل على Railway." });
     }
 
-    // تجهيز الرسائل مع سياق الإكسل إن وجد
-    let userContent = message;
+    let userContent = message || "";
     if (excelJSON && excelJSON.length > 0) {
       userContent += "\n\n[بيانات الإكسل المرفقة]: " + JSON.stringify(excelJSON);
     }
@@ -40,7 +41,7 @@ app.post('/.netlify/functions/chat', async (req, res) => {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b", // الموديل الخارق الجديد
+        model: "openai/gpt-oss-120b",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userContent }
@@ -59,10 +60,9 @@ app.post('/.netlify/functions/chat', async (req, res) => {
 
     const messageContent = data.choices[0].message;
 
-    // التحقق إذا كان النموذج يريد استدعاء أداة
     if (messageContent.tool_calls) {
       return res.json({ 
-        reply: "تم استدعاء الأداة بنجاح عبر الموديل الخارق", 
+        reply: "تم استدعاء الأداة بنجاح", 
         tool_calls: messageContent.tool_calls 
       });
     }
@@ -75,16 +75,9 @@ app.post('/.netlify/functions/chat', async (req, res) => {
   }
 });
 
-// مسار رفع الملفات
+// مسار رفع الملفات الاحتياطي
 app.post('/api/upload', (req, res) => {
-  try {
-    const { filename, data } = req.body;
-    // هنا يتم معالجة الملف المرفوع وتحويله لـ JSON
-    // يمكنك ربطه بالمنطق الموجود لديك في مجلد api
-    res.json({ status: "success", filename, data: "تم قراءة الملف بنجاح" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  res.json({ status: "success", message: "تم استقبال الملف بنجاح" });
 });
 
 // تشغيل السيرفر
