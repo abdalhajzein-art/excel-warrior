@@ -10,42 +10,55 @@ document.addEventListener('DOMContentLoaded', () => {
         const message = userInput.value.trim();
         if (!message) return;
 
-        if (welcomeScreen) welcomeScreen.style.display = 'none';
+        if (welcomeScreen) {
+            welcomeScreen.style.display = 'none';
+        }
 
+        // إضافة رسالة المستخدم
         appendMessage('user', message);
         userInput.value = '';
+        userInput.style.height = 'auto';
 
-        const loadingId = appendMessage('assistant', 'جاري المعالجة... ⏳', true);
+        // إضافة رسالة الانتظار والحصول على معرفها الفريد
+        const loadingId = appendMessage('assistant', 'جاري المعالجة... ⏳');
 
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json' 
+                },
                 body: JSON.stringify({ message })
             });
 
             const data = await response.json();
+            
+            // إزالة رسالة الانتظار بدقة
             removeMessage(loadingId);
 
-            if (data.reply) {
+            if (data && data.reply) {
                 appendMessage('assistant', data.reply);
             } else {
-                appendMessage('assistant', '⚠️ خطأ في استجابة السيرفر.');
+                appendMessage('assistant', '⚠️ حدث خطأ في استجابة السيرفر.');
             }
         } catch (error) {
+            console.error('Fetch Error:', error);
             removeMessage(loadingId);
-            appendMessage('assistant', '⚠️ تعذر الاتصال بالسيرفر.');
+            appendMessage('assistant', '⚠️ تعذر الاتصال بالسيرفر. تأكد من الشبكة.');
         }
     }
 
     function appendMessage(sender, text) {
         const messageDiv = document.createElement('div');
-        const messageId = 'msg_' + Date.now() + Math.random();
+        const messageId = 'msg_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
         messageDiv.id = messageId;
+        
         messageDiv.style.margin = '10px 0';
         messageDiv.style.padding = '12px 16px';
         messageDiv.style.borderRadius = '8px';
         messageDiv.style.maxWidth = '80%';
+        messageDiv.style.wordBreak = 'break-word';
+        messageDiv.style.whiteSpace = 'pre-wrap';
         
         if (sender === 'user') {
             messageDiv.style.backgroundColor = '#007bff';
@@ -60,15 +73,23 @@ document.addEventListener('DOMContentLoaded', () => {
         messageDiv.innerText = text;
         chatArea.appendChild(messageDiv);
         chatArea.scrollTop = chatArea.scrollHeight;
+
         return messageId;
     }
 
     function removeMessage(id) {
+        if (!id) return;
         const el = document.getElementById(id);
-        if (el) el.remove();
+        if (el) {
+            el.remove();
+        }
     }
 
-    if (sendBtn) sendBtn.addEventListener('click', handleSendMessage);
+    // ربط الأحداث بالأزرار
+    if (sendBtn) {
+        sendBtn.addEventListener('click', handleSendMessage);
+    }
+
     if (userInput) {
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -80,9 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const resetChat = () => {
         chatArea.innerHTML = '';
-        if (welcomeScreen) welcomeScreen.style.display = 'flex';
+        if (welcomeScreen) {
+            welcomeScreen.style.display = 'flex';
+        }
     };
 
     if (newChatBtn) newChatBtn.addEventListener('click', resetChat);
     if (newSessionBtn) newSessionBtn.addEventListener('click', resetChat);
+
+    console.log('✨ منصة الأثير جاهزة وتعمل بكفاءة!');
 });
