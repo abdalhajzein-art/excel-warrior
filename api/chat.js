@@ -1,6 +1,6 @@
 // api/chat.js
 import { SYSTEM_PROMPT } from "./agent/system.js";
-import { toolsRegistry } from "./tools/index.js";
+import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -14,16 +14,24 @@ export default async function handler(req, res) {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GEMINI_API_KEY غير مضاف في متغيرات البيئة على Railway." });
+      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GEMINI_API_KEY غير مضاف في متغيرات البيئة." });
     }
 
     let userContent = message || "مساعدة بخصوص الملف المرفق";
     let fileInfoText = "";
 
-    // إذا تم إرفاق ملف إكسل، نستخرج معلوماته ليفهمها جيميني بدون أخطاء
     if (excelJSON && excelJSON[0]) {
       fileInfoText = `\n[معلومات الملف المرفق: اسم الملف: ${excelJSON[0].fileName || 'ملف'}، الحجم: ${excelJSON[0].size || 0} بايت]`;
     }
+
+    // إعداد هيكل الأدوات المتوافقة مع Gemini API
+    const formattedTools = [{
+      functionDeclarations: toolsDefinition.map(t => ({
+        name: t.function.name,
+        description: t.function.description,
+        parameters: t.function.parameters
+      }))
+    }];
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
@@ -41,6 +49,7 @@ export default async function handler(req, res) {
             ]
           }
         ],
+        tools: formattedTools,
         generationConfig: {
           temperature: 0.5
         }
@@ -54,35 +63,46 @@ export default async function handler(req, res) {
     }
 
     const candidate = data.candidates?.[0];
-    const replyText = candidate?.content?.parts?.[0]?.text || "تم الاستلام بنجاح.";
+    const parts = candidate?.content?.parts || [];
 
-    // هل طلب المستخدم تعديلاً حقيقياً يتطلب تدخل أدوات الإكسل؟ (وليس مجرد قراءة أو سؤال)
-    const isModificationRequest = userContent.includes("أضف") || userContent.includes("عمود") || userContent.includes("حذف") || userContent.includes("تعديل") || userContent.includes("غير");
+    // التحقق إذا كان النموذج طلب استدعاء أداة (Function Call)
+    const functionCallPart = parts.find(p => p.functionCall);
 
-    if (excelJSON && excelJSON[0] && excelJSON[0].fileBase64 && isModificationRequest) {
-      const base64Data = excelJSON[0].fileBase64;
-      
-      if (toolsRegistry['excel_modify']) {
+    if (functionCallPart && functionCallPart.functionCall) {
+      const { name: toolName, args: toolArgs } = functionCallPart.functionCall;
+
+      if (toolsRegistry[toolName]) {
         try {
-          // بناء هيكل افتراضي آمن لتجنب أخطاء الـ editMap في حال لم يحدد المستخدم عملية دقيقة
-          const toolResult = await toolsRegistry['excel_modify'].handler({
-            base64: base64Data,
-            editMap: { operation: "none", instruction: userContent }
+          // إذا كانت الأداة تتطلب ملف base64 ولم يمرره النموذج ولكن يوجد ملف مرفق، نضمن إضافته تلقائياً
+          if (!toolArgs.base64 && excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
+            toolArgs.base64 = excelJSON[0].fileBase64;
+          }
+
+          const toolResult = await toolsRegistry[toolName].handler({
+            body: toolArgs
+          }, {
+            status: (code) => ({ json: (data) => data })
           });
 
-          if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
+          // إرجاع النتيجة أو الملف المعالج للمستخدم
+          if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array || (toolResult && toolResult.success)) {
             return res.status(200).json({
-              reply: "✅ تم معالجة الملف وإعادة تجهيزه بناءً على طلبك:",
-              fileBase64: Buffer.from(toolResult).toString('base64'),
-              fileName: excelJSON[0].fileName || 'modified.xlsx'
+              reply: "✅ أبشر، تم تنفيذ الطلب ومعالجة الملف بنجاح:",
+              fileBase64: toolResult.fileBase64 || (Buffer.isBuffer(toolResult) ? Buffer.from(toolResult).toString('base64') : undefined),
+              fileName: excelJSON?.[0]?.fileName || 'processed_file.xlsx'
             });
           }
+
+          return res.status(200).json({ reply: "✅ تم تنفيذ العملية المطلوبة بنجاح." });
+
         } catch (toolErr) {
-          console.error("Tool execution error:", toolErr);
+          console.error("Tool execution error in chat:", toolErr);
         }
       }
     }
 
+    // الرد النصي العادي إذا لم يتم استدعاء أداة
+    const replyText = parts.find(p => p.text)?.text || "تم الاستلام بنجاح.";
     return res.status(200).json({ reply: replyText });
 
   } catch (error) {
