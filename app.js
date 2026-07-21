@@ -1,4 +1,4 @@
-// App.js - النسخة السيادية النهائية المخصصة لـ Railway
+// app.js - النسخة السيادية الموحدة والنهائية
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -17,8 +17,8 @@ app.use(express.static(__dirname));
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const body = req.body.body ? JSON.parse(req.body.body) : req.body;
-    const { message } = body;
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const { message, excelJSON } = body || {};
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -26,6 +26,11 @@ app.post('/api/chat', async (req, res) => {
     }
 
     let userContent = message || "تحليل الطلب المرفق";
+    let fileInfoText = "";
+
+    if (excelJSON && excelJSON[0]) {
+      fileInfoText = `\n[معلومات الملف المرفق: اسم الملف: ${excelJSON[0].fileName || 'ملف'}، الحجم: ${excelJSON[0].size || 0} بايت]`;
+    }
 
     const formattedTools = [{
       functionDeclarations: toolsDefinition.map(t => ({
@@ -35,14 +40,15 @@ app.post('/api/chat', async (req, res) => {
       }))
     }];
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    // الاستدعاء المباشر والصحيح المعتمد على v1beta حسب توثيق جوجل الرسمي
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [
           {
             role: "user",
-            parts: [{ text: `${SYSTEM_PROMPT}\n\nUser Request: ${userContent}` }]
+            parts: [{ text: `${SYSTEM_PROMPT}\n${fileInfoText}\n\nUser Request: ${userContent}` }]
           }
         ],
         tools: formattedTools,
@@ -62,19 +68,38 @@ app.post('/api/chat', async (req, res) => {
     if (functionCallPart && functionCallPart.functionCall) {
       const { name: toolName, args: toolArgs } = functionCallPart.functionCall;
       if (toolsRegistry[toolName]) {
-        const toolResult = await toolsRegistry[toolName].handler(toolArgs);
+        if (!toolArgs.base64 && excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
+          toolArgs.base64 = excelJSON[0].fileBase64;
+        }
+
+        let toolResult = null;
+        const mockReq = { body: toolArgs };
+        const mockRes = {
+          status: (code) => ({
+            json: (resultData) => { toolResult = resultData; return resultData; }
+          }),
+          setHeader: () => {},
+          send: (data) => { toolResult = data; }
+        };
+
+        const handlerFn = toolsRegistry[toolName].handler;
+        const directResult = await handlerFn(mockReq, mockRes);
         
+        if (directResult && (directResult.fileBase64 || directResult.success)) {
+          toolResult = directResult;
+        }
+
         if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
           const isWord = toolName.includes('word');
-          return res.json({
+          return res.status(200).json({
             reply: "✅ أبشر، تم تنفيذ الطلب وتوليد المستند بنجاح:",
             fileBase64: Buffer.from(toolResult).toString('base64'),
             fileName: isWord ? 'document.docx' : 'spreadsheet.xlsx'
           });
         }
 
-        if (toolResult && toolResult.success && toolResult.fileBase64) {
-          return res.json({
+        if (toolResult && toolResult.fileBase64) {
+          return res.status(200).json({
             reply: toolResult.message || "✨ أبشر، تم تنفيذ العملية بنجاح:",
             fileBase64: toolResult.fileBase64,
             fileName: toolResult.fileName || 'alatheer_output.dat',
@@ -82,7 +107,7 @@ app.post('/api/chat', async (req, res) => {
           });
         }
 
-        return res.json({ reply: "✅ تم تنفيذ الأداة بنجاح." });
+        return res.status(200).json({ reply: "✅ تم تنفيذ الأداة بنجاح." });
       }
     }
 
@@ -102,3 +127,4 @@ app.post('/api/upload', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
 });
+
