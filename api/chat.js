@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       }))
     }];
 
-    // تم التعديل إلى الإصدار المستقر v1 لضمان توافق النموذج تماماً
+    // الاستدعاء عبر الإصدار المستقر v1 والنموذج القياسي
     const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
@@ -78,28 +78,56 @@ export default async function handler(req, res) {
             toolArgs.base64 = excelJSON[0].fileBase64;
           }
 
-          const toolResult = await toolsRegistry[toolName].handler({
-            body: toolArgs
-          }, {
-            status: (code) => ({ json: (data) => data })
-          });
+          // محاكاة كينونة الـ Request و Response لتنفيذ الـ Handler بأمان تام
+          let toolResult = null;
+          const mockReq = { body: toolArgs };
+          const mockRes = {
+            status: (code) => ({
+              json: (resultData) => {
+                toolResult = resultData;
+                return resultData;
+              }
+            }),
+            setHeader: () => {},
+            send: (data) => { toolResult = data; }
+          };
 
-          if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array || (toolResult && toolResult.success)) {
+          // استدعاء دالة الأداة الحقيقية
+          const handlerFn = toolsRegistry[toolName].handler;
+          const directResult = await handlerFn(mockReq, mockRes);
+          
+          if (directResult && (directResult.fileBase64 || directResult.success)) {
+            toolResult = directResult;
+          }
+
+          if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
+            const isWord = toolName.includes('word');
             return res.status(200).json({
-              reply: "✅ أبشر، تم تنفيذ الطلب ومعالجة الملف بنجاح:",
-              fileBase64: toolResult.fileBase64 || (Buffer.isBuffer(toolResult) ? Buffer.from(toolResult).toString('base64') : undefined),
-              fileName: excelJSON?.[0]?.fileName || 'processed_file.xlsx'
+              reply: "✅ أبشر، تم تنفيذ الطلب وتوليد المستند بنجاح:",
+              fileBase64: Buffer.from(toolResult).toString('base64'),
+              fileName: isWord ? 'document.docx' : 'spreadsheet.xlsx'
             });
           }
 
-          return res.status(200).json({ reply: "✅ تم تنفيذ العملية المطلوبة بنجاح." });
+          if (toolResult && toolResult.fileBase64) {
+            return res.status(200).json({
+              reply: toolResult.message || "✨ أبشر، تم تنفيذ العملية بنجاح:",
+              fileBase64: toolResult.fileBase64,
+              fileName: toolResult.fileName || 'alatheer_output.dat',
+              contentType: toolResult.contentType || 'application/octet-stream'
+            });
+          }
+
+          return res.status(200).json({ reply: "✅ تم تنفيذ الأداة بنجاح." });
 
         } catch (toolErr) {
           console.error("Tool execution error in chat:", toolErr);
+          return res.status(200).json({ reply: "⚠️ حدث خطأ أثناء تنفيذ الأداة البرمجية: " + toolErr.message });
         }
       }
     }
 
+    // الرد النصي العادي إذا لم يتم استدعاء أداة
     const replyText = parts.find(p => p.text)?.text || "تم الاستلام بنجاح.";
     return res.status(200).json({ reply: replyText });
 
@@ -108,3 +136,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية مع جوجل: " + error.message });
   }
 }
+
