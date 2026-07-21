@@ -28,7 +28,8 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b", // أو النموذج المناسب لديك
+        model: "llama-3.1-8b-instant",
+ // أو النموذج المناسب لديك
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userContent }
