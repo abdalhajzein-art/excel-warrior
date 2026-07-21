@@ -20,45 +20,42 @@ export default async function handler(req, res) {
     }
 
     let userContent = message || "مساعدة بخصوص الملف المرفق";
-    let fileContentPreview = "";
+    let fileDataBlock = "";
 
-    // معالجة الملف المرفق وقراءة محتواه الداخلي
-    if (excelJSON && excelJSON[0]) {
-      const fileObj = excelJSON[0];
-      const fileName = fileObj.fileName || 'ملف';
-      
-      if (fileObj.fileBase64) {
-        try {
-          const buffer = Buffer.from(fileObj.fileBase64, 'base64');
-          
-          if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
-            const workbook = XLSX.read(buffer, { type: 'buffer' });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            fileContentPreview = `\n[محتوى الملف المرفق (${fileName}) الداخلي:\n${JSON.stringify(jsonData.slice(0, 100), null, 2)}\n(ملاحظة: تم عرض أول 100 صف كعينة تحليلية)]`;
-          } else {
-            const textContent = buffer.toString('utf8');
-            fileContentPreview = `\n[محتوى الملف النصي المرفق (${fileName}):\n${textContent.substring(0, 5000)}\n]`;
-          }
-        } catch (parseErr) {
-          console.error("Error parsing attached file content:", parseErr);
-          fileContentPreview = `\n[معلومات الملف المرفق: اسم الملف: ${fileName}]`;
-        }
+    // قراءة البيانات الحقيقية من ملف الإكسل وحقنها بشكل مباشر ومفرض على النموذج
+    if (excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
+      try {
+        const fileObj = excelJSON[0];
+        const buffer = Buffer.from(fileObj.fileBase64, 'base64');
+        const workbook = XLSX.read(buffer, { type: 'buffer' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // تحويل محتوى ورقة العمل إلى مصفوفة بيانات نصية دقيقة
+        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        fileDataBlock = `
+=== بيانات الملف المرفق الفعلية (${fileObj.fileName || 'ملف'}) ===
+${JSON.stringify(rawData, null, 2)}
+=================================================
+تعليمات صارمة: البيانات أعلاه هي محتوى الملف الذي أرسله المستخدم. ممنوع منعاً باتاً أن تسأل المستخدم عن محتوى الملف أو أسماء الأعمدة؛ لأن محتوى الملف بين يديك بالكامل الآن. قم بتحليله، قراءته، والإجابة على طلب المستخدم بناءً عليه فوراً وبدقة متناهية!
+`;
+      } catch (parseErr) {
+        console.error("Error parsing Excel data in chat:", parseErr);
+        fileDataBlock = `[ملاحظة: تم إرفاق ملف باسم ${excelJSON[0].fileName} ولكن حدث خطأ في استخراج محتواه: ${parseErr.message}]`;
       }
     }
 
-    const fullPrompt = `${SYSTEM_PROMPT}\n${fileContentPreview}\n\nUser Request: ${userContent}`;
+    const fullPrompt = `${SYSTEM_PROMPT}\n\n${fileDataBlock}\n\nUser Request: ${userContent}`;
 
     let response = null;
     
-    // محاولة السريع أولاً، وإذا حصل ضغط (503)، ننتقل فوراً للبديل المضمون دون هدر وقت
     try {
       response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash', // موديل فلاش فائق السرعة
+        model: 'gemini-1.5-flash',
         contents: fullPrompt,
         config: {
-          temperature: 0.5,
+          temperature: 0.4, // حرارة منخفضة ليكون التحليل دقيقاً وصارماً
           tools: [{
             functionDeclarations: toolsDefinition.map(t => ({
               name: t.function.name,
@@ -69,13 +66,12 @@ export default async function handler(req, res) {
         }
       });
     } catch (primaryErr) {
-      console.warn("Primary model busy, switching instantly to backup...", primaryErr.message);
-      // البديل الاحتياطي المباشر في حال الضغط
+      console.warn("Primary model busy, switching to backup...", primaryErr.message);
       response = await ai.models.generateContent({
         model: 'gemini-1.5-pro',
         contents: fullPrompt,
         config: {
-          temperature: 0.5,
+          temperature: 0.4,
           tools: [{
             functionDeclarations: toolsDefinition.map(t => ({
               name: t.function.name,
@@ -154,3 +150,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية الرسمية: " + (error.message || error) });
   }
 }
+
