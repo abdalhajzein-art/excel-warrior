@@ -1,6 +1,9 @@
-// api/chat.js - النسخة النهائية المستقرة عبر مسار v1 و gemini-1.5-flash
+// api/chat.js - النسخة السيادية الرسمية باستخدام حزمة Google GenAI الحديثة
+import { GoogleGenAI } from '@google/genai';
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
+
+const ai = new GoogleGenAI({});
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -12,8 +15,7 @@ export default async function handler(req, res) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const { message, excelJSON } = body || {};
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
+    if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GEMINI_API_KEY غير مضاف في متغيرات البيئة." });
     }
 
@@ -24,57 +26,26 @@ export default async function handler(req, res) {
       fileInfoText = `\n[معلومات الملف المرفق: اسم الملف: ${excelJSON[0].fileName || 'ملف'}، الحجم: ${excelJSON[0].size || 0} بايت]`;
     }
 
-    const formattedTools = [{
-      functionDeclarations: toolsDefinition.map(t => ({
-        name: t.function.name,
-        description: t.function.description,
-        parameters: t.function.parameters
-      }))
-    }];
-
-    // الاستقرار على مسار v1 ونموذج gemini-1.5-flash المدعوم رسمياً
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { 
-                text: `${SYSTEM_PROMPT}\n${fileInfoText}\n\nUser Request: ${userContent}` 
-              }
-            ]
-          }
-        ],
-        tools: formattedTools,
-        generationConfig: {
-          temperature: 0.5
-        }
-      })
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `${SYSTEM_PROMPT}\n${fileInfoText}\n\nUser Request: ${userContent}`,
+      config: {
+        temperature: 0.5,
+        tools: [{
+          functionDeclarations: toolsDefinition.map(t => ({
+            name: t.function.name,
+            description: t.function.description,
+            parameters: t.function.parameters
+          }))
+        }]
+      }
     });
 
-    const rawText = await response.text();
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch (e) {
-      throw new Error(`رد غير متوقع من خوادم جوجل (الحالة ${response.status}): ${rawText}`);
-    }
-    
-    if (data.error) {
-      throw new Error(data.error.message || "خطأ غير معروف من خوادم جوجل");
-    }
+    const candidate = response.candidates?.[0];
+    const functionCalls = candidate?.content?.parts?.filter(p => p.functionCall) || [];
 
-    const candidate = data.candidates?.[0];
-    const parts = candidate?.content?.parts || [];
-
-    const functionCallPart = parts.find(p => p.functionCall);
-
-    if (functionCallPart && functionCallPart.functionCall) {
-      const { name: toolName, args: toolArgs } = functionCallPart.functionCall;
+    if (functionCalls.length > 0) {
+      const { name: toolName, args: toolArgs } = functionCalls[0].functionCall;
 
       if (toolsRegistry[toolName]) {
         try {
@@ -129,11 +100,11 @@ export default async function handler(req, res) {
       }
     }
 
-    const replyText = parts.find(p => p.text)?.text || "تم الاستلام بنجاح.";
+    const replyText = response.text || "تم الاستلام بنجاح.";
     return res.status(200).json({ reply: replyText });
 
-  } async (error) {
-    console.error("Error in Gemini Chat API:", error);
-    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية مع جوجل: " + error.message });
+  } catch (error) {
+    console.error("Error in Official Gemini SDK Chat API:", error);
+    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية الرسمية مع جوجل: " + error.message });
   }
 }
