@@ -34,39 +34,25 @@ function findClosestHeader(userWord, headers) {
   return bestMatch;
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", ["POST"]);
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+// الدالة البرمجية المسؤولة عن تنفيذ التعديل مباشرة عبر السيرفر
+export async function modifyExcelHandler(payload) {
+  const { base64, editMap } = payload || {};
+  if (!base64) throw new Error("لا يوجد ملف Excel مرفق.");
 
-  try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const { base64, editMap } = body || {};
+  const buffer = Buffer.from(base64, "base64");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
 
-    if (!base64) {
-      return res.status(400).json({ error: "لا يوجد ملف Excel مرفوع." });
-    }
+  const sheet = workbook.worksheets[0];
+  const headers = sheet.getRow(1).values.slice(1);
 
-    const buffer = Buffer.from(base64, "base64");
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+  if (editMap && editMap.operation === "add_column") {
+    const newColumnName = editMap.new_column?.name || editMap.new_column;
+    const userReference = editMap.position?.after;
 
-    const sheet = workbook.worksheets[0];
-    const headers = sheet.getRow(1).values.slice(1);
+    const matchedHeader = findClosestHeader(userReference, headers);
 
-    if (editMap && editMap.operation === "add_column") {
-      const newColumnName = editMap.new_column?.name || editMap.new_column;
-      const userReference = editMap.position?.after;
-
-      const matchedHeader = findClosestHeader(userReference, headers);
-
-      if (!matchedHeader) {
-        return res.status(400).json({
-          error: `لم يتم العثور على عمود مطابق لـ "${userReference}".`
-        });
-      }
-
+    if (matchedHeader) {
       const insertIndex = headers.indexOf(matchedHeader) + 2;
       sheet.spliceColumns(insertIndex, 0, [newColumnName]);
 
@@ -86,20 +72,30 @@ export default async function handler(req, res) {
         });
       }
     }
+  }
 
-    const outputBuffer = await workbook.xlsx.writeBuffer();
+  const outputBuffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(outputBuffer);
+}
+
+// مسار الـ API للطلبات المباشرة
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", ["POST"]);
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const resultBuffer = await modifyExcelHandler(body);
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", "attachment; filename=modified.xlsx");
 
-    return res.status(200).send(Buffer.from(outputBuffer));
+    return res.status(200).send(resultBuffer);
 
-  } catch (error) {
+  }Json catch (error) {
     console.error("خطأ أثناء تعديل الملف:", error);
     return res.status(500).json({ error: "خطأ أثناء تعديل الملف: " + error.message });
   }
-}
-
-export async function modifyExcelHandler(payload) {
-  return { status: "success", message: "تم تعديل الإكسل بنجاح" };
 }
