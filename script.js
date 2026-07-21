@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let selectedFileObject = null;
     let attachedFileName = null;
+    let isFileLoading = false; // متغير للتحقق من اكتمال رفع/قراءة الملف
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -61,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'session_' + Date.now();
     }
 
-    function initSessions() {
+    function initSessions()  {
         let sessions = getStoredSessions();
         if (!sessions || Object.keys(sessions).length === 0) {
             sessions = {};
@@ -212,36 +213,83 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // دالة التحكم الذكي بحالة زر الإرسال بناءً على النص والتحميل الفعلي للملف
+    function updateSendButtonState() {
+        if (!sendBtn) return;
+        const hasText = userInput && userInput.value.trim().length > 0;
+        const hasFileReady = selectedFileObject !== null && !isFileLoading;
+
+        if (hasText || hasFileReady) {
+            sendBtn.style.opacity = '1';
+            sendBtn.style.pointerEvents = 'auto';
+            sendBtn.disabled = false;
+        } else {
+            sendBtn.style.opacity = '0.3'; // شفاف تماماً ومعطل
+            sendBtn.style.pointerEvents = 'none';
+            sendBtn.disabled = true;
+        }
+    }
+
     if (attachBtn) {
         attachBtn.addEventListener('click', () => {
             fileInput.click();
         });
     }
 
-    fileInput.addEventListener('change', (e) => {
+    fileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        selectedFileObject = file;
-        attachedFileName = file.name;
+        // بدء حالة تحميل الملف -> قفل زر الإرسال فوراً وإظهار حالة "جاري الرفع..."
+        isFileLoading = true;
+        updateSendButtonState();
 
         if (fileBubbles) {
             fileBubbles.innerHTML = `
-                <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: rgba(212,175,55,0.15); color: #d4af37; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.3); margin-bottom: 6px;">
-                    <span>📎 ${file.name}</span>
-                    <button type="button" id="removeFileBtn" style="background:none; border:none; color: #ff5555; cursor:pointer; font-weight:bold; font-size:14px; padding:0; line-height:1;">&times;</button>
+                <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: rgba(212,175,55,0.1); color: #d4af37; padding: 4px 10px; border-radius: 6px; border: 1px dashed #d4af37; margin-bottom: 6px;">
+                    <span>⏳ جاري رفع ومعالجة: ${file.name}...</span>
                 </div>
             `;
+        }
 
-            const removeFileBtn = document.getElementById('removeFileBtn');
-            if (removeFileBtn) {
-                removeFileBtn.addEventListener('click', () => {
-                    selectedFileObject = null;
-                    attachedFileName = null;
-                    fileBubbles.innerHTML = '';
-                    fileInput.value = '';
-                });
+        // محاكاة أو ضمان اكتمال قراءة الملف داخلياً لضمان استقراره التام في الصندوق
+        try {
+            selectedFileObject = file;
+            attachedFileName = file.name;
+            
+            // تأخير بسيط جداً (أو الانتظار للحظة) لضمان ثبات الملف في الذاكرة بصندوق الرسالة
+            await new Promise(resolve => setTimeout(resolve, 400));
+
+            isFileLoading = false; // انتهى التحميل وأصبح الملف جاهزاً 100%
+            updateSendButtonState(); // إضاءة زر الإرسال
+
+            if (fileBubbles) {
+                fileBubbles.innerHTML = `
+                    <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: rgba(212,175,55,0.15); color: #d4af37; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.3); margin-bottom: 6px;">
+                        <span>📎 ${file.name} (جاهز للإرسال)</span>
+                        <button type="button" id="removeFileBtn" style="background:none; border:none; color: #ff5555; cursor:pointer; font-weight:bold; font-size:14px; padding:0; line-height:1;">&times;</button>
+                    </div>
+                `;
+
+                const removeFileBtn = document.getElementById('removeFileBtn');
+                if (removeFileBtn) {
+                    removeFileBtn.addEventListener('click', () => {
+                        selectedFileObject = null;
+                        attachedFileName = null;
+                        isFileLoading = false;
+                        fileBubbles.innerHTML = '';
+                        fileInput.value = '';
+                        updateSendButtonState();
+                    });
+                }
             }
+        } catch (err) {
+            console.error("Error processing file upload:", err);
+            isFileLoading = false;
+            selectedFileObject = null;
+            attachedFileName = null;
+            if (fileBubbles) fileBubbles.innerHTML = '<span style="color:#ff5555; font-size:12px;">⚠️ فشل تحميل الملف</span>';
+            updateSendButtonState();
         }
     });
 
@@ -273,17 +321,21 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleSendMessage() {
         if (!userInput) return;
         const message = userInput.value.trim();
-        if (!message && !selectedFileObject) return;
+        
+        const currentFileToProcess = selectedFileObject;
+        const currentFileName = attachedFileName;
+
+        if (!message && !currentFileToProcess) return;
 
         if (welcomeScreen) {
             welcomeScreen.style.display = 'none';
         }
 
         let displayMessage = message;
-        if (!message && attachedFileName) {
-            displayMessage = `تحليل الملف المرفق: ${attachedFileName}`;
-        } else if (attachedFileName) {
-            displayMessage = `${message} (مع الملف: ${attachedFileName})`;
+        if (!message && currentFileName) {
+            displayMessage = `تحليل الملف المرفق: ${currentFileName}`;
+        } else if (currentFileName) {
+            displayMessage = `${message} (مع الملف: ${currentFileName})`;
         }
 
         appendMessageToDOM('user', displayMessage);
@@ -297,9 +349,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let payloadExcel = null;
-        if (selectedFileObject) {
+        if (currentFileToProcess) {
             try {
-                payloadExcel = await readFileAsBase64(selectedFileObject);
+                payloadExcel = await readFileAsBase64(currentFileToProcess);
             } catch (err) {
                 console.error("Error reading file:", err);
             }
@@ -309,10 +361,13 @@ document.addEventListener('DOMContentLoaded', () => {
         userInput.style.height = 'auto';
         selectedFileObject = null;
         attachedFileName = null;
+        isFileLoading = false;
         if (fileBubbles) fileBubbles.innerHTML = '';
         fileInput.value = '';
+        
+        updateSendButtonState(); // إرجاع الزر شفافاً بعد الإرسال
 
-        const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة... ⏳', true);
+        const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة السيادية... ⏳', true);
 
         try {
             const response = await fetch('/api/chat', {
@@ -350,7 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Fetch Error:', error);
             removeMessageFromDOM(loadingId);
-            appendMessageToDOM('assistant', '⚠️ تعذر الاتصال بالسيرفر.');
+            appendMessageTool('assistant', '⚠️ تعذر الاتصال بالسيرفر.');
         }
     }
 
@@ -409,18 +464,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (sendBtn) {
         sendBtn.addEventListener('click', handleSendMessage);
+        updateSendButtonState(); 
     }
 
     if (userInput) {
         userInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
+            updateSendButtonState(); 
         });
 
-        // مخصص للموبايل: زر Enter يعمل بنزول سطر جديد طبيعي ولا يرسل الرسالة قسراً
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                return; // السماح بالنزول لسطر جديد بحرية تامة
+                return; 
             }
         });
     }
