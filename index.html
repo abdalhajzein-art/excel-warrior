@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>منصة الأثـــير</title>
-  <link rel="stylesheet" href="style.css?v=3001">
+  <link rel="stylesheet" href="style.css?v=3002">
 </head>
 
 <body>
@@ -62,11 +62,14 @@
         <div id="fileBubbles" class="file-bubbles"></div>
 
         <div class="input-box">
-          <button id="attachBtn" class="attach-icon">📎</button>
+          <!-- زر الإرسال أولاً ليظهر في أقصى اليمين -->
+          <button id="sendBtn" class="send-icon">➤</button>
 
+          <!-- حقل الكتابة في المنتصف -->
           <textarea id="userInput" placeholder="اكتب رسالتك هنا..." rows="1"></textarea>
 
-          <button id="sendBtn" class="send-icon">➤</button>
+          <!-- أيقونة الإرفاق (الكليبسة) أخيراً لتظهر في أقصى اليسار -->
+          <button id="attachBtn" class="attach-icon">📎</button>
         </div>
 
       </div>
@@ -75,7 +78,7 @@
 
   </div>
 
-   <script src="script.js?v=3001"></script>
+   <script src="script.js?v=3002"></script>
 
 </body>
 </html>
