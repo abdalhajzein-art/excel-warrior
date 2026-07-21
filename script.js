@@ -112,7 +112,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             
             item.className = `session-item ${sessionId === currentSessionId ? 'active' : ''}`;
-            // تصميم داخلي يضمن ظهور عنوان الجلسة وأزرار الحذف والتثبيت بوضوح
             item.style.cssText = 'padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; background: #1a1a1a; border: 1px solid #2a2a2a; display: flex; flex-direction: column; gap: 6px; transition: all 0.2s;';
             
             item.innerHTML = `
@@ -228,30 +227,39 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // معالجة اختيار الملف وتحويله بالكامل لـ Base64 أو JSON ليتم ارساله للسيرفر
     fileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        // إظهار فقاعة الملف المرفق في الواجهة إذا وجدت الحاوية
+        // إظهار فقاعة الملف المرفق في الواجهة
         if (fileBubbles) {
             fileBubbles.innerHTML = `<span style="font-size: 11px; background: rgba(212,175,55,0.1); color: #d4af37; padding: 3px 8px; border-radius: 4px; display: inline-block; margin-bottom: 5px;">📎 ${file.name}</span>`;
         }
 
         appendMessageToDOM('user', `📎 تم إرفاق الملف: ${file.name}`);
         
-        if (file.name.endsWith('.json') || file.name.endsWith('.txt')) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const base64String = event.target.result.split(',')[1];
+            
+            if (file.name.endsWith('.json') || file.name.endsWith('.txt')) {
                 try {
-                    attachedFileJSON = JSON.parse(event.target.result);
+                    attachedFileJSON = JSON.parse(atob(base64String));
                 } catch (err) {
-                    attachedFileJSON = [{ content: event.target.result }];
+                    attachedFileJSON = [{ content: atob(base64String) }];
                 }
-            };
-            reader.readAsText(file);
-        } else {
-            attachedFileJSON = [{ fileName: file.name, size: file.size, type: file.type }];
-        }
+            } else {
+                // إرسال كائن يحتوي على اسم الملف ومحتواه المشفر بصيغة Base64
+                attachedFileJSON = [{
+                    fileName: file.name,
+                    fileBase64: base64String,
+                    size: file.size,
+                    type: file.type
+                }];
+            }
+        };
+        reader.readAsDataURL(file);
     });
 
     async function handleSendMessage() {
