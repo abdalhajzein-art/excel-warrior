@@ -1,4 +1,4 @@
-// api/chat.js
+// api/chat.js - النسخة النهائية المحدثة لاستخدام gemini-1.5-pro المجاني
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 
@@ -24,7 +24,6 @@ export default async function handler(req, res) {
       fileInfoText = `\n[معلومات الملف المرفق: اسم الملف: ${excelJSON[0].fileName || 'ملف'}، الحجم: ${excelJSON[0].size || 0} بايت]`;
     }
 
-    // إعداد هيكل الأدوات المتوافقة مع Gemini API
     const formattedTools = [{
       functionDeclarations: toolsDefinition.map(t => ({
         name: t.function.name,
@@ -33,8 +32,8 @@ export default async function handler(req, res) {
       }))
     }];
 
-    // التحديث للنموذج القياسي الحديث والأكثر توافقاً gemini-2.0-flash عبر مسار v1beta
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    // الاستقرار على gemini-1.5-pro عبر مسار v1beta
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -66,7 +65,6 @@ export default async function handler(req, res) {
     const candidate = data.candidates?.[0];
     const parts = candidate?.content?.parts || [];
 
-    // التحقق إذا كان النموذج طلب استدعاء أداة (Function Call)
     const functionCallPart = parts.find(p => p.functionCall);
 
     if (functionCallPart && functionCallPart.functionCall) {
