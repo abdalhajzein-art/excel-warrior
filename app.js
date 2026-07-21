@@ -1,4 +1,4 @@
-// app.js - النسخة المستقرة النهائية مع gemini-1.5-flash
+// app.js - النسخة النهائية المستقرة عبر مسار v1 و gemini-1.5-flash
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -40,8 +40,8 @@ app.post('/api/chat', async (req, res) => {
       }))
     }];
 
-    // الاستقرار على gemini-1.5-flash المدعوم رسمياً
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    // الاستقرار على مسار v1 ونموذج gemini-1.5-flash المدعوم رسمياً
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -134,3 +134,4 @@ app.post('/api/upload', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
 });
+
