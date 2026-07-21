@@ -7,28 +7,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const newSessionBtn = document.getElementById('newSessionBtn');
     const sessionsList = document.getElementById('sessionsList');
     
-    // عناصر إرفاق الملفات
     const attachBtn = document.getElementById('attachBtn');
     const fileBubbles = document.getElementById('fileBubbles');
-    let attachedFileJSON = null;
-    let attachedFileName = null; // لتخزين اسم الملف المرفق لعرضه بالفقاعة
+    
+    let selectedFileObject = null;
+    let attachedFileName = null;
 
-    // عنصر مخفي لاختيار الملفات من الجهاز
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = '.xlsx, .xls, .csv, .json, .txt, .docx';
     fileInput.style.display = 'none';
     document.body.appendChild(fileInput);
     
-    // عناصر السايدبار والطبقة الشفافة
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('sidebar');
     const sidebarOverlay = document.getElementById('sidebarOverlay');
 
-    // إدارة الجلسات
     let currentSessionId = localStorage.getItem('alatheer_current_session') || generateSessionId();
 
-    // 1. تفعيل السايدبار والـ Overlay
     if (sidebarToggle && sidebar) {
         const toggleSidebar = (open) => {
             if (open) {
@@ -91,7 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('alatheer_sessions', JSON.stringify(sessions));
     }
 
-    // عرض الجلسات في السايدبار
     function renderSessionsList() {
         if (!sessionsList) return;
         sessionsList.innerHTML = '';
@@ -134,10 +129,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            // حدث النقر لاختيار الجلسة
             item.addEventListener('click', (e) => {
                 if (e.target.closest('.session-actions')) return;
-
                 switchSession(sessionId);
                 if (window.innerWidth <= 768 && sidebar) {
                     sidebar.style.transform = 'translateX(-100%)';
@@ -149,7 +142,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // تفعيل زر التثبيت
             const pinBtn = item.querySelector('.pin-btn');
             if (pinBtn) {
                 pinBtn.addEventListener('click', (e) => {
@@ -158,7 +150,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            // تفعيل زر الحذف
             const deleteBtn = item.querySelector('.delete-btn');
             if (deleteBtn) {
                 deleteBtn.addEventListener('click', (e) => {
@@ -221,21 +212,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // تفعيل زر الإرفاق (📎) بربطه بـ fileInput المبرمج
     if (attachBtn) {
         attachBtn.addEventListener('click', () => {
             fileInput.click();
         });
     }
 
-    // معالجة اختيار الملف وعرض فقاعة ملف نظيفة ضمن خانة الإدخال حصراً دون تكرار بالشات
-    fileInput.addEventListener('change', async (e) => {
+    fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
+        selectedFileObject = file;
         attachedFileName = file.name;
 
-        // إظهار فقاعة الملف المرفق داخل صندوق الكتابة حصراً
         if (fileBubbles) {
             fileBubbles.innerHTML = `
                 <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: rgba(212,175,55,0.15); color: #d4af37; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.3); margin-bottom: 6px;">
@@ -244,44 +233,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
-            // زر حذف الملف المرفق قبل الإرسال
             const removeFileBtn = document.getElementById('removeFileBtn');
             if (removeFileBtn) {
                 removeFileBtn.addEventListener('click', () => {
-                    attachedFileJSON = null;
+                    selectedFileObject = null;
                     attachedFileName = null;
                     fileBubbles.innerHTML = '';
                     fileInput.value = '';
                 });
             }
         }
-        
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const base64String = event.target.result.split(',')[1];
-            
-            if (file.name.endsWith('.json') || file.name.endsWith('.txt')) {
-                try {
-                    attachedFileJSON = JSON.parse(atob(base64String));
-                } catch (err) {
-                    attachedFileJSON = [{ content: atob(base64String) }];
-                }
-            } else {
-                attachedFileJSON = [{
-                    fileName: file.name,
-                    fileBase64: base64String,
-                    size: file.size,
-                    type: file.type
-                }];
-            }
-        };
-        reader.readAsDataURL(file);
     });
+
+    function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const base64String = event.target.result.split(',')[1];
+                if (file.name.endsWith('.json') || file.name.endsWith('.txt')) {
+                    try {
+                        resolve(JSON.parse(atob(base64String)));
+                    } catch (err) {
+                        resolve([{ content: atob(base64String) }]);
+                    }
+                } else {
+                    resolve([{
+                        fileName: file.name,
+                        fileBase64: base64String,
+                        size: file.size,
+                        type: file.type
+                    }]);
+                }
+            };
+            reader.onerror = (error) => reject(error);
+            reader.readAsDataURL(file);
+        });
+    }
 
     async function handleSendMessage() {
         if (!userInput) return;
         const message = userInput.value.trim();
-        if (!message && !attachedFileJSON) return;
+        if (!message && !selectedFileObject) return;
 
         if (welcomeScreen) {
             welcomeScreen.style.display = 'none';
@@ -304,12 +296,18 @@ document.addEventListener('DOMContentLoaded', () => {
             renderSessionsList();
         }
 
-        const payloadExcel = attachedFileJSON;
+        let payloadExcel = null;
+        if (selectedFileObject) {
+            try {
+                payloadExcel = await readFileAsBase64(selectedFileObject);
+            } catch (err) {
+                console.error("Error reading file:", err);
+            }
+        }
         
-        // إعادة تعيين الحقل وصندوق الإدخال وحجمه الافتراضي
         userInput.value = '';
         userInput.style.height = 'auto';
-        attachedFileJSON = null;
+        selectedFileObject = null;
         attachedFileName = null;
         if (fileBubbles) fileBubbles.innerHTML = '';
         fileInput.value = '';
@@ -413,26 +411,16 @@ document.addEventListener('DOMContentLoaded', () => {
         sendBtn.addEventListener('click', handleSendMessage);
     }
 
-    // إدارة التمدد التلقائي لصندوق الكتابة (Auto-resize) ومعالجة زر Enter
     if (userInput) {
         userInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
         });
 
+        // مخصص للموبايل: زر Enter يعمل بنزول سطر جديد طبيعي ولا يرسل الرسالة قسراً
         userInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.shiftKey) {
-                return; // السماح بالانتقال لسطر جديد عند استخدام Shift + Enter
-            }
             if (e.key === 'Enter') {
-                e.preventDefault();
-                // إدراج سطر جديد عند الضغط على Enter العادي لتجربة كتابة مريحة
-                const start = userInput.selectionStart;
-                const end = userInput.selectionEnd;
-                userInput.value = userInput.value.substring(0, start) + "\n" + userInput.value.substring(end);
-                userInput.selectionStart = userInput.selectionEnd = start + 1;
-                userInput.style.height = 'auto';
-                userInput.style.height = (userInput.scrollHeight) + 'px';
+                return; // السماح بالنزول لسطر جديد بحرية تامة
             }
         });
     }
