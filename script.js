@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // إدارة الجلسات
     let currentSessionId = localStorage.getItem('alatheer_current_session') || generateSessionId();
 
-    // 1. تفعيل السايدبار والطبقة الشفافة (Overlay) بإتقان تام
+    // 1. تفعيل السايدبار والطبقة الشفافة (Overlay)
     if (sidebarToggle && sidebar) {
         const toggleSidebar = (open) => {
             if (open) {
@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let sessions = getStoredSessions();
         if (!sessions || Object.keys(sessions).length === 0) {
             sessions = {};
-            sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [] };
+            sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [], pinned: false };
             saveSessions(sessions);
         } else if (!sessions[currentSessionId]) {
             currentSessionId = Object.keys(sessions)[0];
@@ -81,44 +81,53 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('alatheer_sessions', JSON.stringify(sessions));
     }
 
-    // عرض الجلسات في السايدبار مع ضمان ظهورها وتنسيقها
+    // عرض الجلسات في السايدبار مع تفعيل الحذف، التثبيت، والتحكم الكامل
     function renderSessionsList() {
         if (!sessionsList) return;
         sessionsList.innerHTML = '';
         
         let sessions = getStoredSessions();
-        const sessionIds = Object.keys(sessions);
+        
+        // ترتيب الجلسات: المثبتة أولاً، ثم الحديثة
+        const sortedSessionIds = Object.keys(sessions).sort((a, b) => {
+            const sessionA = sessions[a];
+            const sessionB = sessions[b];
+            if (sessionA.pinned && !sessionB.pinned) return -1;
+            if (!sessionA.pinned && sessionB.pinned) return 1;
+            return b.localeCompare(a); // الأحدث أولاً
+        });
 
-        if (sessionIds.length === 0) return;
+        if (sortedSessionIds.length === 0) return;
 
-        sessionIds.reverse().forEach(sessionId => {
+        sortedSessionIds.forEach(sessionId => {
             const session = sessions[sessionId];
             const item = document.createElement('div');
             
-            item.className = 'session-item';
-            item.style.padding = '10px 14px';
-            item.style.margin = '6px 0';
-            item.style.borderRadius = '8px';
-            item.style.cursor = 'pointer';
-            item.style.transition = 'all 0.2s ease';
-            item.style.fontSize = '14px';
-            item.style.whiteSpace = 'nowrap';
-            item.style.overflow = 'hidden';
-            item.style.textOverflow = 'ellipsis';
+            item.className = `session-item ${sessionId === currentSessionId ? 'active' : ''}`;
             
-            if (sessionId === currentSessionId) {
-                item.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
-                item.style.color = '#fff';
-                item.style.fontWeight = 'bold';
-                item.style.borderRight = '4px solid #007bff';
-            } else {
-                item.style.color = '#ccc';
-                item.style.backgroundColor = 'transparent';
-            }
+            // تصميم العنصر مع دعم الأيقونات وأزرار الإجراءات
+            item.innerHTML = `
+                <div class="session-title-row">
+                    <span class="session-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;">
+                        ${session.pinned ? '📌 ' : ''}${session.title || 'جلسة جديدة'}
+                    </span>
+                    <div class="session-badges">
+                        ${session.pinned ? '<span class="session-badge">مثبت</span>' : ''}
+                    </div>
+                </div>
+                <div class="session-actions">
+                    <button class="session-action-btn pin-btn" title="${session.pinned ? 'إلغاء التثبيت' : 'تثبيت الجلسة'}">
+                        ${session.pinned ? '📍' : '📌'}
+                    </button>
+                    <button class="session-action-btn delete-btn" title="حذف الجلسة">🗑️</button>
+                </div>
+            `;
 
-            item.innerText = session.title || 'جلسة جديدة';
+            // حدث النقر لاختيار الجلسة
+            item.addEventListener('click', (e) => {
+                // منع التفعيل إذا ضغط المستخدم على أزرار الإجراءات الداخلية
+                if (e.target.closest('.session-actions')) return;
 
-            item.addEventListener('click', () => {
                 switchSession(sessionId);
                 if (window.innerWidth <= 768 && sidebar) {
                     sidebar.style.transform = 'translateX(-100%)';
@@ -130,8 +139,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
+            // تفعيل زر التثبيت (Pin)
+            const pinBtn = item.querySelector('.pin-btn');
+            pinBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                togglePinSession(sessionId);
+            });
+
+            // تفعيل زر الحذف (Delete)
+            const deleteBtn = item.querySelector('.delete-btn');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteSession(sessionId);
+            });
+
             sessionsList.appendChild(item);
         });
+    }
+
+    function togglePinSession(sessionId) {
+        let sessions = getStoredSessions();
+        if (sessions[sessionId]) {
+            sessions[sessionId].pinned = !sessions[sessionId].pinned;
+            saveSessions(sessions);
+            renderSessionsList();
+        }
+    }
+
+    function deleteSession(sessionId) {
+        let sessions = getStoredSessions();
+        delete sessions[sessionId];
+        
+        let remainingIds = Object.keys(sessions);
+        if (remainingIds.length === 0) {
+            // إذا تم حذف كل الجلسات، أنشئ جلسة جديدة تلقائياً
+            currentSessionId = generateSessionId();
+            sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [], pinned: false };
+        } else if (sessionId === currentSessionId) {
+            // إذا حذف المستخدم الجلسة الحالية، انتقل لأول جلسة متبقية
+            currentSessionId = remainingIds[remainingIds.length - 1];
+            localStorage.setItem('alatheer_current_session', currentSessionId);
+        }
+
+        saveSessions(sessions);
+        renderSessionsList();
+        loadSession(currentSessionId);
     }
 
     function switchSession(sessionId) {
@@ -167,10 +219,10 @@ document.addEventListener('DOMContentLoaded', () => {
         appendMessageToDOM('user', message);
         saveMessageToCurrentSession('user', message);
 
-        // تحديث العنوان التلقائي لأول رسالة
+        // تحديث العنوان التلقائي لأول رسالة في الجلسة
         let sessions = getStoredSessions();
         if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
-            sessions[currentSessionId].title = message.length > 22 ? message.substring(0, 22) + '...' : message;
+            sessions[currentSessionId].title = message.length > 20 ? message.substring(0, 20) + '...' : message;
             saveSessions(sessions);
             renderSessionsList();
         }
@@ -194,21 +246,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 appendMessageToDOM('assistant', data.reply);
                 
                 let savedFileData = null;
-                // إذا أرسل السيرفر ملفاً قابلاً للتحميل (Excel أو Word)
                 if (data.fileBase64) {
                     const downloadBtn = document.createElement('a');
                     downloadBtn.href = `data:application/octet-stream;base64,${data.fileBase64}`;
                     downloadBtn.download = data.fileName || 'file.xlsx';
                     downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
-                    downloadBtn.style.display = 'inline-block';
-                    downloadBtn.style.margin = '10px 0';
-                    downloadBtn.style.padding = '10px 15px';
-                    downloadBtn.style.backgroundColor = '#28a745';
-                    downloadBtn.style.color = '#fff';
-                    downloadBtn.style.borderRadius = '5px';
-                    downloadBtn.style.textDecoration = 'none';
-                    downloadBtn.style.fontWeight = 'bold';
-                    
                     chatArea.appendChild(downloadBtn);
                     chatArea.scrollTop = chatArea.scrollHeight;
                     
@@ -232,7 +274,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function saveMessageToCurrentSession(sender, text, fileData = null) {
         let sessions = getStoredSessions();
         if (!sessions[currentSessionId]) {
-            sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [] };
+            sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [], pinned: false };
         }
         sessions[currentSessionId].messages.push({ sender, text, fileData });
         saveSessions(sessions);
@@ -243,40 +285,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const messageId = isLoading ? 'loading_' + Date.now() : 'msg_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
         messageDiv.id = messageId;
         
-        messageDiv.style.margin = '10px 0';
-        messageDiv.style.padding = '12px 16px';
-        messageDiv.style.borderRadius = '8px';
-        messageDiv.style.maxWidth = '80%';
-        messageDiv.style.wordBreak = 'break-word';
-        messageDiv.style.whiteSpace = 'pre-wrap';
-        
-        if (sender === 'user') {
-            messageDiv.style.backgroundColor = '#007bff';
-            messageDiv.style.color = '#fff';
-            messageDiv.style.marginLeft = 'auto';
-        } else {
-            messageDiv.style.backgroundColor = '#f1f1f1';
-            messageDiv.style.color = '#333';
-            messageDiv.style.marginRight = 'auto';
-        }
-
+        messageDiv.className = `message ${sender === 'user' ? 'user' : 'ai'}`;
         messageDiv.innerText = text;
         chatArea.appendChild(messageDiv);
 
-        // إذا كان هناك ملف محفوظ في الجلسة وتم تحميلها مسبقاً
         if (fileData) {
             const downloadBtn = document.createElement('a');
             downloadBtn.href = `data:application/octet-stream;base64,${fileData.base64}`;
             downloadBtn.download = fileData.name;
             downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
-            downloadBtn.style.display = 'inline-block';
-            downloadBtn.style.margin = '10px 0';
-            downloadBtn.style.padding = '10px 15px';
-            downloadBtn.style.backgroundColor = '#28a745';
-            downloadBtn.style.color = '#fff';
-            downloadBtn.style.borderRadius = '5px';
-            downloadBtn.style.textDecoration = 'none';
-            downloadBtn.style.fontWeight = 'bold';
             chatArea.appendChild(downloadBtn);
         }
 
@@ -295,7 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('alatheer_current_session', currentSessionId);
         
         let sessions = getStoredSessions();
-        sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [] };
+        sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [], pinned: false };
         saveSessions(sessions);
 
         renderSessionsList();
@@ -318,5 +335,5 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    console.log('💎 منصة الأثير تعمل بأعلى أداء واحترافية!');
+    console.log('💎 منصة الأثير تعمل بكامل ميزات الجلسات، الحذف، والتثبيت بنجاح!');
 });
