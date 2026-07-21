@@ -19,18 +19,24 @@ export const handler = async (event, context) => {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: "openai/gpt-oss-120b", // تم التحديث إلى الموديل الأقوى
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: message }
         ],
-        tools: toolsDefinition, // هنا "سحر" ربط الأدوات
-        tool_choice: "auto",     // يترك للنموذج حرية اختيار الأداة
+        tools: toolsDefinition,
+        tool_choice: "auto",
         temperature: 0.5
       })
     });
 
     const data = await response.json();
+    
+    // للتحقق من الاستجابة في حال ظهر خطأ من الـ API بسبب الموديل
+    if (data.error) {
+        throw new Error(data.error.message);
+    }
+
     const messageContent = data.choices[0].message;
 
     // التحقق إذا كان النموذج يريد استدعاء أداة
