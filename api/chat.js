@@ -10,21 +10,17 @@ export default async function handler(req, res) {
   }
 
   try {
-    // قراءة البيانات المرسلة من الواجهة الأمامية بشكل متوافق تماماً مع Vercel
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const { message, excelJSON } = body || {};
+    const { message } = body || {}; // تم إزالة excelJSON لمنع انفجار التوكنز
 
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GROQ_API_KEY غير مضاف في متغيرات البيئة على Vercel." });
+      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GROQ_API_KEY غير مضاف في متغيرات البيئة." });
     }
 
-    let userContent = message || "";
-    if (excelJSON && excelJSON.length > 0) {
-      userContent += "\n\n[بيانات الملف المرفقة]: " + JSON.stringify(excelJSON);
-    }
+    let userContent = message || "تحليل الملف المرفق";
 
-    // إرسال الطلب إلى نموذج Groq القوي
+    // إرسال الطلب النصي فقط إلى نموذج Groq بدون بيانات الإكسل الضخمة
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -32,7 +28,7 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
+        model: "openai/gpt-oss-120b", // أو النموذج المناسب لديك
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userContent }
@@ -51,10 +47,10 @@ export default async function handler(req, res) {
 
     const messageContent = data.choices[0].message;
 
-    // إذا كان النموذج يريد استدعاء أداة (Tools)
+    // إذا كان النموذج يريد استدعاء أداة (Tools) مثل تعديل الإكسل
     if (messageContent.tool_calls) {
       return res.status(200).json({ 
-        reply: "تم استدعاء الأداة بنجاح والتنفيذ قيد الإجراء...", 
+        reply: "تم استيعاب الطلب، جاري تنفيذ التعديل برمجياً...", 
         tool_calls: messageContent.tool_calls 
       });
     }
@@ -63,7 +59,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ reply: messageContent.content });
 
   } catch (error) {
-    console.error("Error in Vercel Chat API:", error);
+    console.error("Error in Chat API:", error);
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية: " + error.message });
   }
 }
