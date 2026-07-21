@@ -1,4 +1,4 @@
-// app.js - النسخة السيادية المعتمدة حصرياً على Google Gemini API
+// App.js - النسخة السيادية المعتمدة حصرياً على Google Gemini API
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -40,7 +40,7 @@ app.post(['/api/chat', '/.netlify/functions/chat'], async (req, res) => {
       }))
     }];
 
-    // استدعاء عقل جيميني الرسمي
+    // استدعاء عقل جيميني الرسمي بشكل نظيف تماماً
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
