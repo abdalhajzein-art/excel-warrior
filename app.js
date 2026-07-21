@@ -1,4 +1,4 @@
-// app.js - النسخة السيادية النهائية المحدثة لعام 2026
+// app.js - النسخة السيادية النهائية المحدثة لاستخدام gemini-1.5-pro المجاني
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -40,8 +40,8 @@ app.post('/api/chat', async (req, res) => {
       }))
     }];
 
-    // تم التحديث إلى النموذج القياسي الحديث والأكثر توافقاً gemini-2.0-flash
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+    // الاستقرار على gemini-1.5-pro لضمان الحصة المجانية الحقيقية بدون قيود
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
