@@ -1,5 +1,4 @@
-// script.js
-Document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     const chatArea = document.getElementById('chatArea');
@@ -222,20 +221,21 @@ Document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // تفعيل زر الإرفاق (📎)
+    // تفعيل زر الإرفاق (📎) بربطه بـ fileInput المبرمج
     if (attachBtn) {
         attachBtn.addEventListener('click', () => {
             fileInput.click();
         });
     }
 
-    // معالجة اختيار الملف وعرض فقاعة الملف
+    // معالجة اختيار الملف وعرض فقاعة ملف نظيفة ضمن خانة الإدخال حصراً دون تكرار بالشات
     fileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
         attachedFileName = file.name;
 
+        // إظهار فقاعة الملف المرفق داخل صندوق الكتابة حصراً
         if (fileBubbles) {
             fileBubbles.innerHTML = `
                 <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: rgba(212,175,55,0.15); color: #d4af37; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.3); margin-bottom: 6px;">
@@ -244,6 +244,7 @@ Document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
+            // زر حذف الملف المرفق قبل الإرسال
             const removeFileBtn = document.getElementById('removeFileBtn');
             if (removeFileBtn) {
                 removeFileBtn.addEventListener('click', () => {
@@ -258,12 +259,21 @@ Document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = (event) => {
             const base64String = event.target.result.split(',')[1];
-            attachedFileJSON = [{
-                fileName: file.name,
-                fileBase64: base64String,
-                size: file.size,
-                type: file.type
-            }];
+            
+            if (file.name.endsWith('.json') || file.name.endsWith('.txt')) {
+                try {
+                    attachedFileJSON = JSON.parse(atob(base64String));
+                } catch (err) {
+                    attachedFileJSON = [{ content: atob(base64String) }];
+                }
+            } else {
+                attachedFileJSON = [{
+                    fileName: file.name,
+                    fileBase64: base64String,
+                    size: file.size,
+                    type: file.type
+                }];
+            }
         };
         reader.readAsDataURL(file);
     });
@@ -294,11 +304,13 @@ Document.addEventListener('DOMContentLoaded', () => {
             renderSessionsList();
         }
 
-        // حفظ نسخة آمنة للإرسال قبل التصفير
         const payloadExcel = attachedFileJSON;
         
+        // إعادة تعيين الحقل وصندوق الإدخال وحجمه الافتراضي
         userInput.value = '';
         userInput.style.height = 'auto';
+        attachedFileJSON = null;
+        attachedFileName = null;
         if (fileBubbles) fileBubbles.innerHTML = '';
         fileInput.value = '';
 
@@ -308,15 +320,8 @@ Document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    message: displayMessage, 
-                    excelJSON: payloadExcel, 
-                    sessionId: currentSessionId 
-                })
+                body: JSON.stringify({ message: displayMessage, excelJSON: payloadExcel, sessionId: currentSessionId })
             });
-
-            attachedFileJSON = null;
-            attachedFileName = null;
 
             const data = await response.json();
             removeMessageFromDOM(loadingId);
@@ -328,15 +333,15 @@ Document.addEventListener('DOMContentLoaded', () => {
                 if (data.fileBase64 && chatArea) {
                     const downloadBtn = document.createElement('a');
                     downloadBtn.href = `data:application/octet-stream;base64,${data.fileBase64}`;
-                    downloadBtn.download = data.fileName || 'modified.xlsx';
-                    downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف المعدل';
+                    downloadBtn.download = data.fileName || 'file.xlsx';
+                    downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
                     downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: #d4af37; text-decoration: underline; font-weight: bold; cursor: pointer;';
                     chatArea.appendChild(downloadBtn);
                     chatArea.scrollTop = chatArea.scrollHeight;
                     
                     savedFileData = {
                         base64: data.fileBase64,
-                        name: data.fileName || 'modified.xlsx'
+                        name: data.fileName || 'file.xlsx'
                     };
                 }
 
@@ -346,8 +351,6 @@ Document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error('Fetch Error:', error);
-            attachedFileJSON = null;
-            attachedFileName = null;
             removeMessageFromDOM(loadingId);
             appendMessageToDOM('assistant', '⚠️ تعذر الاتصال بالسيرفر.');
         }
@@ -376,7 +379,7 @@ Document.addEventListener('DOMContentLoaded', () => {
             const downloadBtn = document.createElement('a');
             downloadBtn.href = `data:application/octet-stream;base64,${fileData.base64}`;
             downloadBtn.download = fileData.name;
-            downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف المعدل';
+            downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
             downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: #d4af37; text-decoration: underline; font-weight: bold; cursor: pointer;';
             chatArea.appendChild(downloadBtn);
         }
@@ -410,6 +413,7 @@ Document.addEventListener('DOMContentLoaded', () => {
         sendBtn.addEventListener('click', handleSendMessage);
     }
 
+    // إدارة التمدد التلقائي لصندوق الكتابة (Auto-resize) ومعالجة زر Enter
     if (userInput) {
         userInput.addEventListener('input', function() {
             this.style.height = 'auto';
@@ -418,10 +422,11 @@ Document.addEventListener('DOMContentLoaded', () => {
 
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && e.shiftKey) {
-                return;
+                return; // السماح بالانتقال لسطر جديد عند استخدام Shift + Enter
             }
             if (e.key === 'Enter') {
                 e.preventDefault();
+                // إدراج سطر جديد عند الضغط على Enter العادي لتجربة كتابة مريحة
                 const start = userInput.selectionStart;
                 const end = userInput.selectionEnd;
                 userInput.value = userInput.value.substring(0, start) + "\n" + userInput.value.substring(end);
