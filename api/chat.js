@@ -1,4 +1,3 @@
-// api/chat.js - النسخة السيادية الرسمية باستخدام حزمة Google GenAI الحديثة
 import { GoogleGenAI } from '@google/genai';
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
@@ -108,3 +107,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية الرسمية مع جوجل: " + error.message });
   }
 }
+
