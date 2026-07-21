@@ -134,8 +134,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
+            // حدث النقر لاختيار الجلسة
             item.addEventListener('click', (e) => {
                 if (e.target.closest('.session-actions')) return;
+
                 switchSession(sessionId);
                 if (window.innerWidth <= 768 && sidebar) {
                     sidebar.style.transform = 'translateX(-100%)';
@@ -147,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
+            // تفعيل زر التثبيت
             const pinBtn = item.querySelector('.pin-btn');
             if (pinBtn) {
                 pinBtn.addEventListener('click', (e) => {
@@ -155,6 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
+            // تفعيل زر الحذف
             const deleteBtn = item.querySelector('.delete-btn');
             if (deleteBtn) {
                 deleteBtn.addEventListener('click', (e) => {
@@ -217,7 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // تفعيل زر الإرفاق
+    // تفعيل زر الإرفاق (📎) بربطه بـ fileInput المبرمج
     if (attachBtn) {
         attachBtn.addEventListener('click', () => {
             fileInput.click();
@@ -283,7 +287,6 @@ document.addEventListener('DOMContentLoaded', () => {
             welcomeScreen.style.display = 'none';
         }
 
-        // بناء نص الرسالة المعروض، وفي حال كان هناك ملف مرفق يتم إرفاق اسمه بأسلوب نظيف
         let displayMessage = message;
         if (!message && attachedFileName) {
             displayMessage = `تحليل الملف المرفق: ${attachedFileName}`;
@@ -303,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const payloadExcel = attachedFileJSON;
         
-        // إعادة تعيين حقل الإدخال والصندوق وحجمه الافتراضي
+        // إعادة تعيين الحقل وصندوق الإدخال وحجمه الافتراضي
         userInput.value = '';
         userInput.style.height = 'auto';
         attachedFileJSON = null;
@@ -410,7 +413,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sendBtn.addEventListener('click', handleSendMessage);
     }
 
-    // إدارة التمدد التلقائي لصندوق الكتابة (Auto-resize) ومنع الإرسال بالانتر العادي
+    // إدارة التمدد التلقائي لصندوق الكتابة (Auto-resize) ومعالجة زر Enter
     if (userInput) {
         userInput.addEventListener('input', function() {
             this.style.height = 'auto';
@@ -418,16 +421,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         userInput.addEventListener('keydown', (e) => {
-            // الانتر العادي ينزل سطر جديد ولا يرسل الرسالة
             if (e.key === 'Enter' && e.shiftKey) {
-                return; 
+                return; // السماح بالانتقال لسطر جديد عند استخدام Shift + Enter
             }
-            // إذا ضغط انتر لوحده على الموبايل أو سطح المكتب بدون شفت، نجعل السلوك نزول سطر أو منع الإرسال التلقائي المزعج إذا رغبت، 
-            // لكن هنا جعلنا الانتر العادي ينزل سطر لراحة استخدام الموبايل:
             if (e.key === 'Enter') {
-                // إذا أردت أن يكون Enter العادي ينزل سطر فقط على كل الأجهزة، نزيل شرط الإرسال بالانتر ونكتفي بزر الإرسال:
                 e.preventDefault();
-                // إدراج سطر جديد يدوياً في حقل النص عند الضغط على Enter
+                // إدراج سطر جديد عند الضغط على Enter العادي لتجربة كتابة مريحة
                 const start = userInput.selectionStart;
                 const end = userInput.selectionEnd;
                 userInput.value = userInput.value.substring(0, start) + "\n" + userInput.value.substring(end);
@@ -438,299 +437,4 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
-            if (sessionA.pinned && !sessionB.pinned) return -1;
-            if (!sessionA.pinned && sessionB.pinned) return 1;
-            return b.localeCompare(a);
-        });
 
-        if (sortedSessionIds.length === 0) return;
-
-        sortedSessionIds.forEach(sessionId => {
-            const session = sessions[sessionId];
-            const item = document.createElement('div');
-            
-            item.className = `session-item ${sessionId === currentSessionId ? 'active' : ''}`;
-            item.style.cssText = 'padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; background: #1a1a1a; border: 1px solid #2a2a2a; display: flex; flex-direction: column; gap: 6px; transition: all 0.2s;';
-            
-            item.innerHTML = `
-                <div class="session-title-row" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <span class="session-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; font-size: 13px; color: #e0e0e0; font-weight: 500;">
-                        ${session.pinned ? '📌 ' : ''}${session.title || 'جلسة جديدة'}
-                    </span>
-                    <div class="session-badges">
-                        ${session.pinned ? '<span class="session-badge" style="font-size: 10px; color: #d4af37; background: rgba(212, 175, 55, 0.1); padding: 2px 6px; border-radius: 4px;">مثبت</span>' : ''}
-                    </div>
-                </div>
-                <div class="session-actions" style="display: flex; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
-                    <button class="session-action-btn pin-btn" title="${session.pinned ? 'إلغاء التثبيت' : 'تثبيت الجلسة'}" style="background:none; border:none; cursor:pointer; font-size:12px; color: #d4af37;">
-                        ${session.pinned ? '📍 إلغاء التثبيت' : '📌 تثبيت'}
-                    </button>
-                    <button class="session-action-btn delete-btn" title="حذف الجلسة" style="background:none; border:none; cursor:pointer; font-size:12px; color: #ff5555;">
-                        🗑️ حذف
-                    </button>
-                </div>
-            `;
-
-            // حدث النقر لاختيار الجلسة
-            item.addEventListener('click', (e) => {
-                if (e.target.closest('.session-actions')) return;
-
-                switchSession(sessionId);
-                if (window.innerWidth <= 768 && sidebar) {
-                    sidebar.style.transform = 'translateX(-100%)';
-                    sidebar.classList.remove('open');
-                    if (sidebarOverlay) {
-                        sidebarOverlay.style.opacity = '0';
-                        setTimeout(() => sidebarOverlay.style.display = 'none', 300);
-                    }
-                }
-            });
-
-            // تفعيل زر التثبيت
-            const pinBtn = item.querySelector('.pin-btn');
-            if (pinBtn) {
-                pinBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    togglePinSession(sessionId);
-                });
-            }
-
-            // تفعيل زر الحذف
-            const deleteBtn = item.querySelector('.delete-btn');
-            if (deleteBtn) {
-                deleteBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    deleteSession(sessionId);
-                });
-            }
-
-            sessionsList.appendChild(item);
-        });
-    }
-
-    function togglePinSession(sessionId) {
-        let sessions = getStoredSessions();
-        if (sessions[sessionId]) {
-            sessions[sessionId].pinned = !sessions[sessionId].pinned;
-            saveSessions(sessions);
-            renderSessionsList();
-        }
-    }
-
-    function deleteSession(sessionId) {
-        let sessions = getStoredSessions();
-        delete sessions[sessionId];
-        
-        let remainingIds = Object.keys(sessions);
-        if (remainingIds.length === 0) {
-            currentSessionId = generateSessionId();
-            sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [], pinned: false };
-        } else if (sessionId === currentSessionId) {
-            currentSessionId = remainingIds[remainingIds.length - 1];
-            localStorage.setItem('alatheer_current_session', currentSessionId);
-        }
-
-        saveSessions(sessions);
-        renderSessionsList();
-        loadSession(currentSessionId);
-    }
-
-    function switchSession(sessionId) {
-        currentSessionId = sessionId;
-        localStorage.setItem('alatheer_current_session', sessionId);
-        renderSessionsList();
-        loadSession(sessionId);
-    }
-
-    function loadSession(sessionId) {
-        if (!chatArea) return;
-        chatArea.innerHTML = '';
-        const sessions = getStoredSessions();
-        const session = sessions[sessionId];
-
-        if (session && session.messages && session.messages.length > 0) {
-            if (welcomeScreen) welcomeScreen.style.display = 'none';
-            session.messages.forEach(msg => {
-                appendMessageToDOM(msg.sender, msg.text, false, msg.fileData);
-            });
-        } else {
-            if (welcomeScreen) welcomeScreen.style.display = 'flex';
-        }
-    }
-
-    // تفعيل زر الإرفاق (📎) بربطه بـ fileInput المبرمج
-    if (attachBtn) {
-        attachBtn.addEventListener('click', () => {
-            fileInput.click();
-        });
-    }
-
-    // معالجة اختيار الملف وتحويله بالكامل لـ Base64 أو JSON ليتم ارساله للسيرفر
-    fileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        // إظهار فقاعة الملف المرفق في الواجهة
-        if (fileBubbles) {
-            fileBubbles.innerHTML = `<span style="font-size: 11px; background: rgba(212,175,55,0.1); color: #d4af37; padding: 3px 8px; border-radius: 4px; display: inline-block; margin-bottom: 5px;">📎 ${file.name}</span>`;
-        }
-
-        appendMessageToDOM('user', `📎 تم إرفاق الملف: ${file.name}`);
-        
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const base64String = event.target.result.split(',')[1];
-            
-            if (file.name.endsWith('.json') || file.name.endsWith('.txt')) {
-                try {
-                    attachedFileJSON = JSON.parse(atob(base64String));
-                } catch (err) {
-                    attachedFileJSON = [{ content: atob(base64String) }];
-                }
-            } else {
-                // إرسال كائن يحتوي على اسم الملف ومحتواه المشفر بصيغة Base64
-                attachedFileJSON = [{
-                    fileName: file.name,
-                    fileBase64: base64String,
-                    size: file.size,
-                    type: file.type
-                }];
-            }
-        };
-        reader.readAsDataURL(file);
-    });
-
-    async function handleSendMessage() {
-        if (!userInput) return;
-        const message = userInput.value.trim();
-        if (!message && !attachedFileJSON) return;
-
-        if (welcomeScreen) {
-            welcomeScreen.style.display = 'none';
-        }
-
-        const displayMessage = message || "تحليل الملف المرفق";
-        appendMessageToDOM('user', displayMessage);
-        saveMessageToCurrentSession('user', displayMessage);
-
-        let sessions = getStoredSessions();
-        if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
-            sessions[currentSessionId].title = displayMessage.length > 20 ? displayMessage.substring(0, 20) + '...' : displayMessage;
-            saveSessions(sessions);
-            renderSessionsList();
-        }
-
-        const payloadExcel = attachedFileJSON;
-        userInput.value = '';
-        userInput.style.height = 'auto';
-        attachedFileJSON = null;
-        if (fileBubbles) fileBubbles.innerHTML = ''; // مسح فقاعة الملف بعد الإرسال
-
-        const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة... ⏳', true);
-
-        try {
-            const response = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: displayMessage, excelJSON: payloadExcel, sessionId: currentSessionId })
-            });
-
-            const data = await response.json();
-            removeMessageFromDOM(loadingId);
-
-            if (data && data.reply) {
-                appendMessageToDOM('assistant', data.reply);
-                
-                let savedFileData = null;
-                if (data.fileBase64 && chatArea) {
-                    const downloadBtn = document.createElement('a');
-                    downloadBtn.href = `data:application/octet-stream;base64,${data.fileBase64}`;
-                    downloadBtn.download = data.fileName || 'file.xlsx';
-                    downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
-                    downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: #d4af37; text-decoration: underline; font-weight: bold; cursor: pointer;';
-                    chatArea.appendChild(downloadBtn);
-                    chatArea.scrollTop = chatArea.scrollHeight;
-                    
-                    savedFileData = {
-                        base64: data.fileBase64,
-                        name: data.fileName || 'file.xlsx'
-                    };
-                }
-
-                saveMessageToCurrentSession('assistant', data.reply, savedFileData);
-            } else {
-                appendMessageToDOM('assistant', '⚠️ حدث خطأ في استجابة السيرفر.');
-            }
-        } catch (error) {
-            console.error('Fetch Error:', error);
-            removeMessageFromDOM(loadingId);
-            appendMessageToDOM('assistant', '⚠️ تعذر الاتصال بالسيرفر.');
-        }
-    }
-
-    function saveMessageToCurrentSession(sender, text, fileData = null) {
-        let sessions = getStoredSessions();
-        if (!sessions[currentSessionId]) {
-            sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [], pinned: false };
-        }
-        sessions[currentSessionId].messages.push({ sender, text, fileData });
-        saveSessions(sessions);
-    }
-
-    function appendMessageToDOM(sender, text, isLoading = false, fileData = null) {
-        if (!chatArea) return null;
-        const messageDiv = document.createElement('div');
-        const messageId = isLoading ? 'loading_' + Date.now() : 'msg_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-        messageDiv.id = messageId;
-        
-        messageDiv.className = `message ${sender === 'user' ? 'user' : 'ai'}`;
-        messageDiv.innerText = text;
-        chatArea.appendChild(messageDiv);
-
-        if (fileData) {
-            const downloadBtn = document.createElement('a');
-            downloadBtn.href = `data:application/octet-stream;base64,${fileData.base64}`;
-            downloadBtn.download = fileData.name;
-            downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
-            downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: #d4af37; text-decoration: underline; font-weight: bold; cursor: pointer;';
-            chatArea.appendChild(downloadBtn);
-        }
-
-        chatArea.scrollTop = chatArea.scrollHeight;
-        return messageId;
-    }
-
-    function removeMessageFromDOM(id) {
-        if (!id) return;
-        const el = document.getElementById(id);
-        if (el) el.remove();
-    }
-
-    const createNewSession = () => {
-        currentSessionId = generateSessionId();
-        localStorage.setItem('alatheer_current_session', currentSessionId);
-        
-        let sessions = getStoredSessions();
-        sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [], pinned: false };
-        saveSessions(sessions);
-
-        renderSessionsList();
-        loadSession(currentSessionId);
-    };
-
-    if (newChatBtn) newChatBtn.addEventListener('click', createNewSession);
-    if (newSessionBtn) newSessionBtn.addEventListener('click', createNewSession);
-
-    if (sendBtn) {
-        sendBtn.addEventListener('click', handleSendMessage);
-    }
-
-    if (userInput) {
-        userInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-            }
-        });
-    }
-});
