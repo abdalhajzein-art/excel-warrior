@@ -5,13 +5,6 @@ import XLSX from 'xlsx';
 
 const ai = new GoogleGenAI({});
 
-// قائمة الموديلات مرتبة بالأولوية (مع الاحتياط المضمون)
-const FALLBACK_MODELS = [
-  'gemini-2.5-flash', // موديل سريع وحديث
-  'gemini-1.5-flash', // موديل فلاش مستقر جداً
-  'gemini-1.5-pro'    // موديل برو قوي ومضمون تماماً للضغط العالي
-];
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -58,35 +51,40 @@ export default async function handler(req, res) {
     const fullPrompt = `${SYSTEM_PROMPT}\n${fileContentPreview}\n\nUser Request: ${userContent}`;
 
     let response = null;
-    let lastError = null;
-
-    // حلقة تجربة الموديلات تلقائياً في حال واجهنا خطأ ضغط (503)
-    for (const modelName of FALLBACK_MODELS) {
-      try {
-        response = await ai.models.generateContent({
-          model: modelName,
-          contents: fullPrompt,
-          config: {
-            temperature: 0.5,
-            tools: [{
-              functionDeclarations: toolsDefinition.map(t => ({
-                name: t.function.name,
-                description: t.function.description,
-                parameters: t.function.parameters
-              }))
-            }]
-          }
-        });
-        // إذا نجح الاتصال، نخرج من الحلقة فوراً
-        if (response) break;
-      } catch (err) {
-        console.warn(`Model ${modelName} failed or busy, trying next...`, err.message);
-        lastError = err;
-      }
-    }
-
-    if (!response) {
-      throw lastError || new Error("عذراً، كافة الموديلات تشهد ضغطاً عالياً حالياً.");
+    
+    // محاولة السريع أولاً، وإذا حصل ضغط (503)، ننتقل فوراً للبديل المضمون دون هدر وقت
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash', // موديل فلاش فائق السرعة
+        contents: fullPrompt,
+        config: {
+          temperature: 0.5,
+          tools: [{
+            functionDeclarations: toolsDefinition.map(t => ({
+              name: t.function.name,
+              description: t.function.description,
+              parameters: t.function.parameters
+            }))
+          }]
+        }
+      });
+    } catch (primaryErr) {
+      console.warn("Primary model busy, switching instantly to backup...", primaryErr.message);
+      // البديل الاحتياطي المباشر في حال الضغط
+      response = await ai.models.generateContent({
+        model: 'gemini-1.5-pro',
+        contents: fullPrompt,
+        config: {
+          temperature: 0.5,
+          tools: [{
+            functionDeclarations: toolsDefinition.map(t => ({
+              name: t.function.name,
+              description: t.function.description,
+              parameters: t.function.parameters
+            }))
+          }]
+        }
+      });
     }
 
     const candidate = response.candidates?.[0];
@@ -156,4 +154,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية الرسمية: " + (error.message || error) });
   }
 }
-
