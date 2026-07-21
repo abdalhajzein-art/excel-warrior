@@ -388,40 +388,46 @@ body {
   gap: 8px;
 }
 
-/* صندوق الكتابة مع ضبط التفاعل لمنع تأثير الضغط العشوائي */
+/* صندوق الكتابة المُعدل بالكامل ليلائم اليد اليمنى ويمنع التداخل البصري */
 .input-box {
   background: var(--bg-dark);
   border: 1px solid var(--border-color);
   border-radius: 14px;
   padding: 8px 14px;
   display: flex;
+  flex-direction: row-reverse; /* يجعل اليمين يساراً والعكس لترتيب الأزرار بدقة */
   align-items: flex-end;
   gap: 12px;
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-/* الإطار يتفاعل فقط عند التركيز على حقل النص أو الكتابة داخله */
+/* الإطار يتوهج فقط عند التركيز على حقل النص أو الكتابة داخله */
 .input-box:focus-within {
   border-color: var(--accent-gold);
   box-shadow: 0 0 10px rgba(197, 160, 89, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-/* زر الإرفاق (الكليبسة) على اليسار وتأثيره المستقل */
+/* زر الإرفاق (الكليبسة) - تأثير منفصل وحديث ولا يؤثر على الإطار ككل */
 .attach-icon {
   background: transparent;
   border: none;
   color: var(--text-dim);
   font-size: 18px;
   cursor: pointer;
-  transition: color 0.2s ease, transform 0.2s ease;
   padding-bottom: 6px;
-  order: 1; /* يجعلها في أقصى اليسار */
+  outline: none;
+  transition: color 0.2s ease, transform 0.2s ease;
 }
 
 .attach-icon:hover {
   color: var(--accent-gold);
-  transform: scale(1.1);
+  transform: scale(1.15);
+}
+
+.attach-icon:active {
+  transform: scale(0.9);
+  color: var(--accent-gold-hover);
 }
 
 /* حقل النص في المنتصف */
@@ -435,10 +441,9 @@ body {
   outline: none;
   max-height: 120px;
   padding: 6px 0;
-  order: 2;
 }
 
-/* زر الإرسال (السهم) على اليمين ليتناسب مع اليد اليمنى */
+/* زر الإرسال (السهم) في أقصى اليمين ليتناسب مع اليد اليمنى */
 .send-icon {
   background: var(--accent-gold);
   border: none;
@@ -453,10 +458,14 @@ body {
   font-weight: bold;
   transition: all 0.2s ease;
   flex-shrink: 0;
-  order: 3; /* يجعلها في أقصى اليمين */
+  outline: none;
 }
 
 .send-icon:hover {
   background: var(--accent-gold-hover);
   transform: scale(1.05);
+}
+
+.send-icon:active {
+  transform: scale(0.95);
 }
