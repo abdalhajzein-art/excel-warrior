@@ -33,8 +33,8 @@ export default async function handler(req, res) {
       }))
     }];
 
-    // تم التعديل بدقة إلى v1beta بناءً على التوثيق الرسمي لمتطلبات المفتاح
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    // التحديث للنموذج القياسي الحديث والأكثر توافقاً gemini-2.0-flash عبر مسار v1beta
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -133,3 +133,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية مع جوجل: " + error.message });
   }
 }
+
