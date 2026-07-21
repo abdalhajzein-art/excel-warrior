@@ -1,4 +1,4 @@
-// api/chat.js - النسخة المعدلة مع الحماية ضد أخطاء الـ JSON الفارغ
+// api/chat.js - النسخة المستقرة النهائية مع gemini-1.5-flash
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 
@@ -32,7 +32,8 @@ export default async function handler(req, res) {
       }))
     }];
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/openai/gpt-oss-120b:generateContent?key=${apiKey}`, {
+    // الاستقرار على gemini-1.5-flash المدعوم رسمياً
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -136,4 +137,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية مع جوجل: " + error.message });
   }
 }
-
