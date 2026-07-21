@@ -1,4 +1,4 @@
-// app.js - التجربة المجنونة مع openai/gpt-oss-120b
+// app.js - النسخة المعدلة مع الحماية ضد أخطاء الـ JSON الفارغ
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -40,7 +40,6 @@ app.post('/api/chat', async (req, res) => {
       }))
     }];
 
-    // التجربة المجنونة: حقن اسم النموذج المطلوب في مسار الطلب
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/openai/gpt-oss-120b:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -56,7 +55,15 @@ app.post('/api/chat', async (req, res) => {
       })
     });
 
-    const data = await response.json();
+    // قراءة الرد كـ Text أولاً لحماية السيرفر من الانهيار إذا كان الرد فارغاً أو خطأ HTML
+    const rawText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      throw new Error(`رد غير متوقع من خوادم جوجل (الحالة ${response.status}): ${rawText}`);
+    }
+
     if (data.error) {
       throw new Error(data.error.message || "خطأ من خوادم جوجل.");
     }
@@ -127,3 +134,4 @@ app.post('/api/upload', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
 });
+
