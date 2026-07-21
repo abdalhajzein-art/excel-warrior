@@ -1,4 +1,4 @@
-// App.js - النسخة السيادية النهائية
+// App.js - النسخة السيادية النهائية المخصصة لـ Railway
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -15,7 +15,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(__dirname));
 
-app.post(['/api/chat', '/.netlify/functions/chat'], async (req, res) => {
+app.post('/api/chat', async (req, res) => {
   try {
     const body = req.body.body ? JSON.parse(req.body.body) : req.body;
     const { message } = body;
@@ -102,4 +102,3 @@ app.post('/api/upload', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
 });
-
