@@ -1,6 +1,6 @@
 // api/chat.js
 import { SYSTEM_PROMPT } from "./agent/system.js";
-import { toolsDefinition, toolsRegistry } from "./tools/index.js";
+import { toolsRegistry } from "./tools/index.js";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -17,10 +17,14 @@ export default async function handler(req, res) {
       return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GEMINI_API_KEY غير مضاف في متغيرات البيئة على Railway." });
     }
 
-    let userContent = message || "تعديل الملف المرفق";
+    let userContent = message || "مساعدة بخصوص الملف المرفق";
+    let fileInfoText = "";
 
-    // تحويل تعريفات الأدوات (OpenAI format) إلى صيغة تناسب هيكل الطلب أو توجيه النموذج
-    // سنقوم بتمرير السياق والأدوات لنموذج جيميني عبر واجهة الـ v1beta
+    // إذا تم إرفاق ملف إكسل، نستخرج معلوماته ليفهمها جيميني بدون أخطاء
+    if (excelJSON && excelJSON[0]) {
+      fileInfoText = `\n[معلومات الملف المرفق: اسم الملف: ${excelJSON[0].fileName || 'ملف'}، الحجم: ${excelJSON[0].size || 0} بايت]`;
+    }
+
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
@@ -32,13 +36,13 @@ export default async function handler(req, res) {
             role: "user",
             parts: [
               { 
-                text: `${SYSTEM_PROMPT}\n\n[ملاحظة تقنية: لديك أدوات متاحة للتعامل مع ملفات الإكسل والوورد، إذا طلب المستخدم تعديل ملف أو إنشائه، قم بتحديد الطلب بدقة أو قم بالرد بما يناسب الأداة]\n\nUser Request: ${userContent}` 
+                text: `${SYSTEM_PROMPT}\n${fileInfoText}\n\nUser Request: ${userContent}` 
               }
             ]
           }
         ],
         generationConfig: {
-          temperature: 0.4
+          temperature: 0.5
         }
       })
     });
@@ -52,21 +56,23 @@ export default async function handler(req, res) {
     const candidate = data.candidates?.[0];
     const replyText = candidate?.content?.parts?.[0]?.text || "تم الاستلام بنجاح.";
 
-    // إذا كان هناك ملف إكسل مرفق والمستخدم يطلب تعديلاً، يمكننا توجيهه مباشرة لأداة excel_modify
-    if (excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
+    // هل طلب المستخدم تعديلاً حقيقياً يتطلب تدخل أدوات الإكسل؟ (وليس مجرد قراءة أو سؤال)
+    const isModificationRequest = userContent.includes("أضف") || userContent.includes("عمود") || userContent.includes("حذف") || userContent.includes("تعديل") || userContent.includes("غير");
+
+    if (excelJSON && excelJSON[0] && excelJSON[0].fileBase64 && isModificationRequest) {
       const base64Data = excelJSON[0].fileBase64;
       
-      // إذا طلب المستخدم تعديلاً صريحاً أو ذكياً، نستدعي أداة التعديل تلقائياً
       if (toolsRegistry['excel_modify']) {
         try {
+          // بناء هيكل افتراضي آمن لتجنب أخطاء الـ editMap في حال لم يحدد المستخدم عملية دقيقة
           const toolResult = await toolsRegistry['excel_modify'].handler({
             base64: base64Data,
-            editMap: { instruction: userContent }
+            editMap: { operation: "none", instruction: userContent }
           });
 
           if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
             return res.status(200).json({
-              reply: "✅ تم معالجة وتعديل الملف بنجاح بناءً على طلبك:",
+              reply: "✅ تم معالجة الملف وإعادة تجهيزه بناءً على طلبك:",
               fileBase64: Buffer.from(toolResult).toString('base64'),
               fileName: excelJSON[0].fileName || 'modified.xlsx'
             });
