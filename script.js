@@ -262,5 +262,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (newChatBtn) newChatBtn.addEventListener('click', createNewSession);
     if (newSessionBtn) newSessionBtn.addEventListener('click', createNewSession);
 
+    // ربط زر الإرسال بالحدث لكي يستجيب عند الضغط عليه
+    if (sendBtn) {
+        sendBtn.addEventListener('click', handleSendMessage);
+    }
+
+    // دعم الإرسال بزر Enter من لوحة المفاتيح
+    if (userInput) {
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+            }
+        });
+    }
+
     console.log('💎 منصة الأثير تعمل بأعلى أداء واحترافية!');
 });
