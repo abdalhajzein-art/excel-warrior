@@ -1,4 +1,3 @@
-// app.js - النسخة السيادية الرسمية باستخدام حزمة Google GenAI الحديثة
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -112,5 +111,5 @@ app.post('/api/upload', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Alatheer AI Suite (Official SDK) is running smoothly on port ${PORT}`);
+  console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
 });
