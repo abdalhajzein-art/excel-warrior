@@ -1,4 +1,4 @@
-Document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     const chatArea = document.getElementById('chatArea');
@@ -386,18 +386,5 @@ Document.addEventListener('DOMContentLoaded', () => {
                 handleSendMessage();
             }
         });
-    }
-
-    // --- الحقن البرمجي القسري لفرض تموضع الأزرار وتأثير الكليبسة المعزول ---
-    const inputBox = document.querySelector('.input-box');
-    if (inputBox && sendBtn && attachBtn) {
-        inputBox.style.display = 'flex';
-        inputBox.style.flexDirection = 'row-reverse';
-        inputBox.style.alignItems = 'flex-end';
-
-        // منع تأثير الإطار الخارجي عند النقر على الكليبسة وحصر التفاعل بها وحدها
-        attachBtn.addEventListener('mousedown', (e) => e.stopPropagation());
-        attachBtn.addEventListener('touchstart', (e) => e.stopPropagation());
-        attachBtn.addEventListener('click', (e) => e.stopPropagation());
     }
 });
