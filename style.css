@@ -388,14 +388,14 @@ body {
   gap: 8px;
 }
 
-/* صندوق الكتابة الأساسي مع ضبط الاتجاه حصراً للأزرار اليمينية واليسارية */
+/* صندوق الكتابة الأساسي مرتب بدقة (يمين: إرسال | وسط: نص | يسار: كليبسة) */
 .input-box {
   background: var(--bg-dark);
   border: 1px solid var(--border-color);
   border-radius: 14px;
   padding: 8px 14px;
   display: flex;
-  flex-direction: row-reverse;
+  flex-direction: row; /* الوضع الطبيعي ليطابق ترتيب الـ HTML */
   align-items: flex-end;
   gap: 12px;
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
@@ -408,44 +408,7 @@ body {
   box-shadow: 0 0 10px rgba(197, 160, 89, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-/* زر الإرفاق (الكليبسة) - في أقصى اليسار ومعزول تماماً بتأثيره الخاص */
-.attach-icon {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  font-size: 18px;
-  cursor: pointer;
-  padding-bottom: 6px;
-  outline: none;
-  order: 3;
-  transition: color 0.2s ease, transform 0.2s ease;
-}
-
-.attach-icon:hover {
-  color: var(--accent-gold);
-  transform: scale(1.15);
-}
-
-.attach-icon:active {
-  transform: scale(0.9);
-  color: var(--accent-gold-hover);
-}
-
-/* حقل النص في المنتصف */
-#userInput {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text-main);
-  resize: none;
-  font-size: 15px;
-  outline: none;
-  max-height: 120px;
-  padding: 6px 0;
-  order: 2;
-}
-
-/* زر الإرسال (السهم) - في أقصى اليمين ليتناسب مع اليد اليمنى */
+/* زر الإرسال (السهم) - يستقر في أقصى اليمين */
 .send-icon {
   background: var(--accent-gold);
   border: none;
@@ -461,7 +424,6 @@ body {
   transition: all 0.2s ease;
   flex-shrink: 0;
   outline: none;
-  order: 1;
 }
 
 .send-icon:hover {
@@ -471,4 +433,39 @@ body {
 
 .send-icon:active {
   transform: scale(0.95);
+}
+
+/* حقل النص في المنتصف */
+#userInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  resize: none;
+  font-size: 15px;
+  outline: none;
+  max-height: 120px;
+  padding: 6px 0;
+}
+
+/* زر الإرفاق (الكليبسة) - يستقر في أقصى اليسار ومعزول تماماً */
+.attach-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  padding-bottom: 6px;
+  outline: none;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.attach-icon:hover {
+  color: var(--accent-gold);
+  transform: scale(1.15);
+}
+
+.attach-icon:active {
+  transform: scale(0.9);
+  color: var(--accent-gold-hover);
 }
