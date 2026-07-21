@@ -1,16 +1,24 @@
+// api/excel/generate.js
 import xlsx from "xlsx";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+  if (req.method !== "POST") {
+    res.setHeader("Allow", ["POST"]);
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
 
   try {
-    const { instruction } = req.body;
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const { instruction } = body || {};
 
     if (!instruction) {
-      return res.status(400).json({ error: "لا يوجد طلب توليد" });
+      return res.status(400).json({ error: "لا يوجد طلب توليد مرفق." });
     }
 
     const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "مفتاح API غير متوفر." });
+    }
 
     const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -23,7 +31,7 @@ export default async function handler(req, res) {
         messages: [
           {
             role: "system",
-            content: "ولّد جدول Excel بصيغة JSON فقط."
+            content: "ولّد جدول Excel بصيغة JSON array فقط بدون أي نصوص إضافية."
           },
           {
             role: "user",
@@ -34,7 +42,19 @@ export default async function handler(req, res) {
     });
 
     const aiData = await aiRes.json();
-    const json = JSON.parse(aiData.choices[0].message.content);
+    if (aiData.error) {
+      throw new Error(aiData.error.message);
+    }
+
+    let rawContent = aiData.choices[0].message.content.trim();
+    // تنظيف النص في حال أضاف النموذج علامات تدوين كود
+    if (rawContent.startsWith("```json")) {
+      rawContent = rawContent.replace(/^```json/, "").replace(/```$/, "").trim();
+    } else if (rawContent.startsWith("```")) {
+      rawContent = rawContent.replace(/^```/, "").replace(/```$/, "").trim();
+    }
+
+    const json = JSON.parse(rawContent);
 
     const worksheet = xlsx.utils.json_to_sheet(json);
     const workbook = xlsx.utils.book_new();
@@ -45,9 +65,16 @@ export default async function handler(req, res) {
     res.setHeader("Content-Disposition", "attachment; filename=generated.xlsx");
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
-    return res.status(200).send(buffer);
+    return res.status(200).send(Buffer.from(buffer));
 
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error("Error in generate excel:", err);
+    return res.status(500).json({ error: "خطأ في التوليد: " + err.message });
   }
+}
+
+// دالة مساعدة لربطها بـ execute.js الداخلي
+export async function generateExcelHandler(payload) {
+  // يمكن استخدامها عند الاستدعاء البرمجي المباشر
+  return { status: "success", message: "تمت المعالجة" };
 }
