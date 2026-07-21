@@ -102,25 +102,4 @@ app.post('/api/upload', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
 });
-      }
-    }
 
-    // الرد النصي العادي إذا لم يتم استدعاء أداة
-    const replyText = parts.find(p => p.text)?.text || "تم الاستلام بنجاح.";
-    res.json({ reply: replyText });
-
-  } catch (error) {
-    console.error("Error in Gemini chat API:", error);
-    res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية: " + error.message });
-  }
-});
-
-// مسار رفع الملفات الاحتياطي
-app.post('/api/upload', (req, res) => {
-  res.json({ status: "success", message: "تم استقبال الملف بنجاح" });
-});
-
-// تشغيل السيرفر
-app.listen(PORT, () => {
-  console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
-});
