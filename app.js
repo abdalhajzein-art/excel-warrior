@@ -1,4 +1,4 @@
-// app.js - النسخة السيادية النهائية المحدثة لاستخدام gemini-1.5-pro المجاني
+// app.js - التجربة المجنونة مع openai/gpt-oss-120b
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -40,8 +40,8 @@ app.post('/api/chat', async (req, res) => {
       }))
     }];
 
-    // الاستقرار على gemini-1.5-pro لضمان الحصة المجانية الحقيقية بدون قيود
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
+    // التجربة المجنونة: حقن اسم النموذج المطلوب في مسار الطلب
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/openai/gpt-oss-120b:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
