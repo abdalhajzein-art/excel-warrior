@@ -1,9 +1,16 @@
 import { GoogleGenAI } from '@google/genai';
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
-import XLSX from 'xlsx'; // مكتبة قراءة ملفات الإكسل
+import XLSX from 'xlsx';
 
 const ai = new GoogleGenAI({});
+
+// قائمة الموديلات مرتبة بالأولوية (مع الاحتياط المضمون)
+const FALLBACK_MODELS = [
+  'gemini-2.5-flash', // موديل سريع وحديث
+  'gemini-1.5-flash', // موديل فلاش مستقر جداً
+  'gemini-1.5-pro'    // موديل برو قوي ومضمون تماماً للضغط العالي
+];
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -22,7 +29,7 @@ export default async function handler(req, res) {
     let userContent = message || "مساعدة بخصوص الملف المرفق";
     let fileContentPreview = "";
 
-    // معالجة الملف المرفق وقراءة محتواه الداخلي بشكل سيادي
+    // معالجة الملف المرفق وقراءة محتواه الداخلي
     if (excelJSON && excelJSON[0]) {
       const fileObj = excelJSON[0];
       const fileName = fileObj.fileName || 'ملف';
@@ -32,42 +39,55 @@ export default async function handler(req, res) {
           const buffer = Buffer.from(fileObj.fileBase64, 'base64');
           
           if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
-            // قراءة ملفات الإكسل وجداول البيانات عبر مكتبة XLSX
             const workbook = XLSX.read(buffer, { type: 'buffer' });
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
-            // تحويل ورقة العمل إلى مصفوفة كائنات / نص JSON مصغر ليقرأه الذكاء الاصطناعي
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
             fileContentPreview = `\n[محتوى الملف المرفق (${fileName}) الداخلي:\n${JSON.stringify(jsonData.slice(0, 100), null, 2)}\n(ملاحظة: تم عرض أول 100 صف كعينة تحليلية)]`;
           } else {
-            // للملفات النصية أو الـ JSON المباشرة
             const textContent = buffer.toString('utf8');
             fileContentPreview = `\n[محتوى الملف النصي المرفق (${fileName}):\n${textContent.substring(0, 5000)}\n]`;
           }
         } catch (parseErr) {
           console.error("Error parsing attached file content:", parseErr);
-          fileContentPreview = `\n[معلومات الملف المرفق: اسم الملف: ${fileName} (تعذر استخراج محتواه النصي مباشرة، يرجى الاستعانة بالأدوات)]`;
+          fileContentPreview = `\n[معلومات الملف المرفق: اسم الملف: ${fileName}]`;
         }
-      } else if (Array.isArray(fileObj) || fileObj.content) {
-        // لو كانت البيانات مرسلة كنص JSON مُحلل مسبقاً
-        fileContentPreview = `\n[محتوى البيانات المرفقة:\n${JSON.stringify(fileObj).substring(0, 5000)}\n]`;
       }
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
-      contents: `${SYSTEM_PROMPT}\n${fileContentPreview}\n\nUser Request: ${userContent}`,
-      config: {
-        temperature: 0.5,
-        tools: [{
-          functionDeclarations: toolsDefinition.map(t => ({
-            name: t.function.name,
-            description: t.function.description,
-            parameters: t.function.parameters
-          }))
-        }]
+    const fullPrompt = `${SYSTEM_PROMPT}\n${fileContentPreview}\n\nUser Request: ${userContent}`;
+
+    let response = null;
+    let lastError = null;
+
+    // حلقة تجربة الموديلات تلقائياً في حال واجهنا خطأ ضغط (503)
+    for (const modelName of FALLBACK_MODELS) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: fullPrompt,
+          config: {
+            temperature: 0.5,
+            tools: [{
+              functionDeclarations: toolsDefinition.map(t => ({
+                name: t.function.name,
+                description: t.function.description,
+                parameters: t.function.parameters
+              }))
+            }]
+          }
+        });
+        // إذا نجح الاتصال، نخرج من الحلقة فوراً
+        if (response) break;
+      } catch (err) {
+        console.warn(`Model ${modelName} failed or busy, trying next...`, err.message);
+        lastError = err;
       }
-    });
+    }
+
+    if (!response) {
+      throw lastError || new Error("عذراً، كافة الموديلات تشهد ضغطاً عالياً حالياً.");
+    }
 
     const candidate = response.candidates?.[0];
     const functionCalls = candidate?.content?.parts?.filter(p => p.functionCall) || [];
@@ -133,7 +153,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("Error in Official Gemini SDK Chat API:", error);
-    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية الرسمية مع جوجل: " + error.message });
+    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية الرسمية: " + (error.message || error) });
   }
 }
 
