@@ -11,17 +11,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebar = document.getElementById('sidebar');
     const sidebarOverlay = document.getElementById('sidebarOverlay');
 
-    // 1. تفعيل السايدبار (فتح وإغلاق)
-    if (sidebarToggle && sidebar && sidebarOverlay) {
+    // تفعيل السايدبار بشكل مباشر وفعال
+    if (sidebarToggle && sidebar) {
         sidebarToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('active');
-            sidebarOverlay.classList.toggle('active');
+            const isOpen = sidebar.style.transform === 'translateX(0px)' || sidebar.classList.contains('open');
+            
+            if (isOpen) {
+                sidebar.style.transform = 'translateX(-100%)';
+                sidebar.classList.remove('open');
+                if (sidebarOverlay) {
+                    sidebarOverlay.style.display = 'none';
+                    sidebarOverlay.style.opacity = '0';
+                }
+            } else {
+                sidebar.style.transform = 'translateX(0px)';
+                sidebar.classList.add('open');
+                if (sidebarOverlay) {
+                    sidebarOverlay.style.display = 'block';
+                    sidebarOverlay.style.opacity = '1';
+                }
+            }
         });
 
-        sidebarOverlay.addEventListener('click', () => {
-            sidebar.classList.remove('active');
-            sidebarOverlay.classList.remove('active');
-        });
+        if (sidebarOverlay) {
+            sidebarOverlay.addEventListener('click', () => {
+                sidebar.style.transform = 'translateX(-100%)';
+                sidebar.classList.remove('open');
+                sidebarOverlay.style.display = 'none';
+                sidebarOverlay.style.opacity = '0';
+            });
+        }
     }
 
     // استرجاع المحادثات السابقة من التخزين المحلي عند فتح الصفحة
@@ -103,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (el) el.remove();
     }
 
-    // نظام التخزين المحلي (LocalStorage) لحفظ الجلسات من الريلود
+    // نظام التخزين المحلي لحفظ الجلسات
     function saveMessageToStorage(sender, text) {
         let history = JSON.parse(localStorage.getItem('alatheer_chat_history') || '[]');
         history.push({ sender, text });
@@ -144,4 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (newChatBtn) newChatBtn.addEventListener('click', resetChat);
     if (newSessionBtn) newSessionBtn.addEventListener('click', resetChat);
+
+    console.log('✨ منصة الأثير تعمل بكامل طاقتها!');
 });
+
