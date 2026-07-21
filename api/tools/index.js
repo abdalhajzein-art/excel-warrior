@@ -1,8 +1,9 @@
-// api/tools/index.js
+// /api/tools/index.js
 import { generateExcelHandler } from '../excel/generate.js';
 import { modifyExcelHandler } from '../excel/modify.js';
 import { generateWordHandler } from '../word/generate.js';
 import { modifyWordHandler } from '../word/modify.js';
+import { convertFileHandler } from '../convert/convert.js';
 
 export const toolsRegistry = {
   excel_modify: {
@@ -24,6 +25,11 @@ export const toolsRegistry = {
     method: "POST",
     endpoint: "/api/word/modify",
     handler: modifyWordHandler
+  },
+  file_convert: {
+    method: "POST",
+    endpoint: "/api/convert/convert",
+    handler: convertFileHandler
   }
 };
 
@@ -84,6 +90,21 @@ export const toolsDefinition = [
           replacements: { type: "object", description: "الكلمات المراد استبدالها" }
         },
         required: ["base64", "replacements"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "file_convert",
+      description: "تحويل الملفات بين الصيغ المختلفة (مثل إكسل إلى CSV أو استخراج البيانات المطلوبة بصيغة أخرى).",
+      parameters: {
+        type: "object",
+        properties: {
+          base64: { type: "string", description: "الملف المراد تحويله بصيغة base64" },
+          targetFormat: { type: "string", description: "الصيغة المطلوبة للتحويل (مثلاً: csv, text, json)" }
+        },
+        required: ["base64", "targetFormat"]
       }
     }
   }
