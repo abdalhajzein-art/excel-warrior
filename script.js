@@ -5,31 +5,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const welcomeScreen = document.getElementById('welcomeScreen');
     const newChatBtn = document.getElementById('newChatBtn');
     const newSessionBtn = document.getElementById('newSessionBtn');
+    const sessionsList = document.getElementById('sessionsList');
     
-    // عناصر السايدبار والريسبونسف
+    // عناصر السايدبار
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('sidebar');
     const sidebarOverlay = document.getElementById('sidebarOverlay');
 
-    // تفعيل السايدبار بشكل مباشر وفعال
+    // إدارة حالة الجلسات
+    let currentSessionId = localStorage.getItem('alatheer_current_session') || generateSessionId();
+    
+    // تفعيل السايدبار
     if (sidebarToggle && sidebar) {
         sidebarToggle.addEventListener('click', () => {
             const isOpen = sidebar.style.transform === 'translateX(0px)' || sidebar.classList.contains('open');
-            
             if (isOpen) {
                 sidebar.style.transform = 'translateX(-100%)';
                 sidebar.classList.remove('open');
-                if (sidebarOverlay) {
-                    sidebarOverlay.style.display = 'none';
-                    sidebarOverlay.style.opacity = '0';
-                }
+                if (sidebarOverlay) { sidebarOverlay.style.display = 'none'; sidebarOverlay.style.opacity = '0'; }
             } else {
                 sidebar.style.transform = 'translateX(0px)';
                 sidebar.classList.add('open');
-                if (sidebarOverlay) {
-                    sidebarOverlay.style.display = 'block';
-                    sidebarOverlay.style.opacity = '1';
-                }
+                if (sidebarOverlay) { sidebarOverlay.style.display = 'block'; sidebarOverlay.style.opacity = '1'; }
             }
         });
 
@@ -43,8 +40,90 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // استرجاع المحادثات السابقة من التخزين المحلي عند فتح الصفحة
-    loadChatHistory();
+    // تهيئة الجلسات عند التحميل
+    initSessions();
+
+    function generateSessionId() {
+        return 'session_' + Date.now();
+    }
+
+    function initSessions() {
+        let sessions = getStoredSessions();
+        if (!sessions[currentSessionId]) {
+            sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [] };
+            saveSessions(sessions);
+        }
+        renderSessionsList();
+        loadSession(currentSessionId);
+    }
+
+    function getStoredSessions() {
+        return JSON.parse(localStorage.getItem('alatheer_sessions') || '{}');
+    }
+
+    function saveSessions(sessions) {
+        localStorage.setItem('alatheer_sessions', JSON.stringify(sessions));
+    }
+
+    // عرض قائمة الجلسات في السايدبار بشكل أنيق
+    function renderSessionsList() {
+        if (!sessionsList) return;
+        sessionsList.innerHTML = '';
+        const sessions = getStoredSessions();
+
+        Object.keys(sessions).reverse().forEach(sessionId => {
+            const session = sessions[sessionId];
+            const btn = document.createElement('div');
+            btn.className = 'session-item';
+            if (sessionId === currentSessionId) {
+                btn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                btn.style.borderRight = '3px solid #007bff';
+            }
+            
+            btn.style.padding = '10px 12px';
+            btn.style.margin = '5px 0';
+            btn.style.borderRadius = '6px';
+            btn.style.cursor = 'pointer';
+            btn.style.color = '#fff';
+            btn.style.fontSize = '14px';
+            btn.style.whiteSpace = 'nowrap';
+            btn.style.overflow = 'hidden';
+            btn.style.textOverflow = 'ellipsis';
+            btn.innerText = session.title || 'جلسة جديدة';
+
+            btn.addEventListener('click', () => {
+                switchSession(sessionId);
+                if (window.innerWidth <= 768 && sidebar) {
+                    sidebar.style.transform = 'translateX(-100%)';
+                    if (sidebarOverlay) sidebarOverlay.style.display = 'none';
+                }
+            });
+
+            sessionsList.appendChild(btn);
+        });
+    }
+
+    function switchSession(sessionId) {
+        currentSessionId = sessionId;
+        localStorage.setItem('alatheer_current_session', sessionId);
+        renderSessionsList();
+        loadSession(sessionId);
+    }
+
+    function loadSession(sessionId) {
+        chatArea.innerHTML = '';
+        const sessions = getStoredSessions();
+        const session = sessions[sessionId];
+
+        if (session && session.messages && session.messages.length > 0) {
+            if (welcomeScreen) welcomeScreen.style.display = 'none';
+            session.messages.forEach(msg => {
+                appendMessageToDOM(msg.sender, msg.text);
+            });
+        } else {
+            if (welcomeScreen) welcomeScreen.style.display = 'flex';
+        }
+    }
 
     async function handleSendMessage() {
         const message = userInput.value.trim();
@@ -54,40 +133,56 @@ document.addEventListener('DOMContentLoaded', () => {
             welcomeScreen.style.display = 'none';
         }
 
-        // إضافة رسالة المستخدم وحفظها
-        appendMessage('user', message);
-        saveMessageToStorage('user', message);
+        // إضافة رسالة المستخدم للواجهة والتخزين
+        appendMessageToDOM('user', message);
+        saveMessageToCurrentSession('user', message);
+
+        // تحديث عنوان الجلسة بناءً على أول رسالة إذا كانت جديدة
+        let sessions = getStoredSessions();
+        if (sessions[currentSessionId].title === 'جلسة جديدة') {
+            sessions[currentSessionId].title = message.length > 25 ? message.substring(0, 25) + '...' : message;
+            saveSessions(sessions);
+            renderSessionsList();
+        }
 
         userInput.value = '';
         userInput.style.height = 'auto';
 
-        // رسالة الانتظار
-        const loadingId = appendMessage('assistant', 'جاري المعالجة... ⏳', true);
+        const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة... ⏳', true);
 
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message })
+                body: JSON.stringify({ message, sessionId: currentSessionId })
             });
 
             const data = await response.json();
-            removeMessage(loadingId);
+            removeMessageFromDOM(loadingId);
 
             if (data && data.reply) {
-                appendMessage('assistant', data.reply);
-                saveMessageToStorage('assistant', data.reply);
+                appendMessageToDOM('assistant', data.reply);
+                saveMessageToCurrentSession('assistant', data.reply);
             } else {
-                appendMessage('assistant', '⚠️ حدث خطأ في استجابة السيرفر.');
+                appendMessageToDOM('assistant', '⚠️ حدث خطأ في استجابة السيرفر.');
             }
         } catch (error) {
             console.error('Fetch Error:', error);
-            removeMessage(loadingId);
-            appendMessage('assistant', '⚠️ تعذر الاتصال بالسيرفر. تأكد من الشبكة.');
+            removeMessageFromDOM(loadingId);
+            appendMessageToDOM('assistant', '⚠️ تعذر الاتصال بالسيرفر.');
         }
     }
 
-    function appendMessage(sender, text, isLoading = false) {
+    function saveMessageToCurrentSession(sender, text) {
+        let sessions = getStoredSessions();
+        if (!sessions[currentSessionId]) {
+            sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [] };
+        }
+        sessions[currentSessionId].messages.push({ sender, text });
+        saveSessions(sessions);
+    }
+
+    function appendMessageToDOM(sender, text, isLoading = false) {
         const messageDiv = document.createElement('div');
         const messageId = isLoading ? 'loading_' + Date.now() : 'msg_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
         messageDiv.id = messageId;
@@ -116,54 +211,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return messageId;
     }
 
-    function removeMessage(id) {
+    function removeMessageFromDOM(id) {
         if (!id) return;
         const el = document.getElementById(id);
         if (el) el.remove();
     }
 
-    // نظام التخزين المحلي لحفظ الجلسات
-    function saveMessageToStorage(sender, text) {
-        let history = JSON.parse(localStorage.getItem('alatheer_chat_history') || '[]');
-        history.push({ sender, text });
-        localStorage.setItem('alatheer_chat_history', JSON.stringify(history));
-    }
+    // بدء جلسة جديدة نظيفة
+    const createNewSession = () => {
+        currentSessionId = generateSessionId();
+        localStorage.setItem('alatheer_current_session', currentSessionId);
+        
+        let sessions = getStoredSessions();
+        sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [] };
+        saveSessions(sessions);
 
-    function loadChatHistory() {
-        let history = JSON.parse(localStorage.getItem('alatheer_chat_history') || '[]');
-        if (history.length > 0 && welcomeScreen) {
-            welcomeScreen.style.display = 'none';
-        }
-        history.forEach(item => {
-            appendMessage(item.sender, item.text);
-        });
-    }
-
-    // ربط الأحداث بالأزرار
-    if (sendBtn) {
-        sendBtn.addEventListener('click', handleSendMessage);
-    }
-
-    if (userInput) {
-        userInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-            }
-        });
-    }
-
-    const resetChat = () => {
-        chatArea.innerHTML = '';
-        localStorage.removeItem('alatheer_chat_history');
-        if (welcomeScreen) {
-            welcomeScreen.style.display = 'flex';
-        }
+        renderSessionsList();
+        loadSession(currentSessionId);
     };
 
-    if (newChatBtn) newChatBtn.addEventListener('click', resetChat);
-    if (newSessionBtn) newSessionBtn.addEventListener('click', resetChat);
+    if (newChatBtn) newChatBtn.addEventListener('click', createNewSession);
+    if (newSessionBtn) newSessionBtn.addEventListener('click', createNewSession);
 
-    console.log('✨ منصة الأثير تعمل بكامل طاقتها!');
+    console.log('🌟 منصة الأثير تعمل بإدارة جلسات احترافية متكاملة!');
 });
-
