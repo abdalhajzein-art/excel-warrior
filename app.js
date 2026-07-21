@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fetch from 'node-fetch'; // لضمان عمل الـ fetch إذا كنت تستخدم إصدار Node قديم، أو استخدم الـ global fetch
 import { SYSTEM_PROMPT } from "./api/agent/system.js";
 import { toolsDefinition } from "./api/tools/index.js";
 
