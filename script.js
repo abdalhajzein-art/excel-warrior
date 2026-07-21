@@ -7,6 +7,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const newSessionBtn = document.getElementById('newSessionBtn');
     const sessionsList = document.getElementById('sessionsList');
     
+    // عناصر إرفاق الملفات
+    const attachBtn = document.getElementById('attachBtn');
+    let attachedFileJSON = null; // لتخزين بيانات الملف المرفق (مثل الإكسل)
+
+    // عنصر مخفي لاختيار الملفات من الجهاز
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.xlsx, .xls, .csv, .json, .txt';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+    
     // عناصر السايدبار
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('sidebar');
@@ -81,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('alatheer_sessions', JSON.stringify(sessions));
     }
 
-    // عرض الجلسات في السايدبار مع تفعيل الحذف والتثبيت
+    // عرض الجلسات في السايدبار مع تفعيل الحذف والتثبيت بالكامل
     function renderSessionsList() {
         if (!sessionsList) return;
         sessionsList.innerHTML = '';
@@ -104,21 +115,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             
             item.className = `session-item ${sessionId === currentSessionId ? 'active' : ''}`;
+            item.style.cssText = 'padding: 10px 12px; margin-bottom: 6px; border-radius: 6px; cursor: pointer; background: transparent; border: 1px solid transparent; display: flex; flex-direction: column; transition: all 0.2s;';
             
             item.innerHTML = `
-                <div class="session-title-row">
-                    <span class="session-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px;">
+                <div class="session-title-row" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <span class="session-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; font-size: 13px; color: var(--text-main);">
                         ${session.pinned ? '📌 ' : ''}${session.title || 'جلسة جديدة'}
                     </span>
                     <div class="session-badges">
-                        ${session.pinned ? '<span class="session-badge">مثبت</span>' : ''}
+                        ${session.pinned ? '<span class="session-badge" style="font-size: 10px; color: var(--gold-primary); background: rgba(212, 175, 55, 0.1); padding: 2px 6px; border-radius: 4px;">مثبت</span>' : ''}
                     </div>
                 </div>
-                <div class="session-actions" style="display: flex; gap: 6px; margin-top: 4px;">
-                    <button class="session-action-btn pin-btn" title="${session.pinned ? 'إلغاء التثبيت' : 'تثبيت الجلسة'}" style="background:none; border:none; cursor:pointer; font-size:12px;">
+                <div class="session-actions" style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
+                    <button class="session-action-btn pin-btn" title="${session.pinned ? 'إلغاء التثبيت' : 'تثبيت الجلسة'}" style="background:none; border:none; cursor:pointer; font-size:13px; padding: 2px;">
                         ${session.pinned ? '📍' : '📌'}
                     </button>
-                    <button class="session-action-btn delete-btn" title="حذف الجلسة" style="background:none; border:none; cursor:pointer; font-size:12px;">🗑️</button>
+                    <button class="session-action-btn delete-btn" title="حذف الجلسة" style="background:none; border:none; cursor:pointer; font-size:13px; padding: 2px;">🗑️</button>
                 </div>
             `;
 
@@ -209,27 +221,62 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // تفعيل زر الإرفاق وقراءة الملفات
+    if (attachBtn) {
+        attachBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+    }
+
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        appendMessageToDOM('user', `📎 تم إرفاق الملف: ${file.name}`);
+        
+        // إذا كان الملف نصياً أو JSON يمكن قراءته مباشرة
+        if (file.name.endsWith('.json') || file.name.endsWith('.txt')) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    attachedFileJSON = JSON.parse(event.target.result);
+                } catch (err) {
+                    attachedFileJSON = [{ content: event.target.result }];
+                }
+            };
+            reader.readAsText(file);
+        } else {
+            // كإشارة مبدئية لوجود ملف مرفق ليتم معالجته بالسيرفر
+            attachedFileJSON = [{ fileName: file.name, size: file.size, type: file.type }];
+        }
+        
+        fileInput.value = '';
+    });
+
     async function handleSendMessage() {
         if (!userInput) return;
         const message = userInput.value.trim();
-        if (!message) return;
+        if (!message && !attachedFileJSON) return;
 
         if (welcomeScreen) {
             welcomeScreen.style.display = 'none';
         }
 
-        appendMessageToDOM('user', message);
-        saveMessageToCurrentSession('user', message);
+        const displayMessage = message || "تحليل الملف المرفق";
+        appendMessageToDOM('user', displayMessage);
+        saveMessageToCurrentSession('user', displayMessage);
 
         let sessions = getStoredSessions();
         if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
-            sessions[currentSessionId].title = message.length > 20 ? message.substring(0, 20) + '...' : message;
+            sessions[currentSessionId].title = displayMessage.length > 20 ? displayMessage.substring(0, 20) + '...' : displayMessage;
             saveSessions(sessions);
             renderSessionsList();
         }
 
+        const payloadExcel = attachedFileJSON;
         userInput.value = '';
         userInput.style.height = 'auto';
+        attachedFileJSON = null; // إعادة تعيين الملف المرفق بعد الإرسال
 
         const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة... ⏳', true);
 
@@ -237,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message, sessionId: currentSessionId })
+                body: JSON.stringify({ message: displayMessage, excelJSON: payloadExcel, sessionId: currentSessionId })
             });
 
             const data = await response.json();
@@ -252,6 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     downloadBtn.href = `data:application/octet-stream;base64,${data.fileBase64}`;
                     downloadBtn.download = data.fileName || 'file.xlsx';
                     downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
+                    downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: var(--gold-primary); text-decoration: underline; font-weight: bold; cursor: pointer;';
                     chatArea.appendChild(downloadBtn);
                     chatArea.scrollTop = chatArea.scrollHeight;
                     
@@ -296,6 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadBtn.href = `data:application/octet-stream;base64,${fileData.base64}`;
             downloadBtn.download = fileData.name;
             downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
+            downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: var(--gold-primary); text-decoration: underline; font-weight: bold; cursor: pointer;';
             chatArea.appendChild(downloadBtn);
         }
 
@@ -321,16 +370,13 @@ document.addEventListener('DOMContentLoaded', () => {
         loadSession(currentSessionId);
     };
 
-    // ربط أزرار إنشاء الجلسة الجديدة بأمان
     if (newChatBtn) newChatBtn.addEventListener('click', createNewSession);
     if (newSessionBtn) newSessionBtn.addEventListener('click', createNewSession);
 
-    // ربط زر الإرسال
     if (sendBtn) {
         sendBtn.addEventListener('click', handleSendMessage);
     }
 
-    // ربط زر الإدخال بالإنتر
     if (userInput) {
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
