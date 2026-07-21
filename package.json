@@ -7,8 +7,11 @@
     "start": "node app.js"
   },
   "dependencies": {
+    "docxtemplater": "^3.47.0",
+    "docx": "^9.0.3",
+    "exceljs": "^4.4.0",
     "express": "^4.19.2",
-    "xlsx": "^0.18.5",
-    "exceljs": "^4.3.0"
+    "pizzip": "^3.1.7",
+    "xlsx": "^0.18.5"
   }
 }
