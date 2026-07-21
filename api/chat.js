@@ -10,72 +10,50 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const { message, excelJSON } = body || {}; // استقبال الملف أو بياناته المرفقة خلف الكواليس
+    const { message, excelJSON } = body || {};
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GROQ_API_KEY غير مضاف في متغيرات البيئة." });
+      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GEMINI_API_KEY غير مضاف في متغيرات البيئة على Railway." });
     }
 
     let userContent = message || "تعديل الملف المرفق";
 
-    // إرسال الأمر النصي فقط للذكاء الاصطناعي (بدون حشر الملف لتجنب التوكنز)
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    // تحويل الأدوات بتنسيق يفهمه جوجل (Gemini Function Declarations) إذا لزم الأمر، 
+    // أو سنرسل الطلب مباشرة لنظام جوجل الرسمي.
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userContent }
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: `${SYSTEM_PROMPT}\n\nUser Request: ${userContent}` }
+            ]
+          }
         ],
-        tools: toolsDefinition,
-        tool_choice: "auto",
-        temperature: 0.5
+        generationConfig: {
+          temperature: 0.5
+        }
       })
     });
 
     const data = await response.json();
+    
     if (data.error) {
-      throw new Error(data.error.message);
+      throw new Error(data.error.message || "خطأ غير معروف من خوادم جوجل");
     }
 
-    const messageContent = data.choices[0].message;
+    const candidate = data.candidates?.[0];
+    const replyText = candidate?.content?.parts?.[0]?.text || "تم الاستلام بنجاح ولكن لم يتم إرجاع رد نصي.";
 
-    // إذا طلب النموذج تنفيذ أداة
-    if (messageContent.tool_calls && messageContent.tool_calls.length > 0) {
-      const toolCall = messageContent.tool_calls[0];
-      const toolName = toolCall.function.name;
-      let toolPayload = JSON.parse(toolCall.function.arguments);
-
-      // إذا كانت الأداة تتعلق بالإكسل والمستخدم أرفق ملفاً (Base64)، ندمجه تلقائياً في الباي لود
-      if (toolName.includes('excel') && excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
-        toolPayload.base64 = excelJSON[0].fileBase64;
-      }
-
-      if (toolsRegistry[toolName]) {
-        const toolResult = await toolsRegistry[toolName].handler(toolPayload);
-        
-        // إذا كان الناتج ملف جاهز للتحميل (Buffer)
-        if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
-          return res.status(200).json({
-            reply: "✅ تم تنفيذ التعديل بنجاح وجاهز للتحميل:",
-            fileBase64: Buffer.from(toolResult).toString('base64'),
-            fileName: 'modified.xlsx'
-          });
-        }
-
-        return res.status(200).json({ reply: "✅ تم تنفيذ الطلب بنجاح: " + JSON.stringify(toolResult) });
-      }
-    }
-
-    return res.status(200).json({ reply: messageContent.content });
+    return res.status(200).json({ reply: replyText });
 
   } catch (error) {
-    console.error("Error in Chat API:", error);
-    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية: " + error.message });
+    console.error("Error in Gemini Chat API:", error);
+    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية مع جوجل: " + error.message });
   }
 }
