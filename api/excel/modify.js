@@ -94,7 +94,7 @@ export default async function handler(req, res) {
 
     return res.status(200).send(resultBuffer);
 
-  }Json catch (error) {
+  } catch (error) {  // تم تصحيح الخطأ هنا وإزالة كلمة Json الزائدة
     console.error("خطأ أثناء تعديل الملف:", error);
     return res.status(500).json({ error: "خطأ أثناء تعديل الملف: " + error.message });
   }
