@@ -1,4 +1,4 @@
-// api/chat.js - النسخة النهائية المحدثة لاستخدام gemini-1.5-pro المجاني
+// api/chat.js - التجربة المجنونة مع openai/gpt-oss-120b
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 
@@ -32,8 +32,8 @@ export default async function handler(req, res) {
       }))
     }];
 
-    // الاستقرار على gemini-1.5-pro عبر مسار v1beta
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
+    // التجربة المجنونة: حقن اسم النموذج في مسار الـ v1beta
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/openai/gpt-oss-120b:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -68,7 +68,7 @@ export default async function handler(req, res) {
     const functionCallPart = parts.find(p => p.functionCall);
 
     if (functionCallPart && functionCallPart.functionCall) {
-      const { name: toolName, args: toolArgs } = functionCallPart.functionCall;
+      const { name: toolName, args: toolArgs }  = functionCallPart.functionCall;
 
       if (toolsRegistry[toolName]) {
         try {
@@ -131,4 +131,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية مع جوجل: " + error.message });
   }
 }
-
