@@ -20,7 +20,7 @@
   font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
 }
 
-/* BODY - استخدام dvh لمنع مشاكل السكرول في الهواتف */
+/* BODY */
 body {
   background: var(--bg-dark);
   height: 100dvh;
@@ -47,7 +47,7 @@ body {
   to   { opacity: 1; }
 }
 
-/* HEADER - ترك مسافة لزر القائمة على اليسار */
+/* HEADER */
 .top-bar {
   padding: 14px 16px 14px 60px; 
   background: var(--bg-panel);
@@ -95,7 +95,7 @@ body {
   border-color: var(--accent-gold);
 }
 
-/* WELCOME SCREEN - منع التراكب وضبط التدفق العمودي */
+/* WELCOME SCREEN */
 .welcome-screen {
   flex: 1;
   display: flex;
@@ -211,7 +211,7 @@ body {
   box-shadow: 0 6px 15px rgba(40, 167, 69, 0.35);
 }
 
-/* SIDEBAR TOGGLE BUTTON - إعادته إلى اليسار */
+/* SIDEBAR TOGGLE BUTTON */
 .sidebar-toggle {
   position: fixed;
   top: 12px;
@@ -247,7 +247,7 @@ body {
   transition: opacity 0.3s ease;
 }
 
-/* SIDEBAR — MOBILE FIRST (الفتح والإغلاق من اليسار) */
+/* SIDEBAR — MOBILE FIRST */
 .sidebar {
   position: fixed;
   top: 0;
@@ -371,7 +371,7 @@ body {
   font-size: 12px;
 }
 
-/* INPUT AREA - ثبات الصندوق في أسفل الشاشة */
+/* INPUT AREA */
 .input-area {
   padding: 12px 16px;
   background: var(--bg-panel);
@@ -388,6 +388,7 @@ body {
   gap: 8px;
 }
 
+/* صندوق الكتابة مع ضبط التفاعل لمنع تأثير الضغط العشوائي */
 .input-box {
   background: var(--bg-dark);
   border: 1px solid var(--border-color);
@@ -396,29 +397,34 @@ body {
   display: flex;
   align-items: flex-end;
   gap: 12px;
-  transition: all 0.25s ease;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
+/* الإطار يتفاعل فقط عند التركيز على حقل النص أو الكتابة داخله */
 .input-box:focus-within {
   border-color: var(--accent-gold);
   box-shadow: 0 0 10px rgba(197, 160, 89, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
+/* زر الإرفاق (الكليبسة) على اليسار وتأثيره المستقل */
 .attach-icon {
   background: transparent;
   border: none;
   color: var(--text-dim);
   font-size: 18px;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: color 0.2s ease, transform 0.2s ease;
   padding-bottom: 6px;
+  order: 1; /* يجعلها في أقصى اليسار */
 }
 
 .attach-icon:hover {
   color: var(--accent-gold);
+  transform: scale(1.1);
 }
 
+/* حقل النص في المنتصف */
 #userInput {
   flex: 1;
   background: transparent;
@@ -429,8 +435,10 @@ body {
   outline: none;
   max-height: 120px;
   padding: 6px 0;
+  order: 2;
 }
 
+/* زر الإرسال (السهم) على اليمين ليتناسب مع اليد اليمنى */
 .send-icon {
   background: var(--accent-gold);
   border: none;
@@ -445,6 +453,7 @@ body {
   font-weight: bold;
   transition: all 0.2s ease;
   flex-shrink: 0;
+  order: 3; /* يجعلها في أقصى اليمين */
 }
 
 .send-icon:hover {
