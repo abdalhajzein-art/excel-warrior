@@ -1,3 +1,4 @@
+// app.js - النسخة السيادية المعتمدة حصرياً على Google Gemini API
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -10,82 +11,105 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// دعم الـ JSON والملفات الكبيرة للإكسل والوورد
+// دعم الـ JSON والملفات الكبيرة للإكسل والوورد والصور
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // تقديم ملفات الواجهة من الجذر
 app.use(express.static(__dirname));
 
-// مسار الشات والذكاء الاصطناعي وتنفيذ الأدوات تلقائياً
+// مسار الشات والذكاء الاصطناعي السيادي عبر Gemini API
 app.post(['/api/chat', '/.netlify/functions/chat'], async (req, res) => {
   try {
     const body = req.body.body ? JSON.parse(req.body.body) : req.body;
-    const { message } = body; // تجاهل excelJSON تماماً لحماية التوكنز
-    const apiKey = process.env.GROQ_API_KEY;
+    const { message } = body;
+    const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({ reply: "⚠️ مفتاح GROQ_API_KEY غير متوفر في بيئة العمل." });
+      return res.status(500).json({ reply: "⚠️ مفتاح GEMINI_API_KEY غير متوفر في بيئة العمل السيادية." });
     }
 
     let userContent = message || "تحليل الطلب المرفق";
 
-    // إرسال الطلب للنموذج القوي المفضل لديك بدون بيانات الإكسل الضخمة
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    // تحويل صيغة الأدوات لتتطابق مع متطلبات Google Gemini API
+    const formattedTools = [{
+      functionDeclarations: toolsDefinition.map(t => ({
+        name: t.function.name,
+        description: t.function.description,
+        parameters: t.function.parameters
+      }))
+    }];
+
+    // استدعاء عقل جيميني الرسمي
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b", // رجعنا للنموذج القوي الأساسي
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userContent }
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: `${SYSTEM_PROMPT}\n\nUser Request: ${userContent}` }
+            ]
+          }
         ],
-        tools: toolsDefinition,
-        tool_choice: "auto",
-        temperature: 0.5
+        tools: formattedTools,
+        generationConfig: {
+          temperature: 0.5
+        }
       })
     });
 
     const data = await response.json();
     if (data.error) {
-      throw new Error(data.error.message);
+      throw new Error(data.error.message || "خطأ من خوادم جوجل.");
     }
 
-    const messageContent = data.choices[0].message;
+    const candidate = data.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
 
-    // التحقق مما إذا طلب نموذج الذكاء الاصطناعي استدعاء أداة (Excel أو Word)
-    if (messageContent.tool_calls && messageContent.tool_calls.length > 0) {
-      const toolCall = messageContent.tool_calls[0];
-      const toolName = toolCall.function.name;
-      const toolPayload = JSON.parse(toolCall.function.arguments);
+    // التحقق مما إذا طلب نموذج جيميني استدعاء أداة (Function Call)
+    const functionCallPart = parts.find(p => p.functionCall);
+
+    if (functionCallPart && functionCallPart.functionCall) {
+      const { name: toolName, args: toolArgs } = functionCallPart.functionCall;
 
       if (toolsRegistry[toolName]) {
-        // تنفيذ الأداة واستخراج النتيجة محلياً
-        const toolResult = await toolsRegistry[toolName].handler(toolPayload);
+        // تنفيذ الأداة محلياً عبر الـ Handler الخاص بها
+        const toolResult = await toolsRegistry[toolName].handler(toolArgs);
         
-        // إذا كانت النتيجة عبارة عن Buffer (ملف جاهز للتحميل)
+        // إذا كانت النتيجة ملف جاهز (Buffer أو Object يحتوي على بيانات الملف/الصورة)
         if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
           const isWord = toolName.includes('word');
           return res.json({
-            reply: "✅ تم تنفيذ الطلب وتوليد المستند بنجاح:",
+            reply: "✅ أبشر، تم تنفيذ الطلب وتوليد المستند بنجاح:",
             fileBase64: Buffer.from(toolResult).toString('base64'),
             fileName: isWord ? 'document.docx' : 'spreadsheet.xlsx'
           });
         }
 
-        return res.json({ reply: "✅ تم تنفيذ الأداة بنجاح: " + JSON.stringify(toolResult) });
+        if (toolResult && toolResult.success && toolResult.fileBase64) {
+          return res.json({
+            reply: toolResult.message || "✨ أبشر، تم تنفيذ العملية بنجاح:",
+            fileBase64: toolResult.fileBase64,
+            fileName: toolResult.fileName || 'alatheer_output.dat',
+            contentType: toolResult.contentType || 'application/octet-stream'
+          });
+        }
+
+        return res.json({ reply: "✅ تم تنفيذ الأداة بنجاح." });
       }
     }
 
     // الرد النصي العادي إذا لم يتم استدعاء أداة
-    res.json({ reply: messageContent.content });
+    const replyText = parts.find(p => p.text)?.text || "تم الاستلام بنجاح.";
+    res.json({ reply: replyText });
 
   } catch (error) {
-    console.error("Error in chat API:", error);
-    res.status(500).json({ reply: "⚠️ خطأ في المعالجة: " + error.message });
+    console.error("Error in Gemini chat API:", error);
+    res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية: " + error.message });
   }
 });
 
@@ -96,5 +120,5 @@ app.post('/api/upload', (req, res) => {
 
 // تشغيل السيرفر
 app.listen(PORT, () => {
-  console.log(`🚀 Server is running smoothly on port ${PORT}`);
+  console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
 });
