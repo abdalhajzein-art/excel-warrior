@@ -20,9 +20,9 @@ export default async function handler(req, res) {
     }
 
     let userContent = message || "مساعدة بخصوص الملف المرفق";
-    let fileDataBlock = "";
+    let fileDataContext = "";
 
-    // قراءة البيانات الحقيقية من ملف الإكسل وحقنها بشكل مباشر ومفرض على النموذج
+    // معالجة الملف المرفق وقراءة محتواه الداخلي ليرى الذكاء الاصطناعي البيانات بوضوح تام
     if (excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
       try {
         const fileObj = excelJSON[0];
@@ -30,32 +30,23 @@ export default async function handler(req, res) {
         const workbook = XLSX.read(buffer, { type: 'buffer' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        
-        // تحويل محتوى ورقة العمل إلى مصفوفة بيانات نصية دقيقة
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
         
-        fileDataBlock = `
-=== بيانات الملف المرفق الفعلية (${fileObj.fileName || 'ملف'}) ===
-${JSON.stringify(rawData, null, 2)}
-=================================================
-تعليمات صارمة: البيانات أعلاه هي محتوى الملف الذي أرسله المستخدم. ممنوع منعاً باتاً أن تسأل المستخدم عن محتوى الملف أو أسماء الأعمدة؛ لأن محتوى الملف بين يديك بالكامل الآن. قم بتحليله، قراءته، والإجابة على طلب المستخدم بناءً عليه فوراً وبدقة متناهية!
-`;
+        fileDataContext = `\n[محتوى الملف المرفق (${fileObj.fileName || 'ملف'}) بالكامل:\n${JSON.stringify(rawData, null, 2)}\n]\n`;
       } catch (parseErr) {
-        console.error("Error parsing Excel data in chat:", parseErr);
-        fileDataBlock = `[ملاحظة: تم إرفاق ملف باسم ${excelJSON[0].fileName} ولكن حدث خطأ في استخراج محتواه: ${parseErr.message}]`;
+        console.error("Error parsing Excel in chat:", parseErr);
       }
     }
 
-    const fullPrompt = `${SYSTEM_PROMPT}\n\n${fileDataBlock}\n\nUser Request: ${userContent}`;
+    const finalPrompt = `${SYSTEM_PROMPT}\n\n${fileDataContext}\n\nطلب المستخدم الحالي: ${userContent}`;
 
-    let response = null;
-    
+    let response;
     try {
       response = await ai.models.generateContent({
         model: 'gemini-1.5-flash',
-        contents: fullPrompt,
+        contents: finalPrompt,
         config: {
-          temperature: 0.4, // حرارة منخفضة ليكون التحليل دقيقاً وصارماً
+          temperature: 0.3,
           tools: [{
             functionDeclarations: toolsDefinition.map(t => ({
               name: t.function.name,
@@ -65,13 +56,12 @@ ${JSON.stringify(rawData, null, 2)}
           }]
         }
       });
-    } catch (primaryErr) {
-      console.warn("Primary model busy, switching to backup...", primaryErr.message);
+    } catch (err) {
       response = await ai.models.generateContent({
         model: 'gemini-1.5-pro',
-        contents: fullPrompt,
+        contents: finalPrompt,
         config: {
-          temperature: 0.4,
+          temperature: 0.3,
           tools: [{
             functionDeclarations: toolsDefinition.map(t => ({
               name: t.function.name,
@@ -93,6 +83,12 @@ ${JSON.stringify(rawData, null, 2)}
         try {
           if (!toolArgs.base64 && excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
             toolArgs.base64 = excelJSON[0].fileBase64;
+          }
+
+          if (toolName.includes('generate') && (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)) {
+            toolArgs.instruction = userContent || "ملف إكسل احترافي";
+            toolArgs.content = userContent;
+            toolArgs.prompt = userContent;
           }
 
           let toolResult = null;
@@ -117,10 +113,11 @@ ${JSON.stringify(rawData, null, 2)}
 
           if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
             const isWord = toolName.includes('word');
+            const isPdf = toolName.includes('pdf');
             return res.status(200).json({
               reply: "✅ أبشر، تم تنفيذ الطلب وتوليد المستند بنجاح:",
               fileBase64: Buffer.from(toolResult).toString('base64'),
-              fileName: isWord ? 'document.docx' : 'spreadsheet.xlsx'
+              fileName: isWord ? 'document.docx' : (isPdf ? 'document.pdf' : 'spreadsheet.xlsx')
             });
           }
 
@@ -136,7 +133,7 @@ ${JSON.stringify(rawData, null, 2)}
           return res.status(200).json({ reply: "✅ تم تنفيذ الأداة بنجاح." });
 
         } catch (toolErr) {
-          console.error("Tool execution error in chat:", toolErr);
+          console.error("Tool execution error:", toolErr);
           return res.status(200).json({ reply: "⚠️ حدث خطأ أثناء تنفيذ الأداة البرمجية: " + toolErr.message });
         }
       }
@@ -146,8 +143,8 @@ ${JSON.stringify(rawData, null, 2)}
     return res.status(200).json({ reply: replyText });
 
   } catch (error) {
-    console.error("Error in Official Gemini SDK Chat API:", error);
-    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية الرسمية: " + (error.message || error) });
+    console.error("Error in Chat API:", error);
+    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية: " + (error.message || error) });
   }
 }
 
