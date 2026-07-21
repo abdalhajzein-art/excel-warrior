@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('alatheer_sessions', JSON.stringify(sessions));
     }
 
-    // عرض الجلسات في السايدبار مع تفعيل الحذف، التثبيت، والتحكم الكامل
+    // عرض الجلسات في السايدبار مع تفعيل الحذف والتثبيت
     function renderSessionsList() {
         if (!sessionsList) return;
         sessionsList.innerHTML = '';
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const sessionB = sessions[b];
             if (sessionA.pinned && !sessionB.pinned) return -1;
             if (!sessionA.pinned && sessionB.pinned) return 1;
-            return b.localeCompare(a); // الأحدث أولاً
+            return b.localeCompare(a);
         });
 
         if (sortedSessionIds.length === 0) return;
@@ -105,27 +105,25 @@ document.addEventListener('DOMContentLoaded', () => {
             
             item.className = `session-item ${sessionId === currentSessionId ? 'active' : ''}`;
             
-            // تصميم العنصر مع دعم الأيقونات وأزرار الإجراءات
             item.innerHTML = `
                 <div class="session-title-row">
-                    <span class="session-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;">
+                    <span class="session-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px;">
                         ${session.pinned ? '📌 ' : ''}${session.title || 'جلسة جديدة'}
                     </span>
                     <div class="session-badges">
                         ${session.pinned ? '<span class="session-badge">مثبت</span>' : ''}
                     </div>
                 </div>
-                <div class="session-actions">
-                    <button class="session-action-btn pin-btn" title="${session.pinned ? 'إلغاء التثبيت' : 'تثبيت الجلسة'}">
+                <div class="session-actions" style="display: flex; gap: 6px; margin-top: 4px;">
+                    <button class="session-action-btn pin-btn" title="${session.pinned ? 'إلغاء التثبيت' : 'تثبيت الجلسة'}" style="background:none; border:none; cursor:pointer; font-size:12px;">
                         ${session.pinned ? '📍' : '📌'}
                     </button>
-                    <button class="session-action-btn delete-btn" title="حذف الجلسة">🗑️</button>
+                    <button class="session-action-btn delete-btn" title="حذف الجلسة" style="background:none; border:none; cursor:pointer; font-size:12px;">🗑️</button>
                 </div>
             `;
 
             // حدث النقر لاختيار الجلسة
             item.addEventListener('click', (e) => {
-                // منع التفعيل إذا ضغط المستخدم على أزرار الإجراءات الداخلية
                 if (e.target.closest('.session-actions')) return;
 
                 switchSession(sessionId);
@@ -139,19 +137,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // تفعيل زر التثبيت (Pin)
+            // تفعيل زر التثبيت
             const pinBtn = item.querySelector('.pin-btn');
-            pinBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                togglePinSession(sessionId);
-            });
+            if (pinBtn) {
+                pinBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    togglePinSession(sessionId);
+                });
+            }
 
-            // تفعيل زر الحذف (Delete)
+            // تفعيل زر الحذف
             const deleteBtn = item.querySelector('.delete-btn');
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                deleteSession(sessionId);
-            });
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteSession(sessionId);
+                });
+            }
 
             sessionsList.appendChild(item);
         });
@@ -172,11 +174,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let remainingIds = Object.keys(sessions);
         if (remainingIds.length === 0) {
-            // إذا تم حذف كل الجلسات، أنشئ جلسة جديدة تلقائياً
             currentSessionId = generateSessionId();
             sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [], pinned: false };
         } else if (sessionId === currentSessionId) {
-            // إذا حذف المستخدم الجلسة الحالية، انتقل لأول جلسة متبقية
             currentSessionId = remainingIds[remainingIds.length - 1];
             localStorage.setItem('alatheer_current_session', currentSessionId);
         }
@@ -194,6 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function loadSession(sessionId) {
+        if (!chatArea) return;
         chatArea.innerHTML = '';
         const sessions = getStoredSessions();
         const session = sessions[sessionId];
@@ -209,6 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function handleSendMessage() {
+        if (!userInput) return;
         const message = userInput.value.trim();
         if (!message) return;
 
@@ -219,7 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
         appendMessageToDOM('user', message);
         saveMessageToCurrentSession('user', message);
 
-        // تحديث العنوان التلقائي لأول رسالة في الجلسة
         let sessions = getStoredSessions();
         if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
             sessions[currentSessionId].title = message.length > 20 ? message.substring(0, 20) + '...' : message;
@@ -246,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 appendMessageToDOM('assistant', data.reply);
                 
                 let savedFileData = null;
-                if (data.fileBase64) {
+                if (data.fileBase64 && chatArea) {
                     const downloadBtn = document.createElement('a');
                     downloadBtn.href = `data:application/octet-stream;base64,${data.fileBase64}`;
                     downloadBtn.download = data.fileName || 'file.xlsx';
@@ -281,6 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function appendMessageToDOM(sender, text, isLoading = false, fileData = null) {
+        if (!chatArea) return null;
         const messageDiv = document.createElement('div');
         const messageId = isLoading ? 'loading_' + Date.now() : 'msg_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
         messageDiv.id = messageId;
@@ -319,13 +321,16 @@ document.addEventListener('DOMContentLoaded', () => {
         loadSession(currentSessionId);
     };
 
+    // ربط أزرار إنشاء الجلسة الجديدة بأمان
     if (newChatBtn) newChatBtn.addEventListener('click', createNewSession);
     if (newSessionBtn) newSessionBtn.addEventListener('click', createNewSession);
 
+    // ربط زر الإرسال
     if (sendBtn) {
         sendBtn.addEventListener('click', handleSendMessage);
     }
 
+    // ربط زر الإدخال بالإنتر
     if (userInput) {
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -334,6 +339,4 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    console.log('💎 منصة الأثير تعمل بكامل ميزات الجلسات، الحذف، والتثبيت بنجاح!');
 });
