@@ -281,6 +281,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  position: relative;
 }
 
 .session-item:hover {
@@ -333,6 +334,12 @@ body {
   display: flex;
   gap: 6px;
   margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.session-item:hover .session-actions {
+  opacity: 1;
 }
 
 .session-action-btn {
@@ -399,6 +406,19 @@ body {
 
 .input-box:focus-within {
   border-color: var(--accent-gold);
+}
+
+.attach-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.attach-icon:hover {
+  color: var(--accent-gold);
 }
 
 #userInput {
