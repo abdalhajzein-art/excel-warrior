@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (session && session.messages && session.messages.length > 0) {
             if (welcomeScreen) welcomeScreen.style.display = 'none';
             session.messages.forEach(msg => {
-                appendMessageToDOM(msg.sender, msg.text);
+                appendMessageToDOM(msg.sender, msg.text, false, msg.fileData);
             });
         } else {
             if (welcomeScreen) welcomeScreen.style.display = 'flex';
@@ -167,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
         appendMessageToDOM('user', message);
         saveMessageToCurrentSession('user', message);
 
-        // تحديث العنوان التلقائي أول رسالة
+        // تحديث العنوان التلقائي لأول رسالة
         let sessions = getStoredSessions();
         if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
             sessions[currentSessionId].title = message.length > 22 ? message.substring(0, 22) + '...' : message;
@@ -192,7 +192,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data && data.reply) {
                 appendMessageToDOM('assistant', data.reply);
-                saveMessageToCurrentSession('assistant', data.reply);
+                
+                let savedFileData = null;
+                // إذا أرسل السيرفر ملفاً قابلاً للتحميل (Excel أو Word)
+                if (data.fileBase64) {
+                    const downloadBtn = document.createElement('a');
+                    downloadBtn.href = `data:application/octet-stream;base64,${data.fileBase64}`;
+                    downloadBtn.download = data.fileName || 'file.xlsx';
+                    downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
+                    downloadBtn.style.display = 'inline-block';
+                    downloadBtn.style.margin = '10px 0';
+                    downloadBtn.style.padding = '10px 15px';
+                    downloadBtn.style.backgroundColor = '#28a745';
+                    downloadBtn.style.color = '#fff';
+                    downloadBtn.style.borderRadius = '5px';
+                    downloadBtn.style.textDecoration = 'none';
+                    downloadBtn.style.fontWeight = 'bold';
+                    
+                    chatArea.appendChild(downloadBtn);
+                    chatArea.scrollTop = chatArea.scrollHeight;
+                    
+                    savedFileData = {
+                        base64: data.fileBase64,
+                        name: data.fileName || 'file.xlsx'
+                    };
+                }
+
+                saveMessageToCurrentSession('assistant', data.reply, savedFileData);
             } else {
                 appendMessageToDOM('assistant', '⚠️ حدث خطأ في استجابة السيرفر.');
             }
@@ -203,16 +229,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function saveMessageToCurrentSession(sender, text) {
+    function saveMessageToCurrentSession(sender, text, fileData = null) {
         let sessions = getStoredSessions();
         if (!sessions[currentSessionId]) {
             sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [] };
         }
-        sessions[currentSessionId].messages.push({ sender, text });
+        sessions[currentSessionId].messages.push({ sender, text, fileData });
         saveSessions(sessions);
     }
 
-    function appendMessageToDOM(sender, text, isLoading = false) {
+    function appendMessageToDOM(sender, text, isLoading = false, fileData = null) {
         const messageDiv = document.createElement('div');
         const messageId = isLoading ? 'loading_' + Date.now() : 'msg_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
         messageDiv.id = messageId;
@@ -236,8 +262,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         messageDiv.innerText = text;
         chatArea.appendChild(messageDiv);
-        chatArea.scrollTop = chatArea.scrollHeight;
 
+        // إذا كان هناك ملف محفوظ في الجلسة وتم تحميلها مسبقاً
+        if (fileData) {
+            const downloadBtn = document.createElement('a');
+            downloadBtn.href = `data:application/octet-stream;base64,${fileData.base64}`;
+            downloadBtn.download = fileData.name;
+            downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
+            downloadBtn.style.display = 'inline-block';
+            downloadBtn.style.margin = '10px 0';
+            downloadBtn.style.padding = '10px 15px';
+            downloadBtn.style.backgroundColor = '#28a745';
+            downloadBtn.style.color = '#fff';
+            downloadBtn.style.borderRadius = '5px';
+            downloadBtn.style.textDecoration = 'none';
+            downloadBtn.style.fontWeight = 'bold';
+            chatArea.appendChild(downloadBtn);
+        }
+
+        chatArea.scrollTop = chatArea.scrollHeight;
         return messageId;
     }
 
@@ -262,12 +305,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (newChatBtn) newChatBtn.addEventListener('click', createNewSession);
     if (newSessionBtn) newSessionBtn.addEventListener('click', createNewSession);
 
-    // ربط زر الإرسال بالحدث لكي يستجيب عند الضغط عليه
     if (sendBtn) {
         sendBtn.addEventListener('click', handleSendMessage);
     }
 
-    // دعم الإرسال بزر Enter من لوحة المفاتيح
     if (userInput) {
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
