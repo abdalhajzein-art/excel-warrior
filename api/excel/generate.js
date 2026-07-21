@@ -1,46 +1,20 @@
-// api/excel/generate.js
 import xlsx from "xlsx";
+import { GoogleGenAI } from "@google/genai";
 
-// الدالة المسؤولة عن التوليد البرمجي الفعلي (تستخدم داخلياً أو عبر الأدوات)
+const ai = new GoogleGenAI({});
+
 export async function generateExcelHandler(payload) {
   const { instruction } = payload || {};
   if (!instruction) {
     throw new Error("لا يوجد طلب توليد مرفق.");
   }
 
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    throw new Error("مفتاح API غير متوفر.");
-  }
-
-  const aiRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: "openai/gpt-oss-120b", // النموذج القوي لتوليد البيانات بدقة
-      messages: [
-        {
-          role: "system",
-          content: "ولّد جدول Excel بصيغة JSON array فقط بدون أي نصوص إضافية."
-        },
-        {
-          role: "user",
-          content: instruction
-        }
-      ]
-    })
+  const response = await ai.models.generateContent({
+    model: "gemini-1.5-flash",
+    contents: `ولّد جدول Excel بناءً على الطلب التالي وأرجعه حصرياً بصيغة JSON array (مصفوفة كائنات) بدون أي نصوص أو شروحات إضافية وبدون علامات تنسيق الكود:\n${instruction}`
   });
 
-  const aiData = await aiRes.json();
-  if (aiData.error) {
-    throw new Error(aiData.error.message);
-  }
-
-  let rawContent = aiData.choices[0].message.content.trim();
-  // تنظيف النص في حال أضاف النموذج علامات تدوين كود
+  let rawContent = response.text.trim();
   if (rawContent.startsWith("```json")) {
     rawContent = rawContent.replace(/^```json/, "").replace(/```$/, "").trim();
   } else if (rawContent.startsWith("```")) {
@@ -57,7 +31,6 @@ export async function generateExcelHandler(payload) {
   return Buffer.from(buffer);
 }
 
-// مسار الـ API للطلبات المباشرة
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
