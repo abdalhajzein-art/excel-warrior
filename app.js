@@ -1,4 +1,4 @@
-// app.js - النسخة المعدلة مع الحماية ضد أخطاء الـ JSON الفارغ
+// app.js - النسخة المستقرة النهائية مع gemini-1.5-flash
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -40,7 +40,8 @@ app.post('/api/chat', async (req, res) => {
       }))
     }];
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/openai/gpt-oss-120b:generateContent?key=${apiKey}`, {
+    // الاستقرار على gemini-1.5-flash المدعوم رسمياً
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -55,7 +56,6 @@ app.post('/api/chat', async (req, res) => {
       })
     });
 
-    // قراءة الرد كـ Text أولاً لحماية السيرفر من الانهيار إذا كان الرد فارغاً أو خطأ HTML
     const rawText = await response.text();
     let data;
     try {
@@ -134,4 +134,3 @@ app.post('/api/upload', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
 });
-
