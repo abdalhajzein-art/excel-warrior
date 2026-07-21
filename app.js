@@ -34,7 +34,7 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: `${SYSTEM_PROMPT}\n${fileInfoText}\n\nUser Request: ${userContent}`,
       config: {
         temperature: 0.5,
