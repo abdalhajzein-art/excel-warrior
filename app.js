@@ -21,18 +21,16 @@ app.use(express.static(__dirname));
 app.post(['/api/chat', '/.netlify/functions/chat'], async (req, res) => {
   try {
     const body = req.body.body ? JSON.parse(req.body.body) : req.body;
-    const { message, excelJSON } = body;
+    const { message } = body; // تم تجاهل excelJSON تماماً لمنع استهلاك التوكنز
     const apiKey = process.env.GROQ_API_KEY;
 
     if (!apiKey) {
       return res.status(500).json({ reply: "⚠️ مفتاح GROQ_API_KEY غير متوفر في بيئة العمل." });
     }
 
-    let userContent = message || "";
-    if (excelJSON && excelJSON.length > 0) {
-      userContent += "\n\n[بيانات الإكسل المرفقة]: " + JSON.stringify(excelJSON);
-    }
+    let userContent = message || "تحليل الطلب المرفق";
 
+    // استخدام النموذج الخفيف والسريع حصراً لتجنب حدود الـ 8000 توكن
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -40,7 +38,7 @@ app.post(['/api/chat', '/.netlify/functions/chat'], async (req, res) => {
         "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
+        model: "llama-3.1-8b-instant",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userContent }
@@ -65,7 +63,7 @@ app.post(['/api/chat', '/.netlify/functions/chat'], async (req, res) => {
       const toolPayload = JSON.parse(toolCall.function.arguments);
 
       if (toolsRegistry[toolName]) {
-        // تنفيذ الأداة واستخراج النتيجة (سواء ملف أو نص)
+        // تنفيذ الأداة واستخراج النتيجة محلياً
         const toolResult = await toolsRegistry[toolName].handler(toolPayload);
         
         // إذا كانت النتيجة عبارة عن Buffer (ملف جاهز للتحميل)
