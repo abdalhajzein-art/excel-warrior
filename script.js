@@ -12,35 +12,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const sidebar = document.getElementById('sidebar');
     const sidebarOverlay = document.getElementById('sidebarOverlay');
 
-    // إدارة حالة الجلسات
+    // إدارة الجلسات
     let currentSessionId = localStorage.getItem('alatheer_current_session') || generateSessionId();
-    
-    // تفعيل السايدبار
+
+    // 1. تفعيل السايدبار والطبقة الشفافة (Overlay) بإتقان تام
     if (sidebarToggle && sidebar) {
-        sidebarToggle.addEventListener('click', () => {
-            const isOpen = sidebar.style.transform === 'translateX(0px)' || sidebar.classList.contains('open');
-            if (isOpen) {
-                sidebar.style.transform = 'translateX(-100%)';
-                sidebar.classList.remove('open');
-                if (sidebarOverlay) { sidebarOverlay.style.display = 'none'; sidebarOverlay.style.opacity = '0'; }
-            } else {
+        const toggleSidebar = (open) => {
+            if (open) {
                 sidebar.style.transform = 'translateX(0px)';
                 sidebar.classList.add('open');
-                if (sidebarOverlay) { sidebarOverlay.style.display = 'block'; sidebarOverlay.style.opacity = '1'; }
+                if (sidebarOverlay) {
+                    sidebarOverlay.style.display = 'block';
+                    setTimeout(() => sidebarOverlay.style.opacity = '1', 10);
+                }
+            } else {
+                sidebar.style.transform = 'translateX(-100%)';
+                sidebar.classList.remove('open');
+                if (sidebarOverlay) {
+                    sidebarOverlay.style.opacity = '0';
+                    setTimeout(() => sidebarOverlay.style.display = 'none', 300);
+                }
             }
+        };
+
+        sidebarToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = sidebar.classList.contains('open');
+            toggleSidebar(!isOpen);
         });
 
         if (sidebarOverlay) {
             sidebarOverlay.addEventListener('click', () => {
-                sidebar.style.transform = 'translateX(-100%)';
-                sidebar.classList.remove('open');
-                sidebarOverlay.style.display = 'none';
-                sidebarOverlay.style.opacity = '0';
+                toggleSidebar(false);
             });
         }
     }
 
-    // تهيئة الجلسات عند التحميل
+    // تهيئة الجلسات
     initSessions();
 
     function generateSessionId() {
@@ -49,57 +57,80 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initSessions() {
         let sessions = getStoredSessions();
-        if (!sessions[currentSessionId]) {
+        if (!sessions || Object.keys(sessions).length === 0) {
+            sessions = {};
             sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [] };
             saveSessions(sessions);
+        } else if (!sessions[currentSessionId]) {
+            currentSessionId = Object.keys(sessions)[0];
+            localStorage.setItem('alatheer_current_session', currentSessionId);
         }
         renderSessionsList();
         loadSession(currentSessionId);
     }
 
     function getStoredSessions() {
-        return JSON.parse(localStorage.getItem('alatheer_sessions') || '{}');
+        try {
+            return JSON.parse(localStorage.getItem('alatheer_sessions') || '{}');
+        } catch (e) {
+            return {};
+        }
     }
 
     function saveSessions(sessions) {
         localStorage.setItem('alatheer_sessions', JSON.stringify(sessions));
     }
 
-    // عرض قائمة الجلسات في السايدبار بشكل أنيق
+    // عرض الجلسات في السايدبار مع ضمان ظهورها وتنسيقها
     function renderSessionsList() {
         if (!sessionsList) return;
         sessionsList.innerHTML = '';
-        const sessions = getStoredSessions();
+        
+        let sessions = getStoredSessions();
+        const sessionIds = Object.keys(sessions);
 
-        Object.keys(sessions).reverse().forEach(sessionId => {
+        if (sessionIds.length === 0) return;
+
+        sessionIds.reverse().forEach(sessionId => {
             const session = sessions[sessionId];
-            const btn = document.createElement('div');
-            btn.className = 'session-item';
-            if (sessionId === currentSessionId) {
-                btn.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                btn.style.borderRight = '3px solid #007bff';
-            }
+            const item = document.createElement('div');
             
-            btn.style.padding = '10px 12px';
-            btn.style.margin = '5px 0';
-            btn.style.borderRadius = '6px';
-            btn.style.cursor = 'pointer';
-            btn.style.color = '#fff';
-            btn.style.fontSize = '14px';
-            btn.style.whiteSpace = 'nowrap';
-            btn.style.overflow = 'hidden';
-            btn.style.textOverflow = 'ellipsis';
-            btn.innerText = session.title || 'جلسة جديدة';
+            item.className = 'session-item';
+            item.style.padding = '10px 14px';
+            item.style.margin = '6px 0';
+            item.style.borderRadius = '8px';
+            item.style.cursor = 'pointer';
+            item.style.transition = 'all 0.2s ease';
+            item.style.fontSize = '14px';
+            item.style.whiteSpace = 'nowrap';
+            item.style.overflow = 'hidden';
+            item.style.textOverflow = 'ellipsis';
+            
+            if (sessionId === currentSessionId) {
+                item.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+                item.style.color = '#fff';
+                item.style.fontWeight = 'bold';
+                item.style.borderRight = '4px solid #007bff';
+            } else {
+                item.style.color = '#ccc';
+                item.style.backgroundColor = 'transparent';
+            }
 
-            btn.addEventListener('click', () => {
+            item.innerText = session.title || 'جلسة جديدة';
+
+            item.addEventListener('click', () => {
                 switchSession(sessionId);
                 if (window.innerWidth <= 768 && sidebar) {
                     sidebar.style.transform = 'translateX(-100%)';
-                    if (sidebarOverlay) sidebarOverlay.style.display = 'none';
+                    sidebar.classList.remove('open');
+                    if (sidebarOverlay) {
+                        sidebarOverlay.style.opacity = '0';
+                        setTimeout(() => sidebarOverlay.style.display = 'none', 300);
+                    }
                 }
             });
 
-            sessionsList.appendChild(btn);
+            sessionsList.appendChild(item);
         });
     }
 
@@ -133,14 +164,13 @@ document.addEventListener('DOMContentLoaded', () => {
             welcomeScreen.style.display = 'none';
         }
 
-        // إضافة رسالة المستخدم للواجهة والتخزين
         appendMessageToDOM('user', message);
         saveMessageToCurrentSession('user', message);
 
-        // تحديث عنوان الجلسة بناءً على أول رسالة إذا كانت جديدة
+        // تحديث العنوان التلقائي أول رسالة
         let sessions = getStoredSessions();
-        if (sessions[currentSessionId].title === 'جلسة جديدة') {
-            sessions[currentSessionId].title = message.length > 25 ? message.substring(0, 25) + '...' : message;
+        if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
+            sessions[currentSessionId].title = message.length > 22 ? message.substring(0, 22) + '...' : message;
             saveSessions(sessions);
             renderSessionsList();
         }
@@ -217,7 +247,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (el) el.remove();
     }
 
-    // بدء جلسة جديدة نظيفة
     const createNewSession = () => {
         currentSessionId = generateSessionId();
         localStorage.setItem('alatheer_current_session', currentSessionId);
@@ -233,5 +262,5 @@ document.addEventListener('DOMContentLoaded', () => {
     if (newChatBtn) newChatBtn.addEventListener('click', createNewSession);
     if (newSessionBtn) newSessionBtn.addEventListener('click', createNewSession);
 
-    console.log('🌟 منصة الأثير تعمل بإدارة جلسات احترافية متكاملة!');
+    console.log('💎 منصة الأثير تعمل بأعلى أداء واحترافية!');
 });
