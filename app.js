@@ -40,8 +40,8 @@ app.post(['/api/chat', '/.netlify/functions/chat'], async (req, res) => {
       }))
     }];
 
-    // استدعاء عقل جيميني الرسمي بالنموذج المعتمد والمحدث
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
+    // استدعاء عقل جيميني الرسمي عبر الإصدار المستقر v1 والنموذج الصحيح
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -100,6 +100,28 @@ app.post(['/api/chat', '/.netlify/functions/chat'], async (req, res) => {
         }
 
         return res.json({ reply: "✅ تم تنفيذ الأداة بنجاح." });
+      }
+    }
+
+    // الرد النصي العادي إذا لم يتم استدعاء أداة
+    const replyText = parts.find(p => p.text)?.text || "تم الاستلام بنجاح.";
+    res.json({ reply: replyText });
+
+  } catch (error) {
+    console.error("Error in Gemini chat API:", error);
+    res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية: " + error.message });
+  }
+});
+
+// مسار رفع الملفات الاحتياطي
+app.post('/api/upload', (req, res) => {
+  res.json({ status: "success", message: "تم استقبال الملف بنجاح" });
+});
+
+// تشغيل السيرفر
+app.listen(PORT, () => {
+  console.log(`🚀 Alatheer AI Suite is running smoothly on port ${PORT}`);
+});
       }
     }
 
