@@ -33,7 +33,8 @@ export default async function handler(req, res) {
       }))
     }];
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    // تم التعديل إلى الإصدار المستقر v1 لضمان توافق النموذج تماماً
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -73,7 +74,6 @@ export default async function handler(req, res) {
 
       if (toolsRegistry[toolName]) {
         try {
-          // إذا كانت الأداة تتطلب ملف base64 ولم يمرره النموذج ولكن يوجد ملف مرفق، نضمن إضافته تلقائياً
           if (!toolArgs.base64 && excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
             toolArgs.base64 = excelJSON[0].fileBase64;
           }
@@ -84,7 +84,6 @@ export default async function handler(req, res) {
             status: (code) => ({ json: (data) => data })
           });
 
-          // إرجاع النتيجة أو الملف المعالج للمستخدم
           if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array || (toolResult && toolResult.success)) {
             return res.status(200).json({
               reply: "✅ أبشر، تم تنفيذ الطلب ومعالجة الملف بنجاح:",
@@ -101,7 +100,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // الرد النصي العادي إذا لم يتم استدعاء أداة
     const replyText = parts.find(p => p.text)?.text || "تم الاستلام بنجاح.";
     return res.status(200).json({ reply: replyText });
 
