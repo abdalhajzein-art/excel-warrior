@@ -1,4 +1,4 @@
-// api/chat.js - النسخة المستقرة النهائية مع gemini-1.5-flash
+// api/chat.js - النسخة النهائية المستقرة عبر مسار v1 و gemini-1.5-flash
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 
@@ -32,8 +32,8 @@ export default async function handler(req, res) {
       }))
     }];
 
-    // الاستقرار على gemini-1.5-flash المدعوم رسمياً
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    // الاستقرار على مسار v1 ونموذج gemini-1.5-flash المدعوم رسمياً
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -132,7 +132,7 @@ export default async function handler(req, res) {
     const replyText = parts.find(p => p.text)?.text || "تم الاستلام بنجاح.";
     return res.status(200).json({ reply: replyText });
 
-  } catch (error) {
+  } async (error) {
     console.error("Error in Gemini Chat API:", error);
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية مع جوجل: " + error.message });
   }
