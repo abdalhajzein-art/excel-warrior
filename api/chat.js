@@ -33,8 +33,8 @@ export default async function handler(req, res) {
       }))
     }];
 
-    // الاستدعاء عبر الإصدار المستقر v1 والنموذج القياسي
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    // تم التعديل بدقة إلى v1beta بناءً على التوثيق الرسمي لمتطلبات المفتاح
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -78,7 +78,6 @@ export default async function handler(req, res) {
             toolArgs.base64 = excelJSON[0].fileBase64;
           }
 
-          // محاكاة كينونة الـ Request و Response لتنفيذ الـ Handler بأمان تام
           let toolResult = null;
           const mockReq = { body: toolArgs };
           const mockRes = {
@@ -92,7 +91,6 @@ export default async function handler(req, res) {
             send: (data) => { toolResult = data; }
           };
 
-          // استدعاء دالة الأداة الحقيقية
           const handlerFn = toolsRegistry[toolName].handler;
           const directResult = await handlerFn(mockReq, mockRes);
           
@@ -127,7 +125,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // الرد النصي العادي إذا لم يتم استدعاء أداة
     const replyText = parts.find(p => p.text)?.text || "تم الاستلام بنجاح.";
     return res.status(200).json({ reply: replyText });
 
@@ -136,4 +133,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية مع جوجل: " + error.message });
   }
 }
-
