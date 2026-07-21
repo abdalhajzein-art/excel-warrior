@@ -1,8 +1,13 @@
 {
-  "name": "my-ai-app",
+  "name": "excel-warrior",
   "version": "1.0.0",
   "type": "module",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
   "dependencies": {
+    "express": "^4.19.2",
     "xlsx": "^0.18.5",
     "exceljs": "^4.3.0"
   }
