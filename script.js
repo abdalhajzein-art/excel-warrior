@@ -7,18 +7,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const newSessionBtn = document.getElementById('newSessionBtn');
     const sessionsList = document.getElementById('sessionsList');
     
-    // عناصر إرفاق الملفات
+    // عناصر إرفاق الملفات المتوافقة مع الـ HTML الحالي
     const attachBtn = document.getElementById('attachBtn');
-    let attachedFileJSON = null; // لتخزين بيانات الملف المرفق (مثل الإكسل)
+    const fileBubbles = document.getElementById('fileBubbles');
+    let attachedFileJSON = null;
 
     // عنصر مخفي لاختيار الملفات من الجهاز
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = '.xlsx, .xls, .csv, .json, .txt';
+    fileInput.accept = '.xlsx, .xls, .csv, .json, .txt, .docx';
     fileInput.style.display = 'none';
     document.body.appendChild(fileInput);
     
-    // عناصر السايدبار
+    // عناصر السايدبار والطبقة الشفافة
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('sidebar');
     const sidebarOverlay = document.getElementById('sidebarOverlay');
@@ -26,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // إدارة الجلسات
     let currentSessionId = localStorage.getItem('alatheer_current_session') || generateSessionId();
 
-    // 1. تفعيل السايدبار والطبقة الشفافة (Overlay)
+    // 1. تفعيل السايدبار والـ Overlay
     if (sidebarToggle && sidebar) {
         const toggleSidebar = (open) => {
             if (open) {
@@ -53,13 +54,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (sidebarOverlay) {
-            sidebarOverlay.addEventListener('click', () => {
-                toggleSidebar(false);
-            });
+            sidebarOverlay.addEventListener('click', () => toggleSidebar(false));
         }
     }
 
-    // تهيئة الجلسات
     initSessions();
 
     function generateSessionId() {
@@ -92,14 +90,13 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('alatheer_sessions', JSON.stringify(sessions));
     }
 
-    // عرض الجلسات في السايدبار مع تفعيل الحذف والتثبيت بالكامل
+    // عرض الجلسات في السايدبار مع تفعيل التثبيت والحذف الواضحين
     function renderSessionsList() {
         if (!sessionsList) return;
         sessionsList.innerHTML = '';
         
         let sessions = getStoredSessions();
         
-        // ترتيب الجلسات: المثبتة أولاً، ثم الحديثة
         const sortedSessionIds = Object.keys(sessions).sort((a, b) => {
             const sessionA = sessions[a];
             const sessionB = sessions[b];
@@ -115,22 +112,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             
             item.className = `session-item ${sessionId === currentSessionId ? 'active' : ''}`;
-            item.style.cssText = 'padding: 10px 12px; margin-bottom: 6px; border-radius: 6px; cursor: pointer; background: transparent; border: 1px solid transparent; display: flex; flex-direction: column; transition: all 0.2s;';
+            // تصميم داخلي يضمن ظهور عنوان الجلسة وأزرار الحذف والتثبيت بوضوح
+            item.style.cssText = 'padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; background: #1a1a1a; border: 1px solid #2a2a2a; display: flex; flex-direction: column; gap: 6px; transition: all 0.2s;';
             
             item.innerHTML = `
                 <div class="session-title-row" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <span class="session-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; font-size: 13px; color: var(--text-main);">
+                    <span class="session-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; font-size: 13px; color: #e0e0e0; font-weight: 500;">
                         ${session.pinned ? '📌 ' : ''}${session.title || 'جلسة جديدة'}
                     </span>
                     <div class="session-badges">
-                        ${session.pinned ? '<span class="session-badge" style="font-size: 10px; color: var(--gold-primary); background: rgba(212, 175, 55, 0.1); padding: 2px 6px; border-radius: 4px;">مثبت</span>' : ''}
+                        ${session.pinned ? '<span class="session-badge" style="font-size: 10px; color: #d4af37; background: rgba(212, 175, 55, 0.1); padding: 2px 6px; border-radius: 4px;">مثبت</span>' : ''}
                     </div>
                 </div>
-                <div class="session-actions" style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
-                    <button class="session-action-btn pin-btn" title="${session.pinned ? 'إلغاء التثبيت' : 'تثبيت الجلسة'}" style="background:none; border:none; cursor:pointer; font-size:13px; padding: 2px;">
-                        ${session.pinned ? '📍' : '📌'}
+                <div class="session-actions" style="display: flex; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
+                    <button class="session-action-btn pin-btn" title="${session.pinned ? 'إلغاء التثبيت' : 'تثبيت الجلسة'}" style="background:none; border:none; cursor:pointer; font-size:12px; color: #d4af37;">
+                        ${session.pinned ? '📍 إلغاء التثبيت' : '📌 تثبيت'}
                     </button>
-                    <button class="session-action-btn delete-btn" title="حذف الجلسة" style="background:none; border:none; cursor:pointer; font-size:13px; padding: 2px;">🗑️</button>
+                    <button class="session-action-btn delete-btn" title="حذف الجلسة" style="background:none; border:none; cursor:pointer; font-size:12px; color: #ff5555;">
+                        🗑️ حذف
+                    </button>
                 </div>
             `;
 
@@ -221,7 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // تفعيل زر الإرفاق وقراءة الملفات
+    // تفعيل زر الإرفاق (📎) بربطه بـ fileInput المبرمج
     if (attachBtn) {
         attachBtn.addEventListener('click', () => {
             fileInput.click();
@@ -232,9 +232,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = e.target.files[0];
         if (!file) return;
 
+        // إظهار فقاعة الملف المرفق في الواجهة إذا وجدت الحاوية
+        if (fileBubbles) {
+            fileBubbles.innerHTML = `<span style="font-size: 11px; background: rgba(212,175,55,0.1); color: #d4af37; padding: 3px 8px; border-radius: 4px; display: inline-block; margin-bottom: 5px;">📎 ${file.name}</span>`;
+        }
+
         appendMessageToDOM('user', `📎 تم إرفاق الملف: ${file.name}`);
         
-        // إذا كان الملف نصياً أو JSON يمكن قراءته مباشرة
         if (file.name.endsWith('.json') || file.name.endsWith('.txt')) {
             const reader = new FileReader();
             reader.onload = (event) => {
@@ -246,11 +250,8 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             reader.readAsText(file);
         } else {
-            // كإشارة مبدئية لوجود ملف مرفق ليتم معالجته بالسيرفر
             attachedFileJSON = [{ fileName: file.name, size: file.size, type: file.type }];
         }
-        
-        fileInput.value = '';
     });
 
     async function handleSendMessage() {
@@ -276,7 +277,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const payloadExcel = attachedFileJSON;
         userInput.value = '';
         userInput.style.height = 'auto';
-        attachedFileJSON = null; // إعادة تعيين الملف المرفق بعد الإرسال
+        attachedFileJSON = null;
+        if (fileBubbles) fileBubbles.innerHTML = ''; // مسح فقاعة الملف بعد الإرسال
 
         const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة... ⏳', true);
 
@@ -299,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     downloadBtn.href = `data:application/octet-stream;base64,${data.fileBase64}`;
                     downloadBtn.download = data.fileName || 'file.xlsx';
                     downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
-                    downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: var(--gold-primary); text-decoration: underline; font-weight: bold; cursor: pointer;';
+                    downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: #d4af37; text-decoration: underline; font-weight: bold; cursor: pointer;';
                     chatArea.appendChild(downloadBtn);
                     chatArea.scrollTop = chatArea.scrollHeight;
                     
@@ -344,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadBtn.href = `data:application/octet-stream;base64,${fileData.base64}`;
             downloadBtn.download = fileData.name;
             downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
-            downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: var(--gold-primary); text-decoration: underline; font-weight: bold; cursor: pointer;';
+            downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: #d4af37; text-decoration: underline; font-weight: bold; cursor: pointer;';
             chatArea.appendChild(downloadBtn);
         }
 
@@ -386,3 +388,4 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
