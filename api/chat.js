@@ -1,4 +1,4 @@
-// api/chat.js - التجربة المجنونة مع openai/gpt-oss-120b
+// api/chat.js - النسخة المعدلة مع الحماية ضد أخطاء الـ JSON الفارغ
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 
@@ -32,7 +32,6 @@ export default async function handler(req, res) {
       }))
     }];
 
-    // التجربة المجنونة: حقن اسم النموذج في مسار الـ v1beta
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/openai/gpt-oss-120b:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
@@ -56,7 +55,13 @@ export default async function handler(req, res) {
       })
     });
 
-    const data = await response.json();
+    const rawText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      throw new Error(`رد غير متوقع من خوادم جوجل (الحالة ${response.status}): ${rawText}`);
+    }
     
     if (data.error) {
       throw new Error(data.error.message || "خطأ غير معروف من خوادم جوجل");
@@ -68,7 +73,7 @@ export default async function handler(req, res) {
     const functionCallPart = parts.find(p => p.functionCall);
 
     if (functionCallPart && functionCallPart.functionCall) {
-      const { name: toolName, args: toolArgs }  = functionCallPart.functionCall;
+      const { name: toolName, args: toolArgs } = functionCallPart.functionCall;
 
       if (toolsRegistry[toolName]) {
         try {
@@ -131,3 +136,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية مع جوجل: " + error.message });
   }
 }
+
