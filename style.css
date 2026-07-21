@@ -388,14 +388,14 @@ body {
   gap: 8px;
 }
 
-/* صندوق الكتابة المُعدل بالكامل ليلائم اليد اليمنى ويمنع التداخل البصري */
+/* صندوق الكتابة الأساسي مع ضبط الاتجاه حصراً للأزرار اليمينية واليسارية */
 .input-box {
   background: var(--bg-dark);
   border: 1px solid var(--border-color);
   border-radius: 14px;
   padding: 8px 14px;
   display: flex;
-  flex-direction: row-reverse; /* يجعل اليمين يساراً والعكس لترتيب الأزرار بدقة */
+  flex-direction: row-reverse;
   align-items: flex-end;
   gap: 12px;
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
@@ -408,7 +408,7 @@ body {
   box-shadow: 0 0 10px rgba(197, 160, 89, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-/* زر الإرفاق (الكليبسة) - تأثير منفصل وحديث ولا يؤثر على الإطار ككل */
+/* زر الإرفاق (الكليبسة) - في أقصى اليسار ومعزول تماماً بتأثيره الخاص */
 .attach-icon {
   background: transparent;
   border: none;
@@ -417,6 +417,7 @@ body {
   cursor: pointer;
   padding-bottom: 6px;
   outline: none;
+  order: 3;
   transition: color 0.2s ease, transform 0.2s ease;
 }
 
@@ -441,9 +442,10 @@ body {
   outline: none;
   max-height: 120px;
   padding: 6px 0;
+  order: 2;
 }
 
-/* زر الإرسال (السهم) في أقصى اليمين ليتناسب مع اليد اليمنى */
+/* زر الإرسال (السهم) - في أقصى اليمين ليتناسب مع اليد اليمنى */
 .send-icon {
   background: var(--accent-gold);
   border: none;
@@ -459,6 +461,7 @@ body {
   transition: all 0.2s ease;
   flex-shrink: 0;
   outline: none;
+  order: 1;
 }
 
 .send-icon:hover {
