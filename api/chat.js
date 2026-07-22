@@ -205,38 +205,30 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // 4.5) Manual Fallback: استخدام Groq لتحديد نوع الطلب
+    // 4.5) Manual Fallback: استخدام كلمات مفتاحية موسعة
     // =========================
     if (!responseMessage.tool_calls || responseMessage.tool_calls.length === 0) {
-      console.log("🔍 Groq ما استدعى أداة، نطلب من Groq تحديد نوع الطلب");
+      console.log("🔍 Groq ما استدعى أداة، نستخدم الكلمات المفتاحية");
       
-      try {
-        const classification = await groq.chat.completions.create({
-          model: "openai/gpt-oss-120b",
-          messages: [
-            {
-              role: "system",
-              content: `أنت مصنف طلبات. حدد إذا كان طلب المستخدم يطلب:
-1. "modify" - إذا كان يطلب تعديل ملف موجود
-2. "generate" - إذا كان يطلب إنشاء ملف جديد
-3. "chat" - إذا كان مجرد سؤال أو دردشة
+      const lowerMsg = (userContent || "").toLowerCase();
+      
+      // ✅ كلمات مفتاحية موسعة للتعديل
+      const modifyKeywords = [
+        'عدل', 'تعديل', 'غيّر', 'تغيير', 'edit', 'update',
+        'اضف', 'أضف', 'حذف', 'ازل', 'إزالة', 'أدخل', 'إدراج',
+        'insert', 'place', 'ضع', 'رتب', 'أضف عمود', 'ضيف عمود',
+        'نظم', 'رتب', 'إضافة', 'اضافة', 'حذف عمود', 'ازالة عمود',
+        'غير', 'بدل', 'استبدل', 'replace', 'ملف', 'sheet', 'جدول'
+      ];
+      
+      const wantsModify = modifyKeywords.some(keyword => lowerMsg.includes(keyword));
+      const wantsGenerate = /ولد|توليد|انشئ|إنشاء|create|generate|جهز|حضّر|اصنع|عمل|بناء/.test(lowerMsg);
 
-أجب فقط بكلمة واحدة: modify أو generate أو chat`
-            },
-            {
-              role: "user",
-              content: `طلب المستخدم: ${userContent || "مرحبا"}`
-            }
-          ],
-          temperature: 0.1,
-          max_completion_tokens: 30
-        });
+      console.log(`🔍 Manual Fallback: wantsModify=${wantsModify}, wantsGenerate=${wantsGenerate}, hasBase64=${!!extractedBase64}`);
 
-        const decision = classification.choices[0].message.content.trim().toLowerCase();
-        console.log(`🔍 Groq قرر: ${decision}`);
-
-        if (decision === "modify" && extractedBase64) {
-          console.log("🔧 Manual Fallback: تنفيذ تعديل");
+      if (wantsModify && extractedBase64) {
+        console.log("🔧 Manual Fallback: تنفيذ تعديل");
+        try {
           const result = await modifyExcelHandler({ 
             body: { 
               base64: extractedBase64, 
@@ -252,10 +244,15 @@ export default async function handler(req, res) {
           } else {
             return res.json({ reply: result.error || "❌ فشل تعديل الملف" });
           }
+        } catch (err) {
+          console.error("❌ Error executing manual excel_modify:", err);
+          return res.json({ reply: "❌ حدث خطأ أثناء التعديل: " + err.message });
         }
+      }
 
-        if (decision === "generate") {
-          console.log("🔧 Manual Fallback: تنفيذ توليد");
+      if (wantsGenerate) {
+        console.log("🔧 Manual Fallback: تنفيذ توليد");
+        try {
           const result = await generateExcelHandler({ 
             body: { 
               instruction: userContent || "توليد ملف Excel" 
@@ -270,33 +267,9 @@ export default async function handler(req, res) {
           } else {
             return res.json({ reply: result.error || "❌ فشل توليد الملف" });
           }
-        }
-
-        if (decision === "chat") {
-          // نكمل للرد النصي
-          const replyText = responseMessage.content || "تم الاستلام";
-          return res.json({ reply: humanizeReply(replyText) });
-        }
-
-      } catch (classErr) {
-        console.error("❌ خطأ في تصنيف الطلب:", classErr);
-        // Fallback: نستخدم الطريقة القديمة
-        const lowerMsg = (userContent || "").toLowerCase();
-        if ((lowerMsg.includes("عدل") || lowerMsg.includes("ضيف") || lowerMsg.includes("تعديل") || lowerMsg.includes("أضف") || lowerMsg.includes("تغيير")) && extractedBase64) {
-          console.log("🔧 Fallback (Regex): تنفيذ تعديل");
-          const result = await modifyExcelHandler({ 
-            body: { 
-              base64: extractedBase64, 
-              instruction: userContent || "تعديل الملف" 
-            } 
-          });
-          if (result.success && result.fileBase64) {
-            return res.json({
-              reply: result.message || "✅ تم تعديل الملف بنجاح",
-              fileBase64: result.fileBase64,
-              fileName: result.fileName || "modified.xlsx"
-            });
-          }
+        } catch (err) {
+          console.error("❌ Error executing manual excel_generate:", err);
+          return res.json({ reply: "❌ حدث خطأ أثناء التوليد: " + err.message });
         }
       }
     }
@@ -336,7 +309,14 @@ export default async function handler(req, res) {
 // =========================
 async function handleManualFallback(res, userContent, extractedBase64) {
   const lowerMsg = (userContent || "").toLowerCase();
-  const wantsModify = /عدل|تعديل|غيّر|تغيير|edit|update|اضف|أضف|حذف|ازل|إزالة|أدخل|إدراج|insert|place|ضع|رتب|أضف عمود|ضيف عمود|نظم|رتب|إضافة|اضافة|حذف عمود|ازالة عمود/.test(lowerMsg);
+  const modifyKeywords = [
+    'عدل', 'تعديل', 'غيّر', 'تغيير', 'edit', 'update',
+    'اضف', 'أضف', 'حذف', 'ازل', 'إزالة', 'أدخل', 'إدراج',
+    'insert', 'place', 'ضع', 'رتب', 'أضف عمود', 'ضيف عمود',
+    'نظم', 'رتب', 'إضافة', 'اضافة', 'حذف عمود', 'ازالة عمود',
+    'غير', 'بدل', 'استبدل', 'replace', 'ملف', 'sheet', 'جدول'
+  ];
+  const wantsModify = modifyKeywords.some(keyword => lowerMsg.includes(keyword));
   const wantsGenerate = /ولد|توليد|انشئ|إنشاء|create|generate|جهز|حضّر|اصنع|عمل|بناء/.test(lowerMsg);
   
   if (wantsModify && extractedBase64) {
@@ -389,4 +369,4 @@ async function handleManualFallback(res, userContent, extractedBase64) {
   return res.json({ 
     reply: "تمام… عفواً، ما قدرت أفهم طلبك بوضوح. حاول تطلب تعديل أو توليد ملف بشكل مباشر." 
   });
-}
+      }
