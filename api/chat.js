@@ -24,14 +24,12 @@ export default async function handler(req, res) {
     let fileMimeType = null;
     let fileName = null;
 
-    // استلام الملف من الفرونت
     if (excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64) {
       const fileObj = excelJSON[0];
       extractedBase64 = fileObj.fileBase64;
       fileMimeType = fileObj.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       fileName = fileObj.fileName || 'ملف';
 
-      // تحليل إكسل فقط كـ context نصي إضافي (اختياري)
       try {
         const buffer = Buffer.from(extractedBase64, 'base64');
         const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -44,12 +42,17 @@ export default async function handler(req, res) {
       }
     }
 
-    // بناء contents بالطريقة اللي Flash يفهمها
     const contents = [
+      {
+        role: "system",
+        parts: [
+          { text: SYSTEM_PROMPT }
+        ]
+      },
       {
         role: "user",
         parts: [
-          { text: `${SYSTEM_PROMPT}\n\nطلب المستخدم الحالي:\n${userContent}` },
+          { text: `الرجاء قراءة الملف المرفق وتحليل محتواه بدقة.\n\nطلب المستخدم:\n${message}` },
           ...(extractedBase64 ? [{
             fileData: {
               mimeType: fileMimeType,
@@ -97,12 +100,10 @@ export default async function handler(req, res) {
 
       if (toolsRegistry[toolName]) {
         try {
-          // ربط الـ Base64 تلقائيًا إذا الأداة تحتاجه
           if (!toolArgs.base64 && extractedBase64) {
             toolArgs.base64 = extractedBase64;
           }
 
-          // تصحيح editMap لأداة تعديل الإكسل
           if (toolName === 'excel_modify' && (!toolArgs.editMap || !toolArgs.editMap.operation)) {
             const userLower = (userContent || "").toLowerCase();
             let columnName = "سبب الغياب";
@@ -117,7 +118,6 @@ export default async function handler(req, res) {
             }
           }
 
-          // توليد ملفات جديدة
           if (toolName.includes('generate') && (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)) {
             toolArgs.instruction = userContent || "ملف جديد";
             toolArgs.content = userContent;
@@ -144,7 +144,6 @@ export default async function handler(req, res) {
             toolResult = directResult;
           }
 
-          // إذا رجعت Buffer (ملف جاهز)
           if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
             const isWord = toolName.includes('word');
             const isPdf = toolName.includes('pdf');
@@ -183,4 +182,4 @@ export default async function handler(req, res) {
     console.error("Error in Chat API:", error);
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية: " + (error.message || error) });
   }
-          }
+              }
