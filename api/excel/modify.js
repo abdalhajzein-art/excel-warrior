@@ -1,30 +1,4 @@
-import ExcelJS from 'exceljs'; // ✅ للتعديل الأساسي (آمن ومستقر)
-import XLSX from 'xlsx'; // ✅ للقراءة السريعة
-
-// ✅ دالة للتحقق من وجود المكتبة المتقدمة
-async function getAdvancedWorkbook() {
-  try {
-    const module = await import('@office-kit/xlsx');
-    return module.Workbook;
-  } catch (err) {
-    console.warn('⚠️ @office-kit/xlsx غير متوفرة، سنستخدم exceljs');
-    return null;
-  }
-}
-
-// ✅ دالة للكشف عن وجود مخططات أو جداول محورية في الملف
-function hasComplexElements(worksheet) {
-  // محاولة الكشف عن وجود مخططات أو جداول محورية
-  // (هذه مجرد طريقة تقريبية، يمكن تحسينها)
-  try {
-    // التحقق من وجود charts أو pivotTables في الـ worksheet
-    if (worksheet.charts && worksheet.charts.length > 0) return true;
-    if (worksheet.pivotTables && worksheet.pivotTables.length > 0) return true;
-  } catch (e) {
-    // إذا فشل الكشف، نعتبر الملف بسيطاً
-  }
-  return false;
-}
+import ExcelJS from 'exceljs';
 
 export async function modifyExcelHandler(req, res) {
   try {
@@ -40,80 +14,37 @@ export async function modifyExcelHandler(req, res) {
 
     const buffer = Buffer.from(base64, 'base64');
     
-    // ✅ أولاً: نحاول قراءة الملف باستخدام exceljs (للتعديل الأساسي)
-    let workbook = new ExcelJS.Workbook();
-    let worksheet;
-    let useAdvanced = false;
-    let AdvancedWorkbook = null;
+    // ✅ قراءة الملف باستخدام exceljs
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const worksheet = workbook.getWorksheet(1);
     
-    try {
-      await workbook.xlsx.load(buffer);
-      worksheet = workbook.getWorksheet(1);
-      
-      if (!worksheet) {
-        return { success: false, error: "لا يوجد ورقة عمل في الملف." };
-      }
-      
-      // ✅ التحقق من وجود عناصر معقدة
-      const hasComplex = hasComplexElements(worksheet);
-      
-      if (hasComplex) {
-        // ✅ إذا كان الملف معقداً، نحاول استخدام المكتبة المتقدمة
-        AdvancedWorkbook = await getAdvancedWorkbook();
-        if (AdvancedWorkbook) {
-          console.log('🔧 استخدام المكتبة المتقدمة @office-kit/xlsx للتعديل');
-          const advWorkbook = new AdvancedWorkbook();
-          await advWorkbook.loadFromBuffer(buffer);
-          const advWorksheet = advWorkbook.getWorksheet(1);
-          if (advWorksheet) {
-            workbook = advWorkbook;
-            worksheet = advWorksheet;
-            useAdvanced = true;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('⚠️ فشل قراءة الملف بـ exceljs، نحاول بـ xlsx:', err.message);
-      // ✅ محاولة قراءة الملف بـ xlsx كخطة احتياطية
-      try {
-        const xlsxWorkbook = XLSX.read(buffer, { type: 'buffer' });
-        const sheetName = xlsxWorkbook.SheetNames[0];
-        const xlsxWorksheet = xlsxWorkbook.Sheets[sheetName];
-        // نحول البيانات إلى JSON
-        const data = XLSX.utils.sheet_to_json(xlsxWorksheet, { header: 1 });
-        // نعيد إنشاء ملف exceljs من البيانات
-        workbook = new ExcelJS.Workbook();
-        worksheet = workbook.addWorksheet(sheetName || 'Sheet1');
-        data.forEach((row, rowIndex) => {
-          row.forEach((value, colIndex) => {
-            const cell = worksheet.getCell(rowIndex + 1, colIndex + 1);
-            cell.value = value;
-          });
-        });
-      } catch (xlsxErr) {
-        return { success: false, error: "تعذر قراءة الملف: " + xlsxErr.message };
-      }
+    if (!worksheet) {
+      return { success: false, error: "لا يوجد ورقة عمل في الملف." };
     }
 
     const instructionLower = (instruction || "").toLowerCase();
     let modifications = [];
 
     // ============================================================
-    // 1️⃣ إدارة الأعمدة (Columns) - باستخدام exceljs
+    // 1️⃣ إدارة الأعمدة
     // ============================================================
 
     // 1.1 إضافة عمود
     if (instructionLower.includes('إضافة عمود') || instructionLower.includes('اضافة عمود') || 
         instructionLower.includes('ضيف عمود') || instructionLower.includes('أضف عمود')) {
       
+      // استخراج اسم العمود الجديد
       let newColumnName = 'عمود جديد';
       const nameMatch = instruction.match(/["']([^"']+)["']/);
-      if (nameMatch) newColumnName = nameMatch[1];
-      else {
+      if (nameMatch) {
+        newColumnName = nameMatch[1];
+      } else {
         const nameAfter = instruction.match(/اسمه\s*([^\s,،]+)/i);
         if (nameAfter) newColumnName = nameAfter[1];
       }
 
+      // تحديد مكان الإضافة
       let targetColumnName = null;
       const afterMatch = instruction.match(/بعد\s*["']?([^"'\s,،]+)["']?/i);
       const beforeMatch = instruction.match(/قبل\s*["']?([^"'\s,،]+)["']?/i);
@@ -121,6 +52,7 @@ export async function modifyExcelHandler(req, res) {
       if (afterMatch) targetColumnName = afterMatch[1];
       else if (beforeMatch) targetColumnName = beforeMatch[1];
 
+      // البحث عن العمود المستهدف
       let targetColumnIndex = -1;
       const headerRow = worksheet.getRow(3);
       
@@ -132,21 +64,47 @@ export async function modifyExcelHandler(req, res) {
         });
       }
 
-      if (targetColumnIndex === -1) targetColumnIndex = worksheet.columnCount;
+      if (targetColumnIndex === -1) {
+        targetColumnIndex = worksheet.columnCount;
+      }
 
+      // تحديد مكان الإضافة
       let insertIndex;
-      if (afterMatch && targetColumnIndex !== -1) insertIndex = targetColumnIndex + 1;
-      else if (beforeMatch && targetColumnIndex !== -1) insertIndex = targetColumnIndex;
-      else insertIndex = worksheet.columnCount + 1;
+      if (afterMatch && targetColumnIndex !== -1) {
+        insertIndex = targetColumnIndex + 1;
+      } else if (beforeMatch && targetColumnIndex !== -1) {
+        insertIndex = targetColumnIndex;
+      } else {
+        insertIndex = worksheet.columnCount + 1;
+      }
 
       // ✅ إضافة عمود في exceljs
       worksheet.spliceColumns(insertIndex, 0, []);
       const rowCount = worksheet.rowCount;
+      
       for (let i = 1; i <= rowCount; i++) {
         const cell = worksheet.getCell(i, insertIndex);
-        if (i === 3) cell.value = newColumnName;
-        else cell.value = '';
+        if (i === 3) {
+          cell.value = newColumnName;
+          // ✅ نسخ التنسيق من العمود المجاور
+          const sourceCol = insertIndex > 1 ? insertIndex - 1 : insertIndex + 1;
+          const sourceCell = worksheet.getCell(i, sourceCol);
+          if (sourceCell.font) cell.font = sourceCell.font;
+          if (sourceCell.fill) cell.fill = sourceCell.fill;
+          if (sourceCell.border) cell.border = sourceCell.border;
+          if (sourceCell.alignment) cell.alignment = sourceCell.alignment;
+        } else if (i > 3) {
+          cell.value = '';
+          // ✅ نسخ التنسيق من العمود المجاور
+          const sourceCol = insertIndex > 1 ? insertIndex - 1 : insertIndex + 1;
+          const sourceCell = worksheet.getCell(i, sourceCol);
+          if (sourceCell.font) cell.font = sourceCell.font;
+          if (sourceCell.fill) cell.fill = sourceCell.fill;
+          if (sourceCell.border) cell.border = sourceCell.border;
+          if (sourceCell.alignment) cell.alignment = sourceCell.alignment;
+        }
       }
+      
       modifications.push(`إضافة عمود "${newColumnName}"`);
     }
 
@@ -222,83 +180,8 @@ export async function modifyExcelHandler(req, res) {
       }
     }
 
-    // 1.5 نقل عمود
-    if (instructionLower.includes('نقل عمود') || instructionLower.includes('تحريك عمود')) {
-      const moveMatch = instruction.match(/نقل\s*["']?([^"'\s,،]+)["']?\s*(?:إلى|قبل|بعد)\s*["']?([^"'\s,،]+)["']?/i);
-      if (moveMatch) {
-        const colName = moveMatch[1];
-        const targetName = moveMatch[2];
-        let sourceIndex = -1, targetIndex = -1;
-        const headerRow = worksheet.getRow(3);
-        headerRow.eachCell((cell, colNumber) => {
-          if (cell.value && cell.value.toString().toLowerCase().includes(colName.toLowerCase())) sourceIndex = colNumber;
-          if (cell.value && cell.value.toString().toLowerCase().includes(targetName.toLowerCase())) targetIndex = colNumber;
-        });
-        if (sourceIndex !== -1 && targetIndex !== -1) {
-          // استخراج العمود
-          const colData = [];
-          const rowCount = worksheet.rowCount;
-          for (let i = 1; i <= rowCount; i++) {
-            colData.push(worksheet.getCell(i, sourceIndex).value);
-          }
-          // حذف العمود
-          worksheet.spliceColumns(sourceIndex, 1);
-          // إعادة إدراجه
-          const newIndex = sourceIndex < targetIndex ? targetIndex : targetIndex;
-          worksheet.spliceColumns(newIndex, 0, []);
-          for (let i = 1; i <= rowCount; i++) {
-            worksheet.getCell(i, newIndex).value = colData[i-1];
-          }
-          modifications.push(`نقل عمود "${colName}"`);
-        }
-      }
-    }
-
-    // 1.6 إخفاء/إظهار عمود
-    if (instructionLower.includes('إخفاء عمود') || instructionLower.includes('إظهار عمود')) {
-      const colMatch = instruction.match(/(إخفاء|إظهار)\s*["']?([^"'\s,،]+)["']?/i);
-      if (colMatch) {
-        const action = colMatch[1];
-        const colName = colMatch[2];
-        let colIndex = -1;
-        const headerRow = worksheet.getRow(3);
-        headerRow.eachCell((cell, colNumber) => {
-          if (cell.value && cell.value.toString().toLowerCase().includes(colName.toLowerCase())) {
-            colIndex = colNumber;
-          }
-        });
-        if (colIndex !== -1) {
-          const col = worksheet.getColumn(colIndex);
-          col.hidden = (action === 'إخفاء');
-          modifications.push(`${action} عمود "${colName}"`);
-        }
-      }
-    }
-
-    // 1.7 تعيين عرض عمود
-    if (instructionLower.includes('عرض عمود') || instructionLower.includes('توسيع عمود')) {
-      const widthMatch = instruction.match(/(\d+)\s*(?:px|نقطة|عرض)/i);
-      const colMatch = instruction.match(/عمود\s*["']?([^"'\s,،]+)["']?/i);
-      if (widthMatch && colMatch) {
-        const width = parseInt(widthMatch[1]);
-        const colName = colMatch[1];
-        let colIndex = -1;
-        const headerRow = worksheet.getRow(3);
-        headerRow.eachCell((cell, colNumber) => {
-          if (cell.value && cell.value.toString().toLowerCase().includes(colName.toLowerCase())) {
-            colIndex = colNumber;
-          }
-        });
-        if (colIndex !== -1) {
-          const col = worksheet.getColumn(colIndex);
-          col.width = width;
-          modifications.push(`تعيين عرض عمود "${colName}" إلى ${width}`);
-        }
-      }
-    }
-
     // ============================================================
-    // 2️⃣ إدارة الصفوف (Rows)
+    // 2️⃣ إدارة الصفوف
     // ============================================================
 
     // 2.1 إضافة صف
@@ -308,7 +191,9 @@ export async function modifyExcelHandler(req, res) {
       const dataMatch = instruction.match(/\[([^\]]+)\]/);
       const rowData = dataMatch ? dataMatch[1].split(',').map(item => item.trim()) : [];
       const newRowIndex = worksheet.rowCount + 1;
+      
       worksheet.spliceRows(newRowIndex, 0, []);
+      
       if (rowData.length > 0) {
         rowData.forEach((value, index) => {
           worksheet.getCell(newRowIndex, index + 1).value = value;
@@ -331,53 +216,8 @@ export async function modifyExcelHandler(req, res) {
       }
     }
 
-    // 2.3 تكرار صف
-    if (instructionLower.includes('تكرار صف') || instructionLower.includes('نسخ صف')) {
-      const rowMatch = instruction.match(/(\d+)/);
-      if (rowMatch) {
-        const rowNumber = parseInt(rowMatch[1]);
-        if (rowNumber > 0 && rowNumber <= worksheet.rowCount) {
-          const newRowIndex = worksheet.rowCount + 1;
-          worksheet.spliceRows(newRowIndex, 0, []);
-          const colCount = worksheet.columnCount;
-          for (let i = 1; i <= colCount; i++) {
-            worksheet.getCell(newRowIndex, i).value = worksheet.getCell(rowNumber, i).value;
-          }
-          modifications.push(`تكرار الصف ${rowNumber}`);
-        }
-      }
-    }
-
-    // 2.4 إخفاء/إظهار صف
-    if (instructionLower.includes('إخفاء صف') || instructionLower.includes('إظهار صف')) {
-      const rowMatch = instruction.match(/(\d+)/);
-      if (rowMatch) {
-        const rowNumber = parseInt(rowMatch[1]);
-        if (rowNumber > 0 && rowNumber <= worksheet.rowCount) {
-          const row = worksheet.getRow(rowNumber);
-          row.hidden = instructionLower.includes('إخفاء');
-          modifications.push(`${instructionLower.includes('إخفاء') ? 'إخفاء' : 'إظهار'} الصف ${rowNumber}`);
-        }
-      }
-    }
-
-    // 2.5 تعيين ارتفاع صف
-    if (instructionLower.includes('ارتفاع صف') || instructionLower.includes('تكبير صف')) {
-      const heightMatch = instruction.match(/(\d+)\s*(?:pt|نقطة)/i);
-      const rowMatch = instruction.match(/(\d+)/);
-      if (heightMatch && rowMatch) {
-        const height = parseInt(heightMatch[1]);
-        const rowNumber = parseInt(rowMatch[1]);
-        if (rowNumber > 0 && rowNumber <= worksheet.rowCount) {
-          const row = worksheet.getRow(rowNumber);
-          row.height = height;
-          modifications.push(`تعيين ارتفاع الصف ${rowNumber} إلى ${height}pt`);
-        }
-      }
-    }
-
     // ============================================================
-    // 3️⃣ تعديل البيانات (Data)
+    // 3️⃣ تعديل البيانات
     // ============================================================
 
     // 3.1 استبدال النصوص
@@ -404,85 +244,8 @@ export async function modifyExcelHandler(req, res) {
       }
     }
 
-    // 3.2 تعبئة عمود بقيمة
-    if (instructionLower.includes('تعبئة عمود') || instructionLower.includes('ملء عمود')) {
-      const colMatch = instruction.match(/تعبئة\s*["']?([^"'\s,،]+)["']?\s*بقيمة\s*["']?([^"'\s,،]+)["']?/i);
-      if (colMatch) {
-        const colName = colMatch[1];
-        const value = colMatch[2];
-        let colIndex = -1;
-        const headerRow = worksheet.getRow(3);
-        headerRow.eachCell((cell, colNumber) => {
-          if (cell.value && cell.value.toString().toLowerCase().includes(colName.toLowerCase())) {
-            colIndex = colNumber;
-          }
-        });
-        if (colIndex !== -1) {
-          const rowCount = worksheet.rowCount;
-          for (let i = 4; i <= rowCount; i++) {
-            worksheet.getCell(i, colIndex).value = value;
-          }
-          modifications.push(`تعبئة عمود "${colName}" بقيمة "${value}"`);
-        }
-      }
-    }
-
-    // 3.3 تعبئة صف بقيمة
-    if (instructionLower.includes('تعبئة صف') || instructionLower.includes('ملء صف')) {
-      const rowMatch = instruction.match(/(\d+)/);
-      const valueMatch = instruction.match(/بقيمة\s*["']?([^"'\s,،]+)["']?/i);
-      if (rowMatch && valueMatch) {
-        const rowNumber = parseInt(rowMatch[1]);
-        const value = valueMatch[1];
-        if (rowNumber > 0 && rowNumber <= worksheet.rowCount) {
-          const colCount = worksheet.columnCount;
-          for (let i = 1; i <= colCount; i++) {
-            worksheet.getCell(rowNumber, i).value = value;
-          }
-          modifications.push(`تعبئة الصف ${rowNumber} بقيمة "${value}"`);
-        }
-      }
-    }
-
-    // 3.4 تطبيق صيغة على عمود
-    if (instructionLower.includes('صيغة') || instructionLower.includes('formula')) {
-      const formulaMatch = instruction.match(/صيغة\s*["']?([^"'\s,،]+)["']?\s*[:=]\s*["']?([^"'\s,،]+)["']?/i);
-      if (formulaMatch) {
-        const colName = formulaMatch[1];
-        const formula = formulaMatch[2];
-        let colIndex = -1;
-        const headerRow = worksheet.getRow(3);
-        headerRow.eachCell((cell, colNumber) => {
-          if (cell.value && cell.value.toString().toLowerCase().includes(colName.toLowerCase())) {
-            colIndex = colNumber;
-          }
-        });
-        if (colIndex !== -1) {
-          const rowCount = worksheet.rowCount;
-          for (let i = 4; i <= rowCount; i++) {
-            const cell = worksheet.getCell(i, colIndex);
-            cell.value = { formula: formula.replace('ROW', i) };
-          }
-          modifications.push(`تطبيق صيغة على عمود "${colName}"`);
-        }
-      }
-    }
-
-    // 3.5 تطبيق صيغة على خلية محددة
-    if (instructionLower.includes('صيغة في') && !instructionLower.includes('عمود')) {
-      const cellMatch = instruction.match(/([A-Z]+\d+)/i);
-      const formulaMatch = instruction.match(/[:=]\s*["']?([^"'\s,،]+)["']?/i);
-      if (cellMatch && formulaMatch) {
-        const cellRef = cellMatch[1];
-        const formula = formulaMatch[1];
-        const cell = worksheet.getCell(cellRef);
-        cell.value = { formula: formula };
-        modifications.push(`تطبيق صيغة في الخلية ${cellRef}: ${formula}`);
-      }
-    }
-
     // ============================================================
-    // 4️⃣ التنسيق (Formatting)
+    // 4️⃣ التنسيق
     // ============================================================
 
     // 4.1 تغيير لون خلفية عمود
@@ -510,137 +273,7 @@ export async function modifyExcelHandler(req, res) {
       }
     }
 
-    // 4.2 تغيير لون خلفية خلية محددة
-    if (instructionLower.includes('لون خلية') && !instructionLower.includes('عمود')) {
-      const cellMatch = instruction.match(/([A-Z]+\d+)/i);
-      const colorMatch = instruction.match(/(#[0-9A-Fa-f]{6})|(أحمر|أزرق|أخضر|أصفر|أسود|أبيض)/i);
-      if (cellMatch && colorMatch) {
-        const cellRef = cellMatch[1];
-        let color = colorMatch[1] || colorMatch[2];
-        const cell = worksheet.getCell(cellRef);
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
-        modifications.push(`تغيير لون الخلية ${cellRef} إلى ${color}`);
-      }
-    }
-
-    // 4.3 تغيير لون النص
-    if (instructionLower.includes('لون نص') || instructionLower.includes('لون الخط')) {
-      const colorMatch = instruction.match(/(#[0-9A-Fa-f]{6})|(أحمر|أزرق|أخضر|أصفر|أسود|أبيض)/i);
-      const cellMatch = instruction.match(/([A-Z]+\d+)/i);
-      if (colorMatch) {
-        let color = colorMatch[1] || colorMatch[2];
-        if (cellMatch) {
-          const cellRef = cellMatch[1];
-          const cell = worksheet.getCell(cellRef);
-          cell.font = { color: { argb: color } };
-          modifications.push(`تغيير لون نص الخلية ${cellRef} إلى ${color}`);
-        } else {
-          const rowCount = worksheet.rowCount;
-          const colCount = worksheet.columnCount;
-          for (let i = 1; i <= rowCount; i++) {
-            for (let j = 1; j <= colCount; j++) {
-              const cell = worksheet.getCell(i, j);
-              cell.font = { color: { argb: color } };
-            }
-          }
-          modifications.push(`تغيير لون النص في جميع الخلايا إلى ${color}`);
-        }
-      }
-    }
-
-    // 4.4 تغيير حجم الخط
-    if (instructionLower.includes('حجم خط') || instructionLower.includes('تكبير خط')) {
-      const sizeMatch = instruction.match(/(\d+)\s*(?:pt|px|نقطة)/i);
-      if (sizeMatch) {
-        const size = parseInt(sizeMatch[1]);
-        const rowCount = worksheet.rowCount;
-        const colCount = worksheet.columnCount;
-        for (let i = 1; i <= rowCount; i++) {
-          for (let j = 1; j <= colCount; j++) {
-            const cell = worksheet.getCell(i, j);
-            if (cell.font) cell.font.size = size;
-            else cell.font = { size: size };
-          }
-        }
-        modifications.push(`تغيير حجم الخط إلى ${size}pt`);
-      }
-    }
-
-    // 4.5 تغيير نوع الخط
-    if (instructionLower.includes('نوع خط') || instructionLower.includes('تغيير الخط')) {
-      const fontMatch = instruction.match(/خط\s*["']?([^"'\s,،]+)["']?/i);
-      if (fontMatch) {
-        const fontName = fontMatch[1];
-        const rowCount = worksheet.rowCount;
-        const colCount = worksheet.columnCount;
-        for (let i = 1; i <= rowCount; i++) {
-          for (let j = 1; j <= colCount; j++) {
-            const cell = worksheet.getCell(i, j);
-            if (cell.font) cell.font.name = fontName;
-            else cell.font = { name: fontName };
-          }
-        }
-        modifications.push(`تغيير نوع الخط إلى "${fontName}"`);
-      }
-    }
-
-    // 4.6 جعل النص عريض (Bold)
-    if (instructionLower.includes('عريض') || instructionLower.includes('bold') || 
-        instructionLower.includes('تثخين')) {
-      const rowCount = worksheet.rowCount;
-      const colCount = worksheet.columnCount;
-      for (let i = 1; i <= rowCount; i++) {
-        for (let j = 1; j <= colCount; j++) {
-          const cell = worksheet.getCell(i, j);
-          if (cell.font) cell.font.bold = true;
-          else cell.font = { bold: true };
-        }
-      }
-      modifications.push(`تطبيق الخط العريض على جميع الخلايا`);
-    }
-
-    // 4.7 إضافة حدود
-    if (instructionLower.includes('حدود') || instructionLower.includes('border')) {
-      const rowCount = worksheet.rowCount;
-      const colCount = worksheet.columnCount;
-      for (let i = 1; i <= rowCount; i++) {
-        for (let j = 1; j <= colCount; j++) {
-          const cell = worksheet.getCell(i, j);
-          cell.border = {
-            top: { style: 'thin' },
-            bottom: { style: 'thin' },
-            left: { style: 'thin' },
-            right: { style: 'thin' }
-          };
-        }
-      }
-      modifications.push(`إضافة حدود لجميع الخلايا`);
-    }
-
-    // 4.8 محاذاة النص
-    if (instructionLower.includes('محاذاة') || instructionLower.includes('align')) {
-      const alignMatch = instruction.match(/(يمين|يسار|وسط|justify)/i);
-      if (alignMatch) {
-        const align = alignMatch[1];
-        const alignmentMap = { 'يمين': 'right', 'يسار': 'left', 'وسط': 'center', 'justify': 'justify' };
-        const alignment = alignmentMap[align] || 'center';
-        const rowCount = worksheet.rowCount;
-        const colCount = worksheet.columnCount;
-        for (let i = 1; i <= rowCount; i++) {
-          for (let j = 1; j <= colCount; j++) {
-            const cell = worksheet.getCell(i, j);
-            cell.alignment = { horizontal: alignment };
-          }
-        }
-        modifications.push(`محاذاة النص إلى ${align}`);
-      }
-    }
-
-    // ============================================================
-    // 5️⃣ العمليات المتقدمة (Advanced) - باستخدام المكتبة المتقدمة
-    // ============================================================
-
-    // 5.1 دمج خلايا
+    // 4.2 دمج خلايا
     if (instructionLower.includes('دمج') && !instructionLower.includes('دمج ملفات')) {
       const rangeMatch = instruction.match(/([A-Z]+\d+):([A-Z]+\d+)/i);
       if (rangeMatch) {
@@ -653,7 +286,7 @@ export async function modifyExcelHandler(req, res) {
       }
     }
 
-    // 5.2 إضافة تعليق
+    // 4.3 إضافة تعليق
     if (instructionLower.includes('تعليق') || instructionLower.includes('ملاحظة')) {
       const commentMatch = instruction.match(/تعليق\s*["']([^"']+)["']/i);
       if (commentMatch) {
@@ -665,174 +298,10 @@ export async function modifyExcelHandler(req, res) {
       }
     }
 
-    // ✅ المخططات والجداول المحورية والتنسيق الشرطي: نستخدم المكتبة المتقدمة إذا كانت متوفرة
-    if (useAdvanced && AdvancedWorkbook) {
-      // 5.3 إضافة جدول محوري (Pivot Table)
-      if (instructionLower.includes('جدول محوري') || instructionLower.includes('pivot')) {
-        try {
-          const rowCount = worksheet.rowCount;
-          const colCount = worksheet.columnCount;
-          const sourceRange = `A1:${String.fromCharCode(64 + colCount)}${rowCount}`;
-          
-          const pivotSheet = workbook.addWorksheet('PivotTable');
-          workbook.addPivotTable({
-            sourceSheet: worksheet.name || 'Sheet1',
-            sourceRange: sourceRange,
-            targetSheet: pivotSheet.name,
-            anchorCell: 'A3',
-            layout: {
-              rows: [{ name: worksheet.getCell(3, 2).value || 'الصفوف' }],
-              cols: [{ name: worksheet.getCell(3, 1).value || 'الأعمدة' }],
-              values: [{ 
-                name: worksheet.getCell(3, worksheet.columnCount).value || 'القيم',
-                agg: 'sum',
-                displayName: 'الإجمالي'
-              }]
-            }
-          });
-          modifications.push(`إضافة جدول محوري باستخدام النطاق ${sourceRange}`);
-        } catch (e) {
-          console.warn(`⚠️ فشل إضافة الجدول المحوري: ${e.message}`);
-        }
-      }
-
-      // 5.4 إضافة مخطط (Chart)
-      if (instructionLower.includes('مخطط') || instructionLower.includes('chart')) {
-        try {
-          const chartType = instructionLower.includes('دائري') ? 'pie' :
-                            instructionLower.includes('خطي') ? 'line' :
-                            instructionLower.includes('شريطي') ? 'bar' : 'column';
-          
-          const rowCount = worksheet.rowCount;
-          const colCount = worksheet.columnCount;
-          const dataRange = `A1:${String.fromCharCode(64 + colCount)}${rowCount}`;
-          
-          const chartSheet = workbook.addWorksheet('Chart');
-          workbook.addChart({
-            type: chartType,
-            dataSheet: worksheet.name || 'Sheet1',
-            dataRange: dataRange,
-            targetSheet: chartSheet.name,
-            anchorCell: 'A1',
-            title: 'مخطط البيانات'
-          });
-          modifications.push(`إضافة مخطط من نوع "${chartType}" باستخدام النطاق ${dataRange}`);
-        } catch (e) {
-          console.warn(`⚠️ فشل إضافة المخطط: ${e.message}`);
-        }
-      }
-
-      // 5.5 إضافة تصفية (Filter)
-      if (instructionLower.includes('تصفية') || instructionLower.includes('filter')) {
-        try {
-          const rowCount = worksheet.rowCount;
-          const colCount = worksheet.columnCount;
-          worksheet.autoFilter = {
-            from: 'A1',
-            to: `${String.fromCharCode(64 + colCount)}${rowCount}`
-          };
-          modifications.push(`إضافة تصفية على النطاق A1:${String.fromCharCode(64 + colCount)}${rowCount}`);
-        } catch (e) {
-          console.warn(`⚠️ فشل إضافة التصفية: ${e.message}`);
-        }
-      }
-    }
-
-    // 5.6 فرز البيانات
-    if (instructionLower.includes('فرز') || instructionLower.includes('sort')) {
-      const colMatch = instruction.match(/حسب\s*["']?([^"'\s,،]+)["']?/i);
-      if (colMatch) {
-        const sortCol = colMatch[1];
-        let sortIndex = -1;
-        const headerRow = worksheet.getRow(3);
-        headerRow.eachCell((cell, colNumber) => {
-          if (cell.value && cell.value.toString().toLowerCase().includes(sortCol.toLowerCase())) {
-            sortIndex = colNumber;
-          }
-        });
-        if (sortIndex !== -1) {
-          const rowCount = worksheet.rowCount;
-          const data = [];
-          for (let i = 4; i <= rowCount; i++) {
-            const row = [];
-            for (let j = 1; j <= worksheet.columnCount; j++) {
-              row.push(worksheet.getCell(i, j).value);
-            }
-            data.push({ row: row, sortValue: worksheet.getCell(i, sortIndex).value });
-          }
-          data.sort((a, b) => (a.sortValue || '').localeCompare(b.sortValue || ''));
-          for (let i = 0; i < data.length; i++) {
-            for (let j = 1; j <= worksheet.columnCount; j++) {
-              worksheet.getCell(i + 4, j).value = data[i].row[j - 1];
-            }
-          }
-          modifications.push(`فرز البيانات حسب عمود "${sortCol}"`);
-        }
-      }
-    }
-
-    // 5.7 إزالة التكرارات
-    if (instructionLower.includes('إزالة التكرارات') || instructionLower.includes('remove duplicates')) {
-      const colMatch = instruction.match(/حسب\s*["']?([^"'\s,،]+)["']?/i);
-      if (colMatch) {
-        const dedupCol = colMatch[1];
-        let dedupIndex = -1;
-        const headerRow = worksheet.getRow(3);
-        headerRow.eachCell((cell, colNumber) => {
-          if (cell.value && cell.value.toString().toLowerCase().includes(dedupCol.toLowerCase())) {
-            dedupIndex = colNumber;
-          }
-        });
-        if (dedupIndex !== -1) {
-          const rowCount = worksheet.rowCount;
-          const seen = new Set();
-          let deletedCount = 0;
-          for (let i = 4; i <= rowCount; i++) {
-            const value = worksheet.getCell(i, dedupIndex).value;
-            if (seen.has(value)) {
-              worksheet.spliceRows(i, 1);
-              deletedCount++;
-              i--;
-            } else {
-              seen.add(value);
-            }
-          }
-          modifications.push(`إزالة ${deletedCount} تكرار حسب عمود "${dedupCol}"`);
-        }
-      }
-    }
-
-    // 5.8 تحويل إلى CSV (تصدير)
-    if (instructionLower.includes('تحويل إلى csv') || instructionLower.includes('تصدير csv')) {
-      let csvData = [];
-      const rowCount = worksheet.rowCount;
-      const colCount = worksheet.columnCount;
-      for (let i = 1; i <= rowCount; i++) {
-        const rowData = [];
-        for (let j = 1; j <= colCount; j++) {
-          rowData.push(worksheet.getCell(i, j).value || '');
-        }
-        csvData.push(rowData.join(','));
-      }
-      const csvString = csvData.join('\n');
-      return {
-        success: true,
-        message: "✅ تم تحويل الملف إلى CSV",
-        fileBase64: Buffer.from(csvString).toString('base64'),
-        fileName: `converted_${Date.now()}.csv`,
-        contentType: 'text/csv'
-      };
-    }
-
     // ============================================================
     // حفظ الملف
     // ============================================================
-    let outputBuffer;
-    if (useAdvanced && AdvancedWorkbook) {
-      outputBuffer = await workbook.writeToBuffer();
-    } else {
-      outputBuffer = await workbook.xlsx.writeBuffer();
-    }
+    const outputBuffer = await workbook.xlsx.writeBuffer();
 
     let message = "✅ تم تعديل الملف بنجاح";
     if (modifications.length > 0) {
@@ -880,4 +349,4 @@ export default async function handler(req, res) {
     console.error("Error in modify route:", err);
     return res.status(500).json({ error: "خطأ في التعديل: " + err.message });
   }
-                }
+                         }
