@@ -238,7 +238,7 @@ export default async function handler(req, res) {
       });
     } catch (err) {
       response = await ai.models.generateContent({
-        model: 'gemini-1.5-pro',
+        model: 'gemini-3.5-flash',
         contents,
         config: {
           temperature: 0.3,
