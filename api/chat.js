@@ -66,35 +66,46 @@ export default async function handler(req, res) {
     const hasText = userContent.length > 0;
     const hasFile = excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64;
 
+    // =========================
     // 2) استقبال الملف وتحليل أولي
+    // =========================
     if (hasFile) {
       const fileObj = excelJSON[0];
       extractedBase64 = fileObj.fileBase64;
       fileMimeType = fileObj.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       fileName = fileObj.fileName || 'ملف';
 
-      try {
-        const buffer = Buffer.from(extractedBase64, 'base64');
-        const workbook = XLSX.read(buffer, { type: 'buffer' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      console.log(`📦 Base64 موجود: ${extractedBase64 ? '✅ نعم (الطول: ' + extractedBase64.length + ')' : '❌ لا'}`);
 
-        // ✅ تحويل الملف بالكامل إلى JSON
-        const fullData = XLSX.utils.sheet_to_json(worksheet);
-        
-        fileSummary = `[ملف مرفق: ${fileName}]\n`;
-        fileSummary += `نوع الملف: إكسل\n`;
-        fileSummary += `عدد الصفوف: ${rawData.length}\n`;
-        fileSummary += `الشيت الأولى: ${firstSheetName}\n`;
-        fileSummary += `\nالبيانات كاملة (JSON):\n${JSON.stringify(fullData, null, 2)}`;
-        
-        console.log(`✅ تم تحليل الملف: ${fileName}, عدد الصفوف: ${rawData.length}`);
-        
-      } catch (parseErr) {
-        console.error("Error parsing Excel in chat:", parseErr);
-        fileSummary = `[ملف مرفق: ${fileName} - تعذّر تحليل المحتوى]`;
+      if (!extractedBase64) {
+        console.error("❌ Base64 مفقود من الملف المرفق");
+        fileSummary = `[ملف مرفق: ${fileName} - تعذّر قراءة الملف]`;
+      } else {
+        try {
+          const buffer = Buffer.from(extractedBase64, 'base64');
+          const workbook = XLSX.read(buffer, { type: 'buffer' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          // ✅ تحويل الملف بالكامل إلى JSON
+          const fullData = XLSX.utils.sheet_to_json(worksheet);
+          
+          fileSummary = `[ملف مرفق: ${fileName}]\n`;
+          fileSummary += `نوع الملف: إكسل\n`;
+          fileSummary += `عدد الصفوف: ${rawData.length}\n`;
+          fileSummary += `الشيت الأولى: ${firstSheetName}\n`;
+          fileSummary += `\nالبيانات كاملة (JSON):\n${JSON.stringify(fullData, null, 2)}`;
+          
+          console.log(`✅ تم تحليل الملف: ${fileName}, عدد الصفوف: ${rawData.length}`);
+          
+        } catch (parseErr) {
+          console.error("Error parsing Excel in chat:", parseErr);
+          fileSummary = `[ملف مرفق: ${fileName} - تعذّر تحليل المحتوى]`;
+        }
       }
+    } else {
+      console.log("ℹ️ لا يوجد ملف مرفق في الطلب");
     }
 
     // =========================
@@ -199,9 +210,11 @@ export default async function handler(req, res) {
     const lowerMsg = (userContent || "").toLowerCase();
     const wantsModify = /عدل|تعديل|غيّر|تغيير|edit|update|اضف|أضف|حذف|ازل|إزالة/.test(lowerMsg);
     const wantsGenerate = /ولد|توليد|انشئ|إنشاء|create|generate|جهز|حضّر/.test(lowerMsg);
-    
+
+    console.log(`🔍 Manual Fallback: wantsModify=${wantsModify}, wantsGenerate=${wantsGenerate}, hasBase64=${!!extractedBase64}`);
+
     if (wantsModify && extractedBase64) {
-      console.log("🔧 Manual Fallback: تم اكتشاف طلب تعديل، ننفذ الأداة يدوياً");
+      console.log("🔧 Manual Fallback: تنفيذ تعديل");
       try {
         const result = await modifyExcelHandler({ 
           body: { 
@@ -222,10 +235,15 @@ export default async function handler(req, res) {
         console.error("❌ Error executing manual excel_modify:", err);
         return res.json({ reply: "❌ حدث خطأ أثناء التعديل: " + err.message });
       }
+    } else if (wantsModify && !extractedBase64) {
+      console.log("❌ Manual Fallback: طلب تعديل ولكن لا يوجد Base64");
+      return res.json({ 
+        reply: "❌ عذراً، الملف المرفق غير متوفر. يرجى إعادة رفع الملف والمحاولة مرة أخرى." 
+      });
     }
     
     if (wantsGenerate) {
-      console.log("🔧 Manual Fallback: تم اكتشاف طلب توليد، ننفذ الأداة يدوياً");
+      console.log("🔧 Manual Fallback: تنفيذ توليد");
       try {
         const result = await generateExcelHandler({ 
           body: { 
@@ -300,9 +318,12 @@ async function handleManualFallback(res, userContent, extractedBase64) {
           fileBase64: result.fileBase64,
           fileName: result.fileName || "modified.xlsx"
         });
+      } else {
+        return res.json({ reply: result.error || "❌ فشل تعديل الملف" });
       }
     } catch (err) {
       console.error("❌ Manual fallback error:", err);
+      return res.json({ reply: "❌ حدث خطأ أثناء التعديل: " + err.message });
     }
   }
   
@@ -320,13 +341,16 @@ async function handleManualFallback(res, userContent, extractedBase64) {
           fileBase64: result.fileBase64,
           fileName: result.fileName || "generated.xlsx"
         });
+      } else {
+        return res.json({ reply: result.error || "❌ فشل توليد الملف" });
       }
     } catch (err) {
       console.error("❌ Manual fallback error:", err);
+      return res.json({ reply: "❌ حدث خطأ أثناء التوليد: " + err.message });
     }
   }
   
   return res.json({ 
     reply: "تمام… عفواً، ما قدرت أفهم طلبك بوضوح. حاول تطلب تعديل أو توليد ملف بشكل مباشر." 
   });
-                        }
+                                     }
