@@ -1,10 +1,43 @@
 import Groq from 'groq-sdk';
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
+import { modifyExcelHandler, generateExcelHandler } from './excel/modify.js';
 import XLSX from 'xlsx';
 
-// ✅ استخدام Groq بدل Gemini
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+// ✅ تعريف الأدوات لـ Groq (بنفس صيغة OpenAI)
+const tools = [
+  {
+    type: "function",
+    function: {
+      name: "excel_modify",
+      description: "تعديل ملف Excel موجود بناءً على تعليمات المستخدم (إضافة عمود، تعديل بيانات، حذف صفوف).",
+      parameters: {
+        type: "object",
+        properties: {
+          base64: { type: "string", description: "ملف Excel بصيغة Base64" },
+          instruction: { type: "string", description: "تعليمات التعديل المطلوبة" }
+        },
+        required: ["base64", "instruction"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "excel_generate",
+      description: "توليد ملف Excel جديد بناءً على تعليمات المستخدم.",
+      parameters: {
+        type: "object",
+        properties: {
+          instruction: { type: "string", description: "وصف الملف المطلوب توليده" }
+        },
+        required: ["instruction"]
+      }
+    }
+  }
+];
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -21,10 +54,8 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // عقل المنصّة الهجيني
-    // =========================
-
     // 1) تجهيز السياق الأساسي
+    // =========================
     let userContent = (message || "").trim();
     let extractedBase64 = null;
     let fileMimeType = null;
@@ -48,12 +79,17 @@ export default async function handler(req, res) {
         const worksheet = workbook.Sheets[firstSheetName];
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-        // ✅ نص ملخص الملف (بدون Base64 عشان نوفر توكنز)
-        fileSummary = `[ملف مرفق: ${fileName}]\nنوع الملف: إكسل\nعدد الصفوف: ${rawData.length}\nالشيت الأولى: ${firstSheetName}\n`;
+        // ✅ تحويل الملف بالكامل إلى JSON
+        const fullData = XLSX.utils.sheet_to_json(worksheet);
         
-        // ✅ أول 10 صفوف فقط عشان ما نستهلك توكنز كثيرة
-        const sampleData = rawData.slice(0, 10);
-        fileSummary += `\nعينة من البيانات:\n${JSON.stringify(sampleData, null, 2)}`;
+        fileSummary = `[ملف مرفق: ${fileName}]\n`;
+        fileSummary += `نوع الملف: إكسل\n`;
+        fileSummary += `عدد الصفوف: ${rawData.length}\n`;
+        fileSummary += `الشيت الأولى: ${firstSheetName}\n`;
+        fileSummary += `\nالبيانات كاملة (JSON):\n${JSON.stringify(fullData, null, 2)}`;
+        
+        console.log(`✅ تم تحليل الملف: ${fileName}, عدد الصفوف: ${rawData.length}`);
+        
       } catch (parseErr) {
         console.error("Error parsing Excel in chat:", parseErr);
         fileSummary = `[ملف مرفق: ${fileName} - تعذّر تحليل المحتوى]`;
@@ -61,145 +97,12 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // طبقة كشف نوع الملف
+    // 2) بناء الرسالة النهائية لـ Groq
     // =========================
-    function detectFileType(mime) {
-      if (!mime) return "unknown";
-
-      const m = mime.toLowerCase();
-
-      if (m.includes("spreadsheet") || m.includes("excel")) return "excel";
-      if (m.includes("wordprocessing") || m.includes("word")) return "word";
-      if (m.includes("pdf")) return "pdf";
-      if (m.includes("image")) return "image";
-      if (m.includes("text")) return "text";
-
-      return "unknown";
-    }
-
-    const fileType = detectFileType(fileMimeType);
+    const fullMessage = `المستخدم طلب: ${userContent || "مرحبا"}\n\n${fileSummary}`;
 
     // =========================
-    // محرك اختيار الأداة – Tool Selector Engine
-    // =========================
-    function selectTool(intent, fileType) {
-        // 1) إذا ما في ملف → توليد أو رد نصي
-        if (!fileType || fileType === "unknown") {
-            if (intent.wantsGenerate) return "excel_generate";
-            return null;
-        }
-
-        // 2) Excel
-        if (fileType === "excel") {
-            if (intent.wantsModify) return "excel_modify";
-            if (intent.wantsGenerate) return "excel_generate";
-            if (intent.wantsConvert) return "file_convert";
-        }
-
-        // 3) Word
-        if (fileType === "word") {
-            if (intent.wantsModify) return "word_modify";
-            if (intent.wantsGenerate) return "word_generate";
-            if (intent.wantsConvert) return "file_convert";
-        }
-
-        // 4) PDF
-        if (fileType === "pdf") {
-            if (intent.wantsModify) return "pdf_modify";
-            if (intent.wantsGenerate) return "pdf_generate";
-            if (intent.wantsConvert) return "file_convert";
-        }
-
-        // 5) Image
-        if (fileType === "image") {
-            if (intent.wantsModify) return "image_modify";
-            if (intent.wantsGenerate) return "image_generate";
-        }
-
-        return null;
-    }
-    
-    // =========================
-    // محرك النية الذكي – Intent Engine v2
-    // =========================
-    const lowerText = userContent.toLowerCase();
-
-    const intent = {
-      isChatOnly: hasText && !hasFile,
-      isFileOnly: hasFile && !hasText,
-      isFileWithText: hasFile && hasText,
-
-      wantsModify: /عدل|تعديل|غيّر|تغيير|edit|update/.test(lowerText),
-      wantsGenerate: /ولد|توليد|انشئ|إنشاء|create|generate|جهز|حضّر/.test(lowerText),
-      wantsConvert: /حول|تحويل|convert/.test(lowerText),
-      wantsAnalyze: /حلل|تحليل|analyze|افهم|فسر/.test(lowerText),
-      wantsRead: /اقرأ|قراءة|عرض|اظهر|أظهر|show|display/.test(lowerText),
-
-      mentionsExcel: /اكسل|excel|جدول/.test(lowerText),
-      mentionsWord: /وورد|word|مستند/.test(lowerText),
-      mentionsPdf: /pdf|بي دي اف/.test(lowerText),
-      mentionsImage: /صورة|تصميم|image|logo|banner|poster/.test(lowerText)
-    };
-
-    // تحديد نوع المهمة العامة
-    let taskType = "chat";
-
-    if (intent.isChatOnly) {
-      taskType = "chat";
-    } else if (intent.isFileOnly) {
-      taskType = "file_question";
-    } else if (intent.isFileWithText) {
-      if (intent.wantsModify) taskType = "file_modify";
-      else if (intent.wantsGenerate) taskType = "file_generate";
-      else if (intent.wantsConvert) taskType = "file_convert";
-      else if (intent.wantsAnalyze) taskType = "file_analyze";
-      else if (intent.wantsRead) taskType = "file_read";
-      else taskType = "file_mixed";
-    }
-
-    // =========================
-    // 4) بناء رسالة واضحة للذكاء حسب الحالة
-    // =========================
-    let finalUserText = "";
-    let systemBehaviorNote = "";
-
-    if (taskType === "chat") {
-      systemBehaviorNote =
-        "أنت مساعد ذكاء عام، دردشة حرة، ترد باختصار ووضوح وبأسلوب بشري لطيف.";
-      finalUserText = userContent || "احكي معي بشكل عام.";
-    } else if (taskType === "file_question") {
-      systemBehaviorNote =
-        "وصلك ملف بدون تعليمات نصية، مهمتك تسأل المستخدم بلطف شو المطلوب من الملف.";
-      finalUserText = `وصل ملف باسم: ${fileName || "ملف"}.\nنوع الملف: ${fileType}.\n${fileSummary || ""}\nاسأل المستخدم: "شو حابب نعمل بهذا الملف؟"`;
-    } else if (taskType === "file_modify") {
-      systemBehaviorNote =
-        "أنت مساعد ذكاء يتعامل مع ملف مرفق وتعليمات تعديل، مهمتك فهم المطلوب وبناء خطة تعديل واضحة أو اختيار أداة مناسبة.";
-      finalUserText = `تعليمات التعديل:\n${userContent}\n\nنوع الملف: ${fileType}.\nمعلومات عن الملف:\n${fileSummary || "لا يوجد ملخص متاح."}`;
-    } else if (taskType === "file_generate") {
-      systemBehaviorNote =
-        "المستخدم يطلب توليد ملف جديد، مهمتك فهم نوع الملف المطلوب وبناء وصف واضح للتوليد.";
-      finalUserText = `طلب التوليد:\n${userContent}\n\nنوع الملف المطلوب: ${fileType}.`;
-    } else if (taskType === "file_convert") {
-      systemBehaviorNote =
-        "المستخدم يطلب تحويل ملف بين الصيغ، مهمتك تحديد الصيغة المستهدفة بوضوح.";
-      finalUserText = `طلب التحويل:\n${userContent}\n\nنوع الملف الحالي: ${fileType}.`;
-    } else if (taskType === "file_analyze") {
-      systemBehaviorNote =
-        "المستخدم يطلب تحليل ملف، مهمتك استخراج أهم النقاط والملخصات.";
-      finalUserText = `طلب التحليل:\n${userContent}\n\nنوع الملف: ${fileType}.`;
-    } else if (taskType === "file_read" || taskType === "file_mixed") {
-      systemBehaviorNote =
-        "المستخدم يتعامل مع ملف مرفق وتعليمات عامة، مهمتك فهم المطلوب واختيار أفضل رد.";
-      finalUserText = `تعليمات المستخدم:\n${userContent}\n\nنوع الملف: ${fileType}.`;
-    }
-
-    // =========================
-    // 5) بناء الرسالة النهائية لـ Groq
-    // =========================
-    const fullMessage = `${SYSTEM_PROMPT}\n\n${systemBehaviorNote}\n\n${finalUserText}\n\n${fileSummary}`;
-
-    // =========================
-    // 6) استدعاء Groq (بدون أدوات حالياً، لأن Groq مختلف)
+    // 3) استدعاء Groq مع الأدوات
     // =========================
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-120b",
@@ -209,108 +112,85 @@ export default async function handler(req, res) {
       ],
       temperature: 0.3,
       max_completion_tokens: 512,
-      top_p: 1,
+      tools: tools,
+      tool_choice: "auto"
     });
 
-    const replyText = completion.choices[0]?.message?.content || "تم الاستلام";
+    const responseMessage = completion.choices[0].message;
 
     // =========================
-    // 7) التحقق من وجود أداة مطلوبة (تحليل بسيط)
+    // 4) معالجة الأدوات (إذا استدعاها Groq)
     // =========================
-    const autoTool = selectTool(intent, fileType);
+    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+      const toolCall = responseMessage.tool_calls[0];
+      const toolName = toolCall.function.name;
+      const toolArgs = JSON.parse(toolCall.function.arguments);
 
-    if (autoTool && toolsRegistry[autoTool]) {
-      try {
-        const autoArgs = {};
+      console.log(`🔧 Groq استدعى الأداة: ${toolName}`);
 
-        if (extractedBase64) {
-          autoArgs.base64 = extractedBase64;
+      // ✅ تنفيذ الأداة المناسبة
+      if (toolName === "excel_modify") {
+        if (!toolArgs.base64 && extractedBase64) {
+          toolArgs.base64 = extractedBase64;
         }
-
-        if (autoTool.includes("generate")) {
-          autoArgs.instruction = userContent || "ملف جديد بناءً على طلب المستخدم.";
-          autoArgs.content = userContent;
-          autoArgs.prompt = userContent;
+        try {
+          const result = await modifyExcelHandler({ body: toolArgs });
+          if (result.success && result.fileBase64) {
+            return res.json({
+              reply: result.message || "✅ تم تعديل الملف بنجاح",
+              fileBase64: result.fileBase64,
+              fileName: result.fileName || "modified.xlsx"
+            });
+          } else {
+            return res.json({ reply: result.error || "❌ فشل تعديل الملف" });
+          }
+        } catch (err) {
+          console.error("❌ Error executing excel_modify:", err);
+          return res.json({ reply: "❌ حدث خطأ أثناء تنفيذ التعديل: " + err.message });
         }
+      }
 
-        if (autoTool.includes("modify") && !autoArgs.editMap) {
-          autoArgs.editMap = { instruction: userContent };
+      if (toolName === "excel_generate") {
+        try {
+          const result = await generateExcelHandler({ body: toolArgs });
+          if (result.success && result.fileBase64) {
+            return res.json({
+              reply: result.message || "✅ تم توليد الملف بنجاح",
+              fileBase64: result.fileBase64,
+              fileName: result.fileName || "generated.xlsx"
+            });
+          } else {
+            return res.json({ reply: result.error || "❌ فشل توليد الملف" });
+          }
+        } catch (err) {
+          console.error("❌ Error executing excel_generate:", err);
+          return res.json({ reply: "❌ حدث خطأ أثناء تنفيذ التوليد: " + err.message });
         }
-
-        let autoResult = null;
-        const mockReq = { body: autoArgs };
-        const mockRes = {
-          status: (code) => ({
-            json: (resultData) => {
-              autoResult = resultData;
-              return resultData;
-            }
-          }),
-          setHeader: () => {},
-          send: (data) => { autoResult = data; }
-        };
-
-        const handlerFn = toolsRegistry[autoTool].handler;
-        const directResult = await handlerFn(mockReq, mockRes);
-
-        if (directResult && (directResult.fileBase64 || directResult.success)) {
-          autoResult = directResult;
-        }
-
-        if (Buffer.isBuffer(autoResult) || autoResult instanceof Uint8Array) {
-          const isWord = autoTool.includes("word");
-          const isPdf = autoTool.includes("pdf");
-          const isExcel = autoTool.includes("excel");
-
-          return res.status(200).json({
-            reply: "✨ تم تنفيذ العملية تلقائيًا.",
-            fileBase64: Buffer.from(autoResult).toString("base64"),
-            fileName: isWord ? "document.docx" : isPdf ? "document.pdf" : "sheet.xlsx",
-            contentType: isWord ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          });
-        }
-
-        if (autoResult && autoResult.fileBase64) {
-          return res.status(200).json({
-            reply: autoResult.message || "✨ تم تنفيذ العملية تلقائيًا.",
-            fileBase64: autoResult.fileBase64,
-            fileName: autoResult.fileName || "alatheer_output.xlsx",
-            contentType: autoResult.contentType || "application/octet-stream"
-          });
-        }
-
-      } catch (autoErr) {
-        console.error("Auto Tool Execution Error:", autoErr);
-        // نكمل بالرد النصي بدل ما نفشل
       }
     }
 
     // =========================
-    // 8) طبقة تحسين الرد البشري
+    // 5) إذا ما في أدوات، نرجع الرد النصي
     // =========================
+    const replyText = responseMessage.content || "تم الاستلام";
+
+    // تحسين الرد البشري
     function humanizeReply(text) {
-        if (!text) return "تمام، خلّيني ساعدك بخطوة تانية إذا حابب.";
-
-        let reply = text.trim();
-
-        reply = reply.replace(/نموذج|ذكاء اصطناعي|أداة|معالجة/g, "");
-        reply = reply.replace(/JSON|Base64|API|endpoint|parameters/gi, "");
-
-        reply = reply
-            .replace(/تم التنفيذ بنجاح/g, "تمام، خلّصنا الشغلة بنجاح")
-            .replace(/تمت المعالجة/g, "تمام، خلّصنا المطلوب")
-            .replace(/خطأ/g, "في شغلة بسيطة لازم ننتبه عليها");
-
-        if (!reply.includes("تمام") && !reply.includes("طيب")) {
-            reply = "تمام… " + reply;
-        }
-
-        return reply;
+      if (!text) return "تمام، خلّيني ساعدك بخطوة تانية إذا حابب.";
+      let reply = text.trim();
+      reply = reply.replace(/نموذج|ذكاء اصطناعي|أداة|معالجة/g, "");
+      reply = reply.replace(/JSON|Base64|API|endpoint|parameters/gi, "");
+      reply = reply
+        .replace(/تم التنفيذ بنجاح/g, "تمام، خلّصنا الشغلة بنجاح")
+        .replace(/تمت المعالجة/g, "تمام، خلّصنا المطلوب")
+        .replace(/خطأ/g, "في شغلة بسيطة لازم ننتبه عليها");
+      if (!reply.includes("تمام") && !reply.includes("طيب")) {
+        reply = "تمام… " + reply;
+      }
+      return reply;
     }
 
-    return res.status(200).json({
-      reply: humanizeReply(replyText)
-    });
+    return res.json({ reply: humanizeReply(replyText) });
 
   } catch (error) {
     console.error("❌ خطأ في Groq:", error);
@@ -318,4 +198,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في الاتصال بـ Groq")
     });
   }
-          }
+  }
