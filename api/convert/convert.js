@@ -1,4 +1,5 @@
-import { Workbook } from 'xml-xlsx-lite';
+import pkg from 'xml-xlsx-lite';
+const { Workbook } = pkg;
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
