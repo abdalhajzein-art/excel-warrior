@@ -3,8 +3,29 @@ import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 import { modifyExcelHandler } from './excel/modify.js';
 import { generateExcelHandler } from './excel/generate.js';
+import { Workbook } from '@office-kit/xlsx';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+// ✅ دالة للتحقق من إصدار المكتبة
+async function checkLibraryVersion() {
+  try {
+    const { version } = await import('@office-kit/xlsx/package.json');
+    const [major, minor, patch] = version.split('.').map(Number);
+    if (major < 1) {
+      return {
+        isOutdated: true,
+        message: `⚠️ المكتبة في نسخة تجريبية (v${version}). يرجى التحديث إلى v1.0.0 أو أحدث.`
+      };
+    }
+    return { isOutdated: false };
+  } catch (err) {
+    return {
+      isOutdated: true,
+      message: `❌ تعذّر قراءة إصدار المكتبة. يرجى إعادة تثبيت @office-kit/xlsx.`
+    };
+  }
+}
 
 // ✅ تعريف الأدوات لـ Groq (مبسطة)
 const tools = [
@@ -46,6 +67,14 @@ export default async function handler(req, res) {
   }
 
   try {
+    // ✅ التحقق من الإصدار أولاً
+    const versionCheck = await checkLibraryVersion();
+    if (versionCheck.isOutdated) {
+      return res.status(500).json({ 
+        reply: versionCheck.message 
+      });
+    }
+
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const { message, excelJSON } = body || {};
 
@@ -66,7 +95,7 @@ export default async function handler(req, res) {
     const hasFile = excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64;
 
     // =========================
-    // 2) استقبال الملف وتحليل أولي (باستخدام xml-xlsx-lite)
+    // 2) استقبال الملف وتحليل أولي (باستخدام @office-kit/xlsx)
     // =========================
     if (hasFile) {
       const fileObj = excelJSON[0];
@@ -81,9 +110,6 @@ export default async function handler(req, res) {
         fileSummary = `[ملف مرفق: ${fileName} - تعذّر قراءة الملف]`;
       } else {
         try {
-          // ✅ استيراد xml-xlsx-lite ديناميكياً
-          const { Workbook } = await import('xml-xlsx-lite');
-          
           const buffer = Buffer.from(extractedBase64, 'base64');
           const workbook = new Workbook();
           await workbook.loadFromBuffer(buffer);
@@ -93,7 +119,7 @@ export default async function handler(req, res) {
             throw new Error("لا يوجد ورقة عمل في الملف");
           }
           
-          // ✅ قراءة البيانات باستخدام xml-xlsx-lite
+          // ✅ قراءة البيانات باستخدام @office-kit/xlsx
           const rowCount = worksheet.getRowCount();
           const colCount = worksheet.getColumnCount();
           
@@ -319,6 +345,14 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("❌ خطأ في Groq:", error);
+    
+    // ✅ إذا كان الخطأ بسبب عدم توافق الإصدار
+    if (error.message.includes('version') || error.message.includes('unsupported') || error.message.includes('import')) {
+      return res.status(500).json({
+        reply: `⚠️ تعذّرت العملية بسبب قدم إصدار المكتبة. يرجى تحديث @office-kit/xlsx إلى آخر إصدار.`
+      });
+    }
+    
     return res.status(500).json({
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في الاتصال بـ Groq")
     });
@@ -390,4 +424,4 @@ async function handleManualFallback(res, userContent, extractedBase64) {
   return res.json({ 
     reply: "تمام… عفواً، ما قدرت أفهم طلبك بوضوح. حاول تطلب تعديل أو توليد ملف بشكل مباشر." 
   });
-}
+    }
