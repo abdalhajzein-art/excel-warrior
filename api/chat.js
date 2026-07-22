@@ -36,6 +36,9 @@ export default async function handler(req, res) {
     const hasText = userContent.length > 0;
     const hasFile = excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64;
 
+    // =========================
+    // 2) استقبال الملف وتحليل أولي
+    // =========================
     if (hasFile) {
       const fileObj = excelJSON[0];
       extractedBase64 = fileObj.fileBase64;
@@ -48,17 +51,23 @@ export default async function handler(req, res) {
         const data = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
         fileData = data;
         
-        fileSummary = `📁 **الملف المرفق:** ${fileName}\n`;
-        fileSummary += `📊 **عدد الصفوف:** ${data.length}\n`;
-        fileSummary += `📑 **الأعمدة:** ${data[0] ? Object.keys(data[0]).join(', ') : 'لا يوجد'}\n`;
-        fileSummary += `\n📌 **عينة من البيانات (أول 5 صفوف):**\n${JSON.stringify(data.slice(0, 5), null, 2)}`;
+        // ✅ بناء ملخص مفصل للملف
+        fileSummary = `[ملف مرفق: ${fileName}]\n`;
+        fileSummary += `عدد الصفوف: ${data.length}\n`;
+        fileSummary += `الأعمدة: ${data[0] ? Object.keys(data[0]).join(', ') : 'لا يوجد'}\n`;
+        fileSummary += `\nعينة من البيانات (أول 5 صفوف):\n${JSON.stringify(data.slice(0, 5), null, 2)}`;
+        
+        console.log(`✅ تم تحليل الملف: ${fileName}, عدد الصفوف: ${data.length}`);
       } catch (err) {
-        fileSummary = `📁 **الملف المرفق:** ${fileName} (تعذّر تحليل المحتوى)`;
+        console.error("Error parsing Excel:", err);
+        fileSummary = `[ملف مرفق: ${fileName} - تعذّر تحليل المحتوى]`;
       }
+    } else {
+      console.log("ℹ️ لا يوجد ملف مرفق في الطلب");
     }
 
     // =========================
-    // 2) إدارة الجلسة
+    // 3) إدارة الجلسة
     // =========================
     const sessionKey = sessionId || 'default';
     if (!sessions[sessionKey]) {
@@ -74,7 +83,7 @@ export default async function handler(req, res) {
     session.history.push({ role: 'user', content: userContent, hasFile: !!hasFile });
 
     // =========================
-    // 3) إذا كانت الجلسة في حالة "انتظار تأكيد"
+    // 4) إذا كانت الجلسة في حالة "انتظار تأكيد"
     // =========================
     if (session.step === 'awaiting_confirmation' && session.pendingAction) {
       const lowerMsg = userContent.toLowerCase();
@@ -191,7 +200,7 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // 4) تحليل الطلب (كشريك حوار)
+    // 5) تحليل الطلب (مع إرسال معلومات الملف)
     // =========================
     const analysis = await groq.chat.completions.create({
       model: "openai/gpt-oss-120b",
@@ -226,10 +235,11 @@ export default async function handler(req, res) {
         {
           role: "user",
           content: `الطلب: ${userContent || "مرحبا"}\n\n${fileSummary || "لا يوجد ملف مرفق."}`
+          // ✅ تأكد من وجود fileSummary هنا
         }
       ],
       temperature: 0.4,
-      max_completion_tokens: 800
+      max_completion_tokens: 1500
     });
 
     const analysisText = analysis.choices[0].message.content;
@@ -249,7 +259,7 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // 5) معالجة النتيجة
+    // 6) معالجة النتيجة
     // =========================
     
     if (!analysisResult.isClear) {
@@ -305,4 +315,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في المعالجة")
     });
   }
-                          }
+        }
