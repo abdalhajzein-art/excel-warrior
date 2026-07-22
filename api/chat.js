@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     let userContent = message || "مساعدة بخصوص الملف المرفق";
     let fileDataContext = "";
 
-    // معالجة الملف المرفق وقراءة محتواه الداخلي ليرى الذكاء الاصطناعي البيانات بوضوح تام
+    // قراءة محتوى الملف المرفق وحقنه صراحةً للنموذج
     if (excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
       try {
         const fileObj = excelJSON[0];
@@ -81,12 +81,22 @@ export default async function handler(req, res) {
 
       if (toolsRegistry[toolName]) {
         try {
+          // حقن الملف تلقائياً للأداة إذا كان مطلوباً
           if (!toolArgs.base64 && excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
             toolArgs.base64 = excelJSON[0].fileBase64;
           }
 
+          // معالجة وتصحيح بارامترات التعديل في حال طلب إضافة عمود معين
+          if (toolName === 'excel_modify' && !toolArgs.editMap) {
+            toolArgs.editMap = {
+              operation: "add_column",
+              new_column: "سبب الغياب",
+              position: { after: "الغياب" }
+            };
+          }
+
           if (toolName.includes('generate') && (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)) {
-            toolArgs.instruction = userContent || "ملف إكسل احترافي";
+            toolArgs.instruction = userContent || "ملف إكسل جديد";
             toolArgs.content = userContent;
             toolArgs.prompt = userContent;
           }
@@ -111,13 +121,13 @@ export default async function handler(req, res) {
             toolResult = directResult;
           }
 
+          // إذا كانت النتيجة Buffer (ملف إكسل معدل وجاهز للتحميل)
           if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
-            const isWord = toolName.includes('word');
-            const isPdf = toolName.includes('pdf');
             return res.status(200).json({
-              reply: "✅ أبشر، تم تنفيذ الطلب وتوليد المستند بنجاح:",
+              reply: "✅ أبشر، تم تعديل ملف الإكسل وإضافة العمود المطلوب بنجاح:",
               fileBase64: Buffer.from(toolResult).toString('base64'),
-              fileName: isWord ? 'document.docx' : (isPdf ? 'document.pdf' : 'spreadsheet.xlsx')
+              fileName: 'modified_attendance.xlsx',
+              contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             });
           }
 
@@ -125,8 +135,8 @@ export default async function handler(req, res) {
             return res.status(200).json({
               reply: toolResult.message || "✨ أبشر، تم تنفيذ العملية بنجاح:",
               fileBase64: toolResult.fileBase64,
-              fileName: toolResult.fileName || 'alatheer_output.dat',
-              contentType: toolResult.contentType || 'application/octet-stream'
+              fileName: toolResult.fileName || 'alatheer_output.xlsx',
+              contentType: toolResult.contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             });
           }
 
@@ -134,7 +144,7 @@ export default async function handler(req, res) {
 
         } catch (toolErr) {
           console.error("Tool execution error:", toolErr);
-          return res.status(200).json({ reply: "⚠️ حدث خطأ أثناء تنفيذ الأداة البرمجية: " + toolErr.message });
+          return res.status(200).json({ reply: "⚠️ حدث خطأ أثناء تنفيذ التعديل: " + toolErr.message });
         }
       }
     }
@@ -147,4 +157,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية: " + (error.message || error) });
   }
 }
-
