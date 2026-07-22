@@ -26,7 +26,7 @@ app.post('/api/chat', async (req, res) => {
       return res.status(500).json({ reply: "⚠️ مفتاح GEMINI_API_KEY غير متوفر في بيئة العمل السيادية." });
     }
 
-    let userContent = message || "تحليل الطلب المرفق";
+    let userContent = message || "";
     let fileInfoText = "";
 
     if (excelJSON && excelJSON[0]) {
