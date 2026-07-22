@@ -1,10 +1,10 @@
-import { GoogleGenAI } from '@google/genai';
+import Groq from 'groq-sdk';
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 import XLSX from 'xlsx';
 
-// ✅ التصحيح 1: إضافة المفتاح من البيئة
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// ✅ استخدام Groq بدل Gemini
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -16,8 +16,8 @@ export default async function handler(req, res) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const { message, excelJSON } = body || {};
 
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GEMINI_API_KEY غير مضاف في متغيرات البيئة." });
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GROQ_API_KEY غير مضاف في متغيرات البيئة." });
     }
 
     // =========================
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     let extractedBase64 = null;
     let fileMimeType = null;
     let fileName = null;
-    let fileSummary = null;
+    let fileSummary = "";
 
     const hasText = userContent.length > 0;
     const hasFile = excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64;
@@ -48,10 +48,15 @@ export default async function handler(req, res) {
         const worksheet = workbook.Sheets[firstSheetName];
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-        fileSummary = `الملف يحتوي على ${rawData.length} صفوف في الشيت الأولى (${firstSheetName}).`;
+        // ✅ نص ملخص الملف (بدون Base64 عشان نوفر توكنز)
+        fileSummary = `[ملف مرفق: ${fileName}]\nنوع الملف: إكسل\nعدد الصفوف: ${rawData.length}\nالشيت الأولى: ${firstSheetName}\n`;
+        
+        // ✅ أول 10 صفوف فقط عشان ما نستهلك توكنز كثيرة
+        const sampleData = rawData.slice(0, 10);
+        fileSummary += `\nعينة من البيانات:\n${JSON.stringify(sampleData, null, 2)}`;
       } catch (parseErr) {
         console.error("Error parsing Excel in chat:", parseErr);
-        fileSummary = "تعذّر تحليل الملف إكسل بشكل آلي، يمكن التعامل معه كنص أو إعادة رفعه.";
+        fileSummary = `[ملف مرفق: ${fileName} - تعذّر تحليل المحتوى]`;
       }
     }
 
@@ -189,231 +194,99 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // 5) بناء محتوى الرسالة للذكاء
+    // 5) بناء الرسالة النهائية لـ Groq
     // =========================
-    const contents = [
-      {
-        role: "user",
-        parts: [
-          { text: `${SYSTEM_PROMPT}\n\n${systemBehaviorNote}\n\n${finalUserText}` },
-          ...(extractedBase64 ? [{
-            fileData: {
-              mimeType: fileMimeType,
-              data: extractedBase64
-            }
-          }] : [])
-        ]
-      }
-    ];
+    const fullMessage = `${SYSTEM_PROMPT}\n\n${systemBehaviorNote}\n\n${finalUserText}\n\n${fileSummary}`;
 
     // =========================
-    // 6) تعريف الأدوات للذكاء
+    // 6) استدعاء Groq (بدون أدوات حالياً، لأن Groq مختلف)
     // =========================
-    const toolsConfig = {
-      functionDeclarations: toolsDefinition.map(t => ({
-        name: t.function.name,
-        description: t.function.description,
-        parameters: t.function.parameters
-      }))
-    };
+    const completion = await groq.chat.completions.create({
+      model: "openai/gpt-oss-120b",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: fullMessage }
+      ],
+      temperature: 0.3,
+      max_completion_tokens: 512,
+      top_p: 1,
+    });
+
+    const replyText = completion.choices[0]?.message?.content || "تم الاستلام";
 
     // =========================
-    // 7) استدعاء النموذج مع الأدوات
-    // =========================
-    let response;
-    try {
-      response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
-        contents,
-        config: {
-          temperature: 0.3,
-          tools: toolsConfig
-        }
-      });
-    } catch (err) {
-      // ✅ التصحيح 2: استخدام نموذج بديل فقط عند الحاجة
-      console.log("⚠️ Falling back to gemini-2.0-flash");
-      response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents,
-        config: {
-          temperature: 0.3,
-          tools: toolsConfig
-        }
-      });
-    }
-
-    const candidate = response.candidates?.[0];
-    const functionCalls = candidate?.content?.parts?.filter(p => p.functionCall) || [];
-
-    // =========================
-    // طبقة التنفيذ التلقائي للأداة – Auto Tool Execution
+    // 7) التحقق من وجود أداة مطلوبة (تحليل بسيط)
     // =========================
     const autoTool = selectTool(intent, fileType);
 
-    // إذا النموذج ما اختار أداة، والعقل الهجيني قدر يحدد أداة مناسبة
-    if (functionCalls.length === 0 && autoTool) {
-        try {
-            const autoArgs = {};
+    if (autoTool && toolsRegistry[autoTool]) {
+      try {
+        const autoArgs = {};
 
-            if (extractedBase64) {
-                autoArgs.base64 = extractedBase64;
-            }
-
-            if (autoTool.includes("generate")) {
-                autoArgs.instruction = userContent || "ملف جديد بناءً على طلب المستخدم.";
-                autoArgs.content = userContent;
-                autoArgs.prompt = userContent;
-            }
-
-            if (autoTool.includes("modify") && !autoArgs.editMap) {
-                autoArgs.editMap = { instruction: userContent };
-            }
-
-            let autoResult = null;
-            const mockReq = { body: autoArgs };
-            const mockRes = {
-                status: (code) => ({
-                    json: (resultData) => {
-                        autoResult = resultData;
-                        return resultData;
-                    }
-                }),
-                setHeader: () => {},
-                send: (data) => { autoResult = data; }
-            };
-
-            const handlerFn = toolsRegistry[autoTool].handler;
-            const directResult = await handlerFn(mockReq, mockRes);
-
-            if (directResult && (directResult.fileBase64 || directResult.success)) {
-                autoResult = directResult;
-            }
-
-            if (Buffer.isBuffer(autoResult) || autoResult instanceof Uint8Array) {
-                const isWord = autoTool.includes("word");
-                const isPdf = autoTool.includes("pdf");
-                const isExcel = autoTool.includes("excel");
-
-                return res.status(200).json({
-                    reply: "✨ تم تنفيذ العملية تلقائيًا بناءً على فهم النية.",
-                    fileBase64: Buffer.from(autoResult).toString("base64"),
-                    fileName: isWord
-                        ? "document.docx"
-                        : isPdf
-                        ? "document.pdf"
-                        : isExcel
-                        ? "sheet.xlsx"
-                        : "output.bin",
-                    contentType: isWord
-                        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        : isPdf
-                        ? "application/pdf"
-                        : isExcel
-                        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        : "application/octet-stream"
-                });
-            }
-
-            if (autoResult && autoResult.fileBase64) {
-                return res.status(200).json({
-                    reply: autoResult.message || "✨ تم تنفيذ العملية تلقائيًا.",
-                    fileBase64: autoResult.fileBase64,
-                    fileName: autoResult.fileName || "alatheer_output.xlsx",
-                    contentType: autoResult.contentType || "application/octet-stream"
-                });
-            }
-
-            return res.status(200).json({
-                reply: "✨ تم تنفيذ العملية تلقائيًا بناءً على فهم النية."
-            });
-
-        } catch (autoErr) {
-            console.error("Auto Tool Execution Error:", autoErr);
-            return res.status(500).json({
-                reply: "⚠️ صار خطأ أثناء التنفيذ التلقائي: " + autoErr.message
-            });
+        if (extractedBase64) {
+          autoArgs.base64 = extractedBase64;
         }
-    }
 
-    // =========================
-    // 8) تنفيذ الأداة إذا النموذج قرر يستخدمها
-    // =========================
-    if (functionCalls.length > 0) {
-      const { name: toolName, args: toolArgs } = functionCalls[0].functionCall;
-
-      if (toolsRegistry[toolName]) {
-        try {
-          if (!toolArgs.base64 && extractedBase64) {
-            toolArgs.base64 = extractedBase64;
-          }
-
-          if (
-            toolName.includes('generate') &&
-            (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)
-          ) {
-            toolArgs.instruction = userContent || "ملف جديد بناءً على طلب المستخدم.";
-            toolArgs.content = userContent;
-            toolArgs.prompt = userContent;
-          }
-
-          let toolResult = null;
-          const mockReq = { body: toolArgs };
-          const mockRes = {
-            status: (code) => ({
-              json: (resultData) => {
-                toolResult = resultData;
-                return resultData;
-              }
-            }),
-            setHeader: () => {},
-            send: (data) => { toolResult = data; }
-          };
-
-          const handlerFn = toolsRegistry[toolName].handler;
-          const directResult = await handlerFn(mockReq, mockRes);
-
-          if (directResult && (directResult.fileBase64 || directResult.success)) {
-            toolResult = directResult;
-          }
-
-          if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
-            const isWord = toolName.includes('word');
-            const isPdf = toolName.includes('pdf');
-            const isExcel = toolName.includes('excel');
-
-            return res.status(200).json({
-              reply: "✅ تم تنفيذ العملية على الملف بنجاح.",
-              fileBase64: Buffer.from(toolResult).toString('base64'),
-              fileName: isWord
-                ? 'document.docx'
-                : (isPdf ? 'document.pdf' : 'sheet.xlsx'),
-              contentType: isWord
-                ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                : (isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            });
-          }
-
-          if (toolResult && toolResult.fileBase64) {
-            return res.status(200).json({
-              reply: toolResult.message || "✨ تم تنفيذ العملية بنجاح.",
-              fileBase64: toolResult.fileBase64,
-              fileName: toolResult.fileName || 'alatheer_output.xlsx',
-              contentType: toolResult.contentType || 'application/octet-stream'
-            });
-          }
-
-          return res.status(200).json({ reply: "✅ تم تنفيذ الأداة البرمجية بنجاح." });
-
-        } catch (toolErr) {
-          console.error("Tool execution error:", toolErr);
-          return res.status(500).json({ reply: "⚠️ حدث خطأ أثناء تنفيذ الأداة: " + toolErr.message });
+        if (autoTool.includes("generate")) {
+          autoArgs.instruction = userContent || "ملف جديد بناءً على طلب المستخدم.";
+          autoArgs.content = userContent;
+          autoArgs.prompt = userContent;
         }
+
+        if (autoTool.includes("modify") && !autoArgs.editMap) {
+          autoArgs.editMap = { instruction: userContent };
+        }
+
+        let autoResult = null;
+        const mockReq = { body: autoArgs };
+        const mockRes = {
+          status: (code) => ({
+            json: (resultData) => {
+              autoResult = resultData;
+              return resultData;
+            }
+          }),
+          setHeader: () => {},
+          send: (data) => { autoResult = data; }
+        };
+
+        const handlerFn = toolsRegistry[autoTool].handler;
+        const directResult = await handlerFn(mockReq, mockRes);
+
+        if (directResult && (directResult.fileBase64 || directResult.success)) {
+          autoResult = directResult;
+        }
+
+        if (Buffer.isBuffer(autoResult) || autoResult instanceof Uint8Array) {
+          const isWord = autoTool.includes("word");
+          const isPdf = autoTool.includes("pdf");
+          const isExcel = autoTool.includes("excel");
+
+          return res.status(200).json({
+            reply: "✨ تم تنفيذ العملية تلقائيًا.",
+            fileBase64: Buffer.from(autoResult).toString("base64"),
+            fileName: isWord ? "document.docx" : isPdf ? "document.pdf" : "sheet.xlsx",
+            contentType: isWord ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          });
+        }
+
+        if (autoResult && autoResult.fileBase64) {
+          return res.status(200).json({
+            reply: autoResult.message || "✨ تم تنفيذ العملية تلقائيًا.",
+            fileBase64: autoResult.fileBase64,
+            fileName: autoResult.fileName || "alatheer_output.xlsx",
+            contentType: autoResult.contentType || "application/octet-stream"
+          });
+        }
+
+      } catch (autoErr) {
+        console.error("Auto Tool Execution Error:", autoErr);
+        // نكمل بالرد النصي بدل ما نفشل
       }
     }
 
     // =========================
-    // طبقة الرد البشري – Human Response Layer
+    // 8) طبقة تحسين الرد البشري
     // =========================
     function humanizeReply(text) {
         if (!text) return "تمام، خلّيني ساعدك بخطوة تانية إذا حابب.";
@@ -435,72 +308,14 @@ export default async function handler(req, res) {
         return reply;
     }
 
-    // =========================
-    // طبقة تلطيف الأخطاء – Error Softening Layer
-    // =========================
-    function softenError(errText) {
-        if (!errText) return "صار في شغلة بسيطة، خلّيني أرتّبها ونكمل.";
-
-        let reply = errText.trim();
-
-        reply = reply.replace(/Exception|Stack|Trace|Unhandled|Internal|API|endpoint|server/gi, "");
-        reply = reply.replace(/at .*?\n/g, "");
-        reply = reply.replace(/\s{2,}/g, " ");
-
-        reply = reply
-            .replace(/خطأ/g, "في شغلة بسيطة لازم ننتبه عليها")
-            .replace(/failed|error/gi, "صار ظرف بسيط أثناء التنفيذ");
-
-        if (!reply.includes("تمام") && !reply.includes("طيب")) {
-            reply = "تمام… " + reply;
-        }
-
-        return reply;
-    }
-
-    // =========================
-    // طبقة توحيد الرد النهائي – Final Response Layer
-    // =========================
-    function finalizeReply(text) {
-        if (!text) return "تمام… خلّصنا المطلوب.";
-
-        let reply = text.trim();
-
-        reply = reply.replace(/\n{2,}/g, "\n");
-        reply = reply.replace(/functionCall|tool|model|parameters|args/gi, "");
-        reply = reply.replace(/تم الاستلام بنجاح وتمت معالجة الطلب نصيًا\./g, "");
-
-        reply = reply
-            .replace(/تم التنفيذ تلقائيًا/g, "تمام… خلّصنا الشغلة")
-            .replace(/تم التنفيذ/g, "تمام… خلّصنا المطلوب")
-            .replace(/تمت المعالجة/g, "تمام… خلّصنا المطلوب");
-
-        if (!reply.includes("تمام")) {
-            reply = "تمام… " + reply;
-        }
-
-        return reply;
-    }
-
-    // =========================
-    // 9) إذا ما في أدوات، نرجّع رد نصّي من النموذج
-    // =========================
-    const replyText =
-        candidate?.content?.parts?.map(p => p.text).join('\n') ||
-        "تم الاستلام بنجاح وتمت معالجة الطلب نصيًا.";
-
     return res.status(200).json({
-        reply: finalizeReply(
-            humanizeReply(
-                softenError(replyText)
-            )
-        )
+      reply: humanizeReply(replyText)
     });
 
   } catch (error) {
-    console.error("Error in Chat API:", error);
+    console.error("❌ خطأ في Groq:", error);
     return res.status(500).json({
-      reply: "⚠️ خطأ في المعالجة السيادية: " + (error.message || error)
+      reply: "⚠️ خطأ: " + (error.message || "مشكلة في الاتصال بـ Groq")
     });
   }
-}
+          }
