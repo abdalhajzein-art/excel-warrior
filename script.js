@@ -162,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sessionsList.appendChild(item);
         });
     }
+
     function togglePinSession(sessionId) {
         let sessions = getStoredSessions();
         if (sessions[sessionId]) {
@@ -285,6 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateSendButtonState();
         }
     });
+
     function readFileAsBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -318,7 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let displayMessage = message || "";
 
         if (message && currentFileName) {
-        displayMessage = `${message}`;
+            displayMessage = `${message}`;
         }
 
         let payloadExcel = null;
@@ -342,13 +344,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
         userInput.value = '';
         userInput.style.height = 'auto';
-        selectedFileObject = null;
-        attachedFileName = null;
+
+        // لا نمسح الملف بعد الإرسال — نخليه للجلسة
         isFileLoading = false;
-        if (fileBubbles) fileBubbles.innerHTML = '';
-        fileInput.value = '';
-        
         updateSendButtonState();
+
+        // إعادة رسم Bubble الملف بعد الإرسال
+        if (fileBubbles && attachedFileName) {
+            fileBubbles.innerHTML = `
+                <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; background: rgba(212, 175, 55, 0.15); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(212, 175, 55, 0.4); opacity: 1; margin-bottom: 6px;">
+                    <span>📎 ${attachedFileName}</span>
+                    <button type="button" id="removeFileBtn" style="background:none; border:none; color: #ff5555; cursor:pointer; font-weight:bold; font-size:14px; padding:0; line-height:1;" title="إزالة الملف">&times;</button>
+                </div>
+            `;
+
+            const removeFileBtn = document.getElementById('removeFileBtn');
+            if (removeFileBtn) {
+                removeFileBtn.addEventListener('click', () => {
+                    selectedFileObject = null;
+                    attachedFileName = null;
+                    fileInput.value = '';
+                    fileBubbles.innerHTML = '';
+                    updateSendButtonState();
+                });
+            }
+        }
 
         const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة ... ⏳', true);
 
@@ -433,6 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const el = document.getElementById(id);
         if (el) el.remove();
     }
+
     const createNewSession = () => {
         currentSessionId = generateSessionId();
         localStorage.setItem('alatheer_current_session', currentSessionId);
