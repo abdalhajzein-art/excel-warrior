@@ -1,4 +1,4 @@
-Document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     const chatArea = document.getElementById('chatArea');
@@ -324,7 +324,6 @@ Document.addEventListener('DOMContentLoaded', () => {
             displayMessage = `${message} (مع الملف: ${currentFileName})`;
         }
 
-        // قراءة الملف وتجهيز الـ Payload أولاً قبل مسح المتغيرات
         let payloadExcel = null;
         if (currentFileToProcess) {
             try {
