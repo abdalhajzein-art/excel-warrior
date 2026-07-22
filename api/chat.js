@@ -369,4 +369,4 @@ async function handleManualFallback(res, userContent, extractedBase64) {
   return res.json({ 
     reply: "تمام… عفواً، ما قدرت أفهم طلبك بوضوح. حاول تطلب تعديل أو توليد ملف بشكل مباشر." 
   });
-      }
+            }
