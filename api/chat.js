@@ -21,12 +21,14 @@ export default async function handler(req, res) {
 
     let userContent = message || "مساعدة بخصوص الملف المرفق";
     let fileDataContext = "";
+    let extractedBase64 = null;
 
-    // قراءة محتوى الملف المرفق وحقنه صراحةً للنموذج
-    if (excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
+    // استخراج واستلام الملف المرفق ومعالجة بياناته بدقة تامة
+    if (excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64) {
       try {
         const fileObj = excelJSON[0];
-        const buffer = Buffer.from(fileObj.fileBase64, 'base64');
+        extractedBase64 = fileObj.fileBase64;
+        const buffer = Buffer.from(extractedBase64, 'base64');
         const workbook = XLSX.read(buffer, { type: 'buffer' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
@@ -81,18 +83,24 @@ export default async function handler(req, res) {
 
       if (toolsRegistry[toolName]) {
         try {
-          // حقن الملف تلقائياً للأداة إذا كان مطلوباً
-          if (!toolArgs.base64 && excelJSON && excelJSON[0] && excelJSON[0].fileBase64) {
-            toolArgs.base64 = excelJSON[0].fileBase64;
+          // ربط ملف الـ Base64 تلقائياً بالأداة إذا كان مطلوباً ولم يتم تمريره ضمن الـ args
+          if (!toolArgs.base64 && extractedBase64) {
+            toolArgs.base64 = extractedBase64;
           }
 
-          // معالجة وتصحيح بارامترات التعديل في حال طلب إضافة عمود معين
-          if (toolName === 'excel_modify' && !toolArgs.editMap) {
-            toolArgs.editMap = {
-              operation: "add_column",
-              new_column: "سبب الغياب",
-              position: { after: "الغياب" }
-            };
+          // معالجة ذكية وتصحيح بارامترات التعديل في حال طلب إضافة عمود معين مثل "سبب الغياب"
+          if (toolName === 'excel_modify' && (!toolArgs.editMap || !toolArgs.editMap.operation)) {
+            const userLower = userContent.toLowerCase();
+            let columnName = "سبب الغياب";
+            let afterColumn = "الغياب";
+            
+            if (userLower.includes("سبب") || userLower.includes("اضافة عمود")) {
+              toolArgs.editMap = {
+                operation: "add_column",
+                new_column: columnName,
+                position: { after: afterColumn }
+              };
+            }
           }
 
           if (toolName.includes('generate') && (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)) {
@@ -123,10 +131,12 @@ export default async function handler(req, res) {
 
           // إذا كانت النتيجة Buffer (ملف إكسل معدل وجاهز للتحميل)
           if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
+            const isWord = toolName.includes('word');
+            const isPdf = toolName.includes('pdf');
             return res.status(200).json({
-              reply: "✅ أبشر، تم تعديل ملف الإكسل وإضافة العمود المطلوب بنجاح:",
+              reply: "✅ أبشر، تم تعديل وتنفيذ طلبك على الملف بنجاح:",
               fileBase64: Buffer.from(toolResult).toString('base64'),
-              fileName: 'modified_attendance.xlsx',
+              fileName: isWord ? 'document.docx' : (isPdf ? 'document.pdf' : 'modified_file.xlsx'),
               contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             });
           }
@@ -136,15 +146,15 @@ export default async function handler(req, res) {
               reply: toolResult.message || "✨ أبشر، تم تنفيذ العملية بنجاح:",
               fileBase64: toolResult.fileBase64,
               fileName: toolResult.fileName || 'alatheer_output.xlsx',
-              contentType: toolResult.contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+              contentType: toolResult.contentType || 'application/octet-stream'
             });
           }
 
-          return res.status(200).json({ reply: "✅ تم تنفيذ الأداة بنجاح." });
+          return res.status(200).json({ reply: "✅ تم تنفيذ الأداة البرمجية بنجاح." });
 
         } catch (toolErr) {
           console.error("Tool execution error:", toolErr);
-          return res.status(200).json({ reply: "⚠️ حدث خطأ أثناء تنفيذ التعديل: " + toolErr.message });
+          return res.status(500).json({ reply: "⚠️ حدث خطأ أثناء تنفيذ الأداة: " + toolErr.message });
         }
       }
     }
@@ -154,6 +164,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("Error in Chat API:", error);
-    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة التقنية: " + (error.message || error) });
+    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية: " + (error.message || error) });
   }
 }
+
