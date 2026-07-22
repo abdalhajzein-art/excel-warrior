@@ -19,19 +19,20 @@ export default async function handler(req, res) {
       return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GEMINI_API_KEY غير مضاف في متغيرات البيئة." });
     }
 
-    let userContent = message || "تحليل أو معالجة ملف مرفق إن وجد.";
+    // إذا المستخدم ما كتب رسالة، نخليها فاضية
+    let userContent = message || "";
     let extractedBase64 = null;
     let fileMimeType = null;
     let fileName = null;
 
-    // استقبال الملف من الفرونت (كـ Base64)
+    // استقبال الملف من الفرونت
     if (excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64) {
       const fileObj = excelJSON[0];
       extractedBase64 = fileObj.fileBase64;
       fileMimeType = fileObj.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       fileName = fileObj.fileName || 'ملف';
 
-      // تحليل إكسل اختياري (ممكن تستخدمه لاحقًا لو حبيت)
+      // تحليل إكسل اختياري
       try {
         const buffer = Buffer.from(extractedBase64, 'base64');
         const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -39,14 +40,13 @@ export default async function handler(req, res) {
         const worksheet = workbook.Sheets[firstSheetName];
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-        // إذا حابب تضيف مقتطف نصي، خليه بسيط:
-        userContent += `\n\n[الملف المرفق يحتوي على ${rawData.length} صفوف تقريبًا في الشيت الأولى (${firstSheetName}).]`;
+        userContent += `\n\n[الملف يحتوي على ${rawData.length} صفوف في الشيت الأولى (${firstSheetName}).]`;
       } catch (parseErr) {
         console.error("Error parsing Excel in chat:", parseErr);
       }
     }
 
-    // بناء الرسالة للذكاء بشكل محترف وعام
+    // بناء الرسالة للذكاء
     const contents = [
       {
         role: "system",
@@ -58,7 +58,10 @@ export default async function handler(req, res) {
         role: "user",
         parts: [
           {
-            text: `تعامل مع الطلب التالي كمنصة ذكاء عام قادرة على فهم النص والملفات المرفقة.\n\nطلب المستخدم:\n${userContent}`
+            text:
+              userContent.trim().length > 0
+                ? `اقرأ الملف المرفق الآن واعرض محتواه نصيًا بالكامل.\n\n${userContent}`
+                : `وصل ملف بدون تعليمات. اسأل المستخدم: "شو المطلوب من الملف؟"`
           },
           ...(extractedBase64 ? [{
             fileData: {
@@ -112,10 +115,7 @@ export default async function handler(req, res) {
             toolArgs.base64 = extractedBase64;
           }
 
-          // بدون أي منطق جاهز خاص بعمود "سبب الغياب" أو "الغياب"
-          // الأداة نفسها (excel_modify أو غيرها) هي اللي تقرر بناءً على محتوى الملف وطلب المستخدم
-
-          // توليد ملفات جديدة بشكل عام
+          // بدون أي منطق جاهز — الذكاء يقرر
           if (
             toolName.includes('generate') &&
             (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)
