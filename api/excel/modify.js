@@ -1,4 +1,8 @@
-import { Workbook } from '@office-kit/xlsx';
+// ❌ حذف هذا السطر
+// import { Workbook } from '@office-kit/xlsx';
+
+// ✅ استخدم الاستيراد الديناميكي داخل الدالة
+const { Workbook } = await import('@office-kit/xlsx');
 
 // ✅ دالة للتحقق من إصدار المكتبة
 async function checkLibraryVersion() {
