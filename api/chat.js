@@ -3,7 +3,8 @@ import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 import XLSX from 'xlsx';
 
-const ai = new GoogleGenAI({});
+// ✅ التصحيح 1: إضافة المفتاح من البيئة
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -72,14 +73,15 @@ export default async function handler(req, res) {
     }
 
     const fileType = detectFileType(fileMimeType);
-// =========================
+
+    // =========================
     // محرك اختيار الأداة – Tool Selector Engine
     // =========================
     function selectTool(intent, fileType) {
         // 1) إذا ما في ملف → توليد أو رد نصي
         if (!fileType || fileType === "unknown") {
-            if (intent.wantsGenerate) return "excel_generate"; // توليد افتراضي
-            return null; // دردشة فقط
+            if (intent.wantsGenerate) return "excel_generate";
+            return null;
         }
 
         // 2) Excel
@@ -109,7 +111,6 @@ export default async function handler(req, res) {
             if (intent.wantsGenerate) return "image_generate";
         }
 
-        // 6) إذا ما قدر يحدد
         return null;
     }
     
@@ -171,19 +172,19 @@ export default async function handler(req, res) {
       finalUserText = `تعليمات التعديل:\n${userContent}\n\nنوع الملف: ${fileType}.\nمعلومات عن الملف:\n${fileSummary || "لا يوجد ملخص متاح."}`;
     } else if (taskType === "file_generate") {
       systemBehaviorNote =
-        "المستخدم يطلب توليد ملف جديد (Excel/Word/PDF أو غيره)، مهمتك فهم نوع الملف المطلوب وبناء وصف واضح للتوليد أو اختيار أداة التوليد المناسبة.";
+        "المستخدم يطلب توليد ملف جديد، مهمتك فهم نوع الملف المطلوب وبناء وصف واضح للتوليد.";
       finalUserText = `طلب التوليد:\n${userContent}\n\nنوع الملف المطلوب: ${fileType}.`;
     } else if (taskType === "file_convert") {
       systemBehaviorNote =
-        "المستخدم يطلب تحويل ملف بين الصيغ، مهمتك تحديد الصيغة المستهدفة بوضوح واختيار أداة التحويل المناسبة.";
+        "المستخدم يطلب تحويل ملف بين الصيغ، مهمتك تحديد الصيغة المستهدفة بوضوح.";
       finalUserText = `طلب التحويل:\n${userContent}\n\nنوع الملف الحالي: ${fileType}.`;
     } else if (taskType === "file_analyze") {
       systemBehaviorNote =
-        "المستخدم يطلب تحليل ملف، مهمتك استخراج أهم النقاط، الملخصات، الأنماط، أو المشاكل من الملف.";
+        "المستخدم يطلب تحليل ملف، مهمتك استخراج أهم النقاط والملخصات.";
       finalUserText = `طلب التحليل:\n${userContent}\n\nنوع الملف: ${fileType}.`;
     } else if (taskType === "file_read" || taskType === "file_mixed") {
       systemBehaviorNote =
-        "المستخدم يتعامل مع ملف مرفق وتعليمات عامة، مهمتك فهم المطلوب (عرض، قراءة، تعديل، تحليل) واختيار أفضل رد أو أداة.";
+        "المستخدم يتعامل مع ملف مرفق وتعليمات عامة، مهمتك فهم المطلوب واختيار أفضل رد.";
       finalUserText = `تعليمات المستخدم:\n${userContent}\n\nنوع الملف: ${fileType}.`;
     }
 
@@ -192,16 +193,9 @@ export default async function handler(req, res) {
     // =========================
     const contents = [
       {
-        role: "system",
-        parts: [
-          { text: SYSTEM_PROMPT },
-          { text: systemBehaviorNote }
-        ]
-      },
-      {
         role: "user",
         parts: [
-          { text: finalUserText },
+          { text: `${SYSTEM_PROMPT}\n\n${systemBehaviorNote}\n\n${finalUserText}` },
           ...(extractedBase64 ? [{
             fileData: {
               mimeType: fileMimeType,
@@ -237,8 +231,10 @@ export default async function handler(req, res) {
         }
       });
     } catch (err) {
+      // ✅ التصحيح 2: استخدام نموذج بديل فقط عند الحاجة
+      console.log("⚠️ Falling back to gemini-2.0-flash");
       response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-2.0-flash',
         contents,
         config: {
           temperature: 0.3,
@@ -250,7 +246,7 @@ export default async function handler(req, res) {
     const candidate = response.candidates?.[0];
     const functionCalls = candidate?.content?.parts?.filter(p => p.functionCall) || [];
 
-// =========================
+    // =========================
     // طبقة التنفيذ التلقائي للأداة – Auto Tool Execution
     // =========================
     const autoTool = selectTool(intent, fileType);
@@ -260,19 +256,16 @@ export default async function handler(req, res) {
         try {
             const autoArgs = {};
 
-            // إذا الأداة تحتاج ملف
             if (extractedBase64) {
                 autoArgs.base64 = extractedBase64;
             }
 
-            // إذا توليد وما في تعليمات
             if (autoTool.includes("generate")) {
                 autoArgs.instruction = userContent || "ملف جديد بناءً على طلب المستخدم.";
                 autoArgs.content = userContent;
                 autoArgs.prompt = userContent;
             }
 
-            // إذا تعديل وما في تفاصيل
             if (autoTool.includes("modify") && !autoArgs.editMap) {
                 autoArgs.editMap = { instruction: userContent };
             }
@@ -297,7 +290,6 @@ export default async function handler(req, res) {
                 autoResult = directResult;
             }
 
-            // إذا رجع ملف جاهز
             if (Buffer.isBuffer(autoResult) || autoResult instanceof Uint8Array) {
                 const isWord = autoTool.includes("word");
                 const isPdf = autoTool.includes("pdf");
@@ -323,7 +315,6 @@ export default async function handler(req, res) {
                 });
             }
 
-            // إذا رجع ملف Base64 جاهز
             if (autoResult && autoResult.fileBase64) {
                 return res.status(200).json({
                     reply: autoResult.message || "✨ تم تنفيذ العملية تلقائيًا.",
@@ -333,7 +324,6 @@ export default async function handler(req, res) {
                 });
             }
 
-            // إذا نجحت العملية بدون ملف
             return res.status(200).json({
                 reply: "✨ تم تنفيذ العملية تلقائيًا بناءً على فهم النية."
             });
@@ -345,6 +335,7 @@ export default async function handler(req, res) {
             });
         }
     }
+
     // =========================
     // 8) تنفيذ الأداة إذا النموذج قرر يستخدمها
     // =========================
@@ -420,7 +411,8 @@ export default async function handler(req, res) {
         }
       }
     }
-// =========================
+
+    // =========================
     // طبقة الرد البشري – Human Response Layer
     // =========================
     function humanizeReply(text) {
@@ -428,19 +420,14 @@ export default async function handler(req, res) {
 
         let reply = text.trim();
 
-        // إزالة أي جفاف أو لغة روبوت
         reply = reply.replace(/نموذج|ذكاء اصطناعي|أداة|معالجة/g, "");
-
-        // إزالة أي جمل تقنية غير مناسبة
         reply = reply.replace(/JSON|Base64|API|endpoint|parameters/gi, "");
 
-        // تحسين الأسلوب ليكون بشري ولطيف
         reply = reply
             .replace(/تم التنفيذ بنجاح/g, "تمام، خلّصنا الشغلة بنجاح")
             .replace(/تمت المعالجة/g, "تمام، خلّصنا المطلوب")
             .replace(/خطأ/g, "في شغلة بسيطة لازم ننتبه عليها");
 
-        // إضافة لمسة بشرية سورية بيضاء
         if (!reply.includes("تمام") && !reply.includes("طيب")) {
             reply = "تمام… " + reply;
         }
@@ -456,19 +443,14 @@ export default async function handler(req, res) {
 
         let reply = errText.trim();
 
-        // إزالة الكلمات التقنية الثقيلة
         reply = reply.replace(/Exception|Stack|Trace|Unhandled|Internal|API|endpoint|server/gi, "");
-
-        // إزالة أي تفاصيل مخيفة
         reply = reply.replace(/at .*?\n/g, "");
         reply = reply.replace(/\s{2,}/g, " ");
 
-        // تحويل الأسلوب ليكون بشري ولطيف
         reply = reply
             .replace(/خطأ/g, "في شغلة بسيطة لازم ننتبه عليها")
             .replace(/failed|error/gi, "صار ظرف بسيط أثناء التنفيذ");
 
-        // إضافة لمسة بشرية
         if (!reply.includes("تمام") && !reply.includes("طيب")) {
             reply = "تمام… " + reply;
         }
@@ -484,22 +466,15 @@ export default async function handler(req, res) {
 
         let reply = text.trim();
 
-        // إزالة أي تكرار غير ضروري
         reply = reply.replace(/\n{2,}/g, "\n");
-
-        // إزالة أي بقايا تقنية
         reply = reply.replace(/functionCall|tool|model|parameters|args/gi, "");
-
-        // إزالة أي جمل غير بشرية
         reply = reply.replace(/تم الاستلام بنجاح وتمت معالجة الطلب نصيًا\./g, "");
 
-        // تحسين الأسلوب العام
         reply = reply
             .replace(/تم التنفيذ تلقائيًا/g, "تمام… خلّصنا الشغلة")
             .replace(/تم التنفيذ/g, "تمام… خلّصنا المطلوب")
             .replace(/تمت المعالجة/g, "تمام… خلّصنا المطلوب");
 
-        // إضافة لمسة بشرية نهائية
         if (!reply.includes("تمام")) {
             reply = "تمام… " + reply;
         }
@@ -528,4 +503,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ في المعالجة السيادية: " + (error.message || error)
     });
   }
-    }
+}
