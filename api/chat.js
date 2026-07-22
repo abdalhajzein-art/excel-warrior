@@ -25,19 +25,29 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // 1) تجهيز السياق
+    // 1) إدارة الجلسة أولاً لضمان استمرارية السياق
     // =========================
+    const sessionKey = sessionId || 'default';
+    if (!sessions[sessionKey]) {
+      sessions[sessionKey] = { 
+        step: 'init', 
+        pendingAction: null, 
+        lastFile: null,
+        history: []
+      };
+    }
+    const session = sessions[sessionKey];
+
     let userContent = (message || "").trim();
     let extractedBase64 = null;
     let fileName = null;
     let fileSummary = "";
     let fileData = null;
 
-    const hasText = userContent.length > 0;
     const hasFile = excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64;
 
     // =========================
-    // 2) استقبال الملف وتحليل أولي
+    // 2) استقبال الملف أو استرجاعه من الذاكرة
     // =========================
     if (hasFile) {
       const fileObj = excelJSON[0];
@@ -51,39 +61,48 @@ export default async function handler(req, res) {
         const data = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
         fileData = data;
         
-        // ✅ بناء ملخص مفصل للملف
         fileSummary = `[ملف مرفق: ${fileName}]\n`;
         fileSummary += `عدد الصفوف: ${data.length}\n`;
         fileSummary += `الأعمدة: ${data[0] ? Object.keys(data[0]).join(', ') : 'لا يوجد'}\n`;
         fileSummary += `\nعينة من البيانات (أول 5 صفوف):\n${JSON.stringify(data.slice(0, 5), null, 2)}`;
         
-        console.log(`✅ تم تحليل الملف: ${fileName}, عدد الصفوف: ${data.length}`);
+        // ✅ حفظ الملف في ذاكرة الجلسة لضمان عدم ضياعه
+        session.lastFile = {
+          base64: extractedBase64,
+          name: fileName,
+          summary: fileSummary,
+          data: data
+        };
+
+        console.log(`✅ تم تحليل وحفظ الملف في الجلسة: ${fileName}, عدد الصفوف: ${data.length}`);
       } catch (err) {
         console.error("Error parsing Excel:", err);
         fileSummary = `[ملف مرفق: ${fileName} - تعذّر تحليل المحتوى]`;
       }
+    } else if (session.lastFile) {
+      // استرجاع الملف القديم من الجلسة إذا لم يتم إرفاقه في هذه الرسالة
+      extractedBase64 = session.lastFile.base64;
+      fileName = session.lastFile.name;
+      fileSummary = session.lastFile.summary;
+      fileData = session.lastFile.data;
+      console.ولغ ?? console.log(`🔄 تم استرجاع الملف السابق من الجلسة: ${fileName}`);
     } else {
-      console.log("ℹ️ لا يوجد ملف مرفق في الطلب");
+      console.log("ℹ️ لا يوجد ملف مرفق في الطلب ولا في ذاكرة الجلسة");
+    }
+
+    // إضافة الرسالة الحالية لسجل التاريخ
+    session.history.push({ 
+      role: 'user', 
+      content: userContent + (fileSummary ? `\n\n${fileSummary}` : "") 
+    });
+
+    // الحفاظ على أحدث 10 رسائل فقط لعدم تجاوز الحد الأقصى للتوكنز
+    if (session.history.length > 10) {
+      session.history = session.history.slice(-10);
     }
 
     // =========================
-    // 3) إدارة الجلسة
-    // =========================
-    const sessionKey = sessionId || 'default';
-    if (!sessions[sessionKey]) {
-      sessions[sessionKey] = { 
-        step: 'init', 
-        pendingAction: null, 
-        lastFile: null,
-        history: []
-      };
-    }
-    const session = sessions[sessionKey];
-    
-    session.history.push({ role: 'user', content: userContent, hasFile: !!hasFile });
-
-    // =========================
-    // 4) إذا كانت الجلسة في حالة "انتظار تأكيد"
+    // 3) إذا كانت الجلسة في حالة "انتظار تأكيد"
     // =========================
     if (session.step === 'awaiting_confirmation' && session.pendingAction) {
       const lowerMsg = userContent.toLowerCase();
@@ -94,10 +113,13 @@ export default async function handler(req, res) {
         
         let result;
         try {
+          // التأكد من تمرير الـ base64 المخزن حتى لو لم يُرفق ملف جديد
+          const activeBase64 = action.base64 || extractedBase64;
+
           if (action.type === 'modify') {
             result = await modifyExcelHandler({
               body: {
-                base64: action.base64,
+                base64: activeBase64,
                 instruction: action.instruction
               }
             });
@@ -108,55 +130,20 @@ export default async function handler(req, res) {
           } else if (action.type === 'convert') {
             result = await convertFileHandler({
               body: {
-                base64: action.base64,
+                base64: activeBase64,
                 targetFormat: action.format || 'pdf',
                 sourceFormat: 'excel'
               }
             });
           } else if (action.type === 'analyze') {
-            const buffer = Buffer.from(action.base64, 'base64');
+            const buffer = Buffer.from(activeBase64, 'base64');
             const workbook = XLSX.read(buffer, { type: 'buffer' });
             const sheetName = workbook.SheetNames[0];
             const data = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
             
-            const summary = {
-              fileName: action.fileName || 'ملف',
-              sheetName: sheetName,
-              rowCount: data.length,
-              columns: data[0] ? Object.keys(data[0]) : [],
-              sample: data.slice(0, 5),
-              stats: {}
-            };
-            
-            if (data.length > 0 && data[0]) {
-              Object.keys(data[0]).forEach(col => {
-                const values = data.map(row => row[col]).filter(v => typeof v === 'number');
-                if (values.length > 0) {
-                  summary.stats[col] = {
-                    min: Math.min(...values),
-                    max: Math.max(...values),
-                    avg: values.reduce((a, b) => a + b, 0) / values.length
-                  };
-                }
-              });
-            }
-            
-            let reply = `📊 **تحليل الملف:**\n\n`;
-            reply += `📁 **اسم الملف:** ${summary.fileName}\n`;
-            reply += `📋 **اسم الورقة:** ${summary.sheetName}\n`;
-            reply += `📏 **عدد الصفوف:** ${summary.rowCount}\n`;
-            reply += `📑 **الأعمدة:** ${summary.columns.join(', ')}\n\n`;
-            
-            if (Object.keys(summary.stats).length > 0) {
-              reply += `📈 **إحصائيات الأعمدة الرقمية:**\n`;
-              Object.entries(summary.stats).forEach(([col, stats]) => {
-                reply += `  • **${col}:** min=${stats.min}, max=${stats.max}, avg=${stats.avg.toFixed(2)}\n`;
-              });
-              reply += '\n';
-            }
-            
-            reply += `📌 **عينة من البيانات (أول 5 صفوف):**\n`;
-            reply += JSON.stringify(summary.sample, null, 2);
+            let reply = `📊 **تحليل الملف المحدث:**\n\n`;
+            reply += `📁 **اسم الملف:** ${action.fileName || fileName}\n`;
+            reply += `📏 **عدد الصفوف:** ${data.length}\n`;
             
             session.step = 'init';
             session.pendingAction = null;
@@ -176,7 +163,7 @@ export default async function handler(req, res) {
         
         if (result && result.success && result.fileBase64) {
           return res.json({
-            reply: result.message || "✅ تم التنفيذ بنجاح!",
+            reply: result.message || "✅ تم التنفيذ بنجاح وتعديل الملف!",
             fileBase64: result.fileBase64,
             fileName: result.fileName,
             contentType: result.contentType
@@ -190,7 +177,7 @@ export default async function handler(req, res) {
         session.step = 'init';
         session.pendingAction = null;
         return res.json({
-          reply: "🔄 تمام… خلينا نعدل الخطة. شو بدك تغيير بالضبط؟"
+          reply: "🔄 تمام… خلينا نعدل الخطة. شو بدك نغير بالضبط؟"
         });
       } else {
         return res.json({
@@ -200,18 +187,16 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // 5) تحليل الطلب (مع إرسال معلومات الملف)
+    // 4) تحليل الطلب مع تمرير كامل الـ History لـ Groq
     // =========================
-    const analysis = await groq.chat.completions.create({
-      model: "openai/gpt-oss-120b",
-      messages: [
-        {
-          role: "system",
-          content: `أنت "الأثير"، شريك تقني خبير ومحاور ذكي.
+    const messagesPayload = [
+      {
+        role: "system",
+        content: `أنت "الأثير"، شريك تقني خبير ومحاور ذكي.
 
 📌 **أسلوبك:**
 - تحدث باللهجة السورية البيضاء، ودود ومحترف.
-- اقرأ الملف المرفق (إن وجد) وافهم محتواه.
+- اقرأ الملف المرفق (إن وجد في السياق) وافهم محتواه.
 - ناقش المستخدم لفهم احتياجاته بدقة.
 - اقترح حلولاً واسأل عن التفاصيل.
 - لا تنفذ أي شيء قبل الاتفاق.
@@ -219,10 +204,10 @@ export default async function handler(req, res) {
 ⚡ **قواعد مهمة:**
 - إذا الطلب غير واضح، اسأل عن التفاصيل.
 - إذا الطلب واضح، اعرض خطة واطلب التأكيد.
-- استخدم معلومات الملف في تحليلك.
+- استخدم معلومات الملف في تحليلك وسياق المحادثة السابقة.
 - كن شريكاً، ليس مجرد منفذ.
 
-أجب بصيغة JSON:
+أجب بصيغة JSON حصراً:
 {
   "isClear": true/false,
   "action": "modify|generate|convert|analyze|chat",
@@ -231,13 +216,13 @@ export default async function handler(req, res) {
   "questions": ["سؤال1", "سؤال2"],
   "response": "ردك الطبيعي للمستخدم (باللهجة السورية)"
 }`
-        },
-        {
-          role: "user",
-          content: `الطلب: ${userContent || "مرحبا"}\n\n${fileSummary || "لا يوجد ملف مرفق."}`
-          // ✅ تأكد من وجود fileSummary هنا
-        }
-      ],
+      },
+      ...session.history // ✅ إرسال الذاكرة كاملة لكي لا ينسى النموذج شيئاً
+    ];
+
+    const analysis = await groq.chat.completions.create({
+      model: "openai/gpt-oss-120b",
+      messages: messagesPayload,
       temperature: 0.4,
       max_completion_tokens: 1500
     });
@@ -258,8 +243,11 @@ export default async function handler(req, res) {
       };
     }
 
+    // إضافة رد النموذج لسجل التاريخ
+    session.history.push({ role: 'assistant', content: analysisResult.response });
+
     // =========================
-    // 6) معالجة النتيجة
+    // 5) معالجة النتيجة
     // =========================
     
     if (!analysisResult.isClear) {
@@ -292,7 +280,7 @@ export default async function handler(req, res) {
       session.pendingAction = {
         type: analysisResult.action,
         instruction: userContent,
-        base64: extractedBase64,
+        base64: extractedBase64, // تخزين الـ base64 الحالي للمهمة
         fileName: fileName,
         format: 'pdf'
       };
@@ -315,4 +303,5 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في المعالجة")
     });
   }
-        }
+}
+
