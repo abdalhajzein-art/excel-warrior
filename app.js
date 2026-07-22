@@ -39,7 +39,7 @@ app.post('/api/chat', async (req, res) => {
     // ✅ التصحيح 2: نموذج صحيح
     // ✅ التصحيح 3: إزالة الأدوات
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-3.5-flash',
       contents: `${SYSTEM_PROMPT}\n${fileInfoText}\n\nالمستخدم: ${userContent}`,
       config: {
         temperature: 0.5,
