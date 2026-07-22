@@ -1,45 +1,22 @@
 import Groq from 'groq-sdk';
+import XLSX from 'xlsx'; // ✅ للتوليد الأساسي (آمن ومستقر)
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ✅ دالة للتحقق من الإصدار
-async function checkLibraryVersion() {
+// ✅ دالة للتحقق من وجود المكتبة المتقدمة
+async function getAdvancedWorkbook() {
   try {
-    const pkg = await import('@office-kit/xlsx/package.json');
-    const version = pkg.version || '0.0.0';
-    const [major, minor, patch] = version.split('.').map(Number);
-    if (major < 1) {
-      return {
-        isOutdated: true,
-        message: `⚠️ المكتبة في نسخة تجريبية (v${version}). يرجى التحديث إلى v1.0.0 أو أحدث.`
-      };
-    }
-    return { isOutdated: false };
+    // ✅ محاولة استيراد المكتبة المتقدمة
+    const module = await import('@office-kit/xlsx');
+    return module.Workbook;
   } catch (err) {
-    return {
-      isOutdated: true,
-      message: `❌ تعذّر قراءة إصدار المكتبة. يرجى إعادة تثبيت @office-kit/xlsx.`
-    };
+    console.warn('⚠️ @office-kit/xlsx غير متوفرة، سنستخدم xlsx الأساسية');
+    return null;
   }
-}
-
-// ✅ دالة مساعدة لاستيراد المكتبة (ديناميكياً)
-async function getWorkbook() {
-  const module = await import('@office-kit/xlsx');
-  return module.Workbook;
 }
 
 export async function generateExcelHandler(req, res) {
   try {
-    // ✅ التحقق من الإصدار أولاً
-    const versionCheck = await checkLibraryVersion();
-    if (versionCheck.isOutdated) {
-      return {
-        success: false,
-        error: versionCheck.message
-      };
-    }
-
     const body = req.body || req || {};
     const { instruction } = body || {};
 
@@ -160,29 +137,49 @@ export async function generateExcelHandler(req, res) {
     }
 
     // ============================================================
-    // 📊 إنشاء الملف بناءً على الهيكل من Groq
+    // 📊 توليد الملف
     // ============================================================
-    const Workbook = await getWorkbook();
-    const workbook = new Workbook();
-    const sheetName = structure.sheetName || 'Sheet1';
-    const worksheet = workbook.addWorksheet(sheetName);
+    
+    // ✅ محاولة استخدام المكتبة المتقدمة
+    let AdvancedWorkbook = await getAdvancedWorkbook();
+    let useAdvanced = false;
+    let workbook, worksheet;
 
-    // ✅ إضافة العناوين
-    structure.headers.forEach((header, index) => {
-      worksheet.getCell(1, index + 1).value = header;
-    });
+    // ✅ إذا كان الطلب يحتوي مخططات أو جداول محورية، نستخدم المكتبة المتقدمة
+    const needsAdvanced = (structure.charts && structure.charts.length > 0) || 
+                         (structure.pivotTables && structure.pivotTables.length > 0) ||
+                         (structure.conditionalFormats && structure.conditionalFormats.length > 0);
 
-    // ✅ إضافة الصفوف
-    if (structure.rows && structure.rows.length > 0) {
-      structure.rows.forEach((row, rowIndex) => {
-        row.forEach((value, colIndex) => {
-          worksheet.getCell(rowIndex + 2, colIndex + 1).value = value;
-        });
-      });
+    if (AdvancedWorkbook && needsAdvanced) {
+      try {
+        console.log('🔧 استخدام المكتبة المتقدمة @office-kit/xlsx');
+        workbook = new AdvancedWorkbook();
+        worksheet = workbook.addWorksheet(structure.sheetName || 'Sheet1');
+        useAdvanced = true;
+      } catch (err) {
+        console.warn('⚠️ فشل استخدام المكتبة المتقدمة، نعود لـ xlsx:', err.message);
+        useAdvanced = false;
+      }
     }
 
-    // ✅ إضافة الصيغ (Formulas)
-    if (structure.formulas) {
+    // ✅ إذا فشلت المتقدمة أو الطلب بسيط، نستخدم xlsx
+    if (!useAdvanced) {
+      console.log('📊 استخدام xlsx للتوليد الأساسي');
+      const data = [structure.headers || []];
+      if (structure.rows) {
+        structure.rows.forEach(row => data.push(row));
+      }
+      
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, ws, structure.sheetName || 'Sheet1');
+      
+      // ✅ نعيد تعريف worksheet عشان الكود يشتغل
+      worksheet = ws;
+    }
+
+    // ✅ إضافة الصيغ (إذا كانت متقدمة)
+    if (useAdvanced && structure.formulas) {
       Object.entries(structure.formulas).forEach(([cell, formula]) => {
         try {
           worksheet.getCell(cell).value = { formula: formula };
@@ -192,14 +189,14 @@ export async function generateExcelHandler(req, res) {
       });
     }
 
-    // ✅ إضافة المخططات (Charts)
-    if (structure.charts && structure.charts.length > 0) {
+    // ✅ إضافة المخططات (إذا كانت متقدمة)
+    if (useAdvanced && structure.charts) {
       structure.charts.forEach((chart, index) => {
         try {
           const chartSheet = workbook.addWorksheet(`مخطط ${index + 1}`);
           workbook.addChart({
             type: chart.type || 'column',
-            dataSheet: worksheet.name,
+            dataSheet: worksheet.name || 'Sheet1',
             dataRange: chart.dataRange || 'A1:B10',
             targetSheet: chartSheet.name,
             anchorCell: 'A1',
@@ -211,13 +208,13 @@ export async function generateExcelHandler(req, res) {
       });
     }
 
-    // ✅ إضافة الجداول المحورية (Pivot Tables)
-    if (structure.pivotTables && structure.pivotTables.length > 0) {
+    // ✅ إضافة الجداول المحورية (إذا كانت متقدمة)
+    if (useAdvanced && structure.pivotTables) {
       structure.pivotTables.forEach((pivot, index) => {
         try {
           const pivotSheet = workbook.addWorksheet(`جدول محوري ${index + 1}`);
           workbook.addPivotTable({
-            sourceSheet: worksheet.name,
+            sourceSheet: worksheet.name || 'Sheet1',
             sourceRange: pivot.sourceRange || 'A1:Z100',
             targetSheet: pivotSheet.name,
             anchorCell: 'A3',
@@ -233,8 +230,8 @@ export async function generateExcelHandler(req, res) {
       });
     }
 
-    // ✅ إضافة التنسيق الشرطي (Conditional Formatting)
-    if (structure.conditionalFormats && structure.conditionalFormats.length > 0) {
+    // ✅ إضافة التنسيق الشرطي (إذا كانت متقدمة)
+    if (useAdvanced && structure.conditionalFormats) {
       structure.conditionalFormats.forEach((cf) => {
         try {
           const range = worksheet.getRange(cf.range);
@@ -252,10 +249,13 @@ export async function generateExcelHandler(req, res) {
       });
     }
 
-    // ============================================================
-    // 💾 حفظ الملف
-    // ============================================================
-    const outputBuffer = await workbook.writeToBuffer();
+    // ✅ حفظ الملف
+    let outputBuffer;
+    if (useAdvanced) {
+      outputBuffer = await workbook.writeToBuffer();
+    } else {
+      outputBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    }
 
     return {
       success: true,
@@ -267,15 +267,6 @@ export async function generateExcelHandler(req, res) {
 
   } catch (error) {
     console.error("❌ Error in generateExcelHandler:", error);
-    
-    // ✅ إذا كان الخطأ بسبب عدم توافق الإصدار
-    if (error.message.includes('version') || error.message.includes('unsupported') || error.message.includes('import')) {
-      return {
-        success: false,
-        error: `⚠️ تعذّرت العملية بسبب قدم إصدار المكتبة. يرجى تحديث @office-kit/xlsx إلى آخر إصدار.`
-      };
-    }
-    
     return {
       success: false,
       error: "حدث خطأ أثناء توليد الملف: " + error.message
@@ -305,4 +296,4 @@ export default async function handler(req, res) {
     console.error("Error in generate route:", err);
     return res.status(500).json({ error: "خطأ في التوليد: " + err.message });
   }
-      }
+                             }
