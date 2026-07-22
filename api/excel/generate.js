@@ -1,16 +1,12 @@
 import Groq from 'groq-sdk';
-// ❌ حذف هذا السطر
-// import { Workbook } from '@office-kit/xlsx';
-
-// ✅ استخدم الاستيراد الديناميكي داخل الدالة
-const { Workbook } = await import('@office-kit/xlsx');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ✅ دالة للتحقق من إصدار المكتبة
+// ✅ دالة للتحقق من الإصدار
 async function checkLibraryVersion() {
   try {
-    const { version } = await import('@office-kit/xlsx/package.json');
+    const pkg = await import('@office-kit/xlsx/package.json');
+    const version = pkg.version || '0.0.0';
     const [major, minor, patch] = version.split('.').map(Number);
     if (major < 1) {
       return {
@@ -25,6 +21,12 @@ async function checkLibraryVersion() {
       message: `❌ تعذّر قراءة إصدار المكتبة. يرجى إعادة تثبيت @office-kit/xlsx.`
     };
   }
+}
+
+// ✅ دالة مساعدة لاستيراد المكتبة (ديناميكياً)
+async function getWorkbook() {
+  const module = await import('@office-kit/xlsx');
+  return module.Workbook;
 }
 
 export async function generateExcelHandler(req, res) {
@@ -160,6 +162,7 @@ export async function generateExcelHandler(req, res) {
     // ============================================================
     // 📊 إنشاء الملف بناءً على الهيكل من Groq
     // ============================================================
+    const Workbook = await getWorkbook();
     const workbook = new Workbook();
     const sheetName = structure.sheetName || 'Sheet1';
     const worksheet = workbook.addWorksheet(sheetName);
@@ -302,4 +305,4 @@ export default async function handler(req, res) {
     console.error("Error in generate route:", err);
     return res.status(500).json({ error: "خطأ في التوليد: " + err.message });
   }
-  }
+      }
