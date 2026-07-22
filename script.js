@@ -387,7 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
         userInput.style.height = 'auto';
 
         // =========================
-        // ✅ **إزالة الملف من صندوق الكتابة نهائياً**
+        // ✅ إزالة الملف من صندوق الكتابة نهائياً
         // =========================
         selectedFileObject = null;
         attachedFileName = null;
@@ -418,9 +418,16 @@ document.addEventListener('DOMContentLoaded', () => {
             removeMessageFromDOM(loadingId);
 
             if (data && data.reply) {
+                // ✅ معالجة النص لعرضه بشكل كامل مع التنسيق
                 const msgDiv = document.createElement('div');
                 msgDiv.className = 'message ai';
-                msgDiv.innerHTML = data.reply.replace(/\n/g, '<br>');
+                
+                let replyText = data.reply;
+                replyText = replyText.replace(/\n/g, '<br>');
+                replyText = replyText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                replyText = replyText.replace(/^\* (.*?)$/gm, '• $1');
+                
+                msgDiv.innerHTML = replyText;
                 chatArea.appendChild(msgDiv);
                 
                 let savedFileData = null;
@@ -466,7 +473,14 @@ document.addEventListener('DOMContentLoaded', () => {
         messageDiv.id = messageId;
         
         messageDiv.className = `message ${sender === 'user' ? 'user' : 'ai'}`;
-        messageDiv.innerText = text;
+        
+        // ✅ معالجة النص لعرضه كاملاً مع التنسيق
+        let formattedText = text || '';
+        formattedText = formattedText.replace(/\n/g, '<br>');
+        formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        formattedText = formattedText.replace(/^\* (.*?)$/gm, '• $1');
+        
+        messageDiv.innerHTML = formattedText;
         chatArea.appendChild(messageDiv);
 
         if (fileData) {
