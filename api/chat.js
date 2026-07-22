@@ -19,20 +19,27 @@ export default async function handler(req, res) {
       return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GEMINI_API_KEY غير مضاف في متغيرات البيئة." });
     }
 
-    // إذا المستخدم ما كتب رسالة، نخليها فاضية
-    let userContent = message || "";
+    // =========================
+    // عقل المنصّة الهجيني
+    // =========================
+
+    // 1) تجهيز السياق الأساسي
+    let userContent = (message || "").trim();
     let extractedBase64 = null;
     let fileMimeType = null;
     let fileName = null;
+    let fileSummary = null;
 
-    // استقبال الملف من الفرونت
-    if (excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64) {
+    const hasText = userContent.length > 0;
+    const hasFile = excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64;
+
+    // 2) استقبال الملف وتحليل أولي
+    if (hasFile) {
       const fileObj = excelJSON[0];
       extractedBase64 = fileObj.fileBase64;
       fileMimeType = fileObj.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       fileName = fileObj.fileName || 'ملف';
 
-      // تحليل إكسل اختياري
       try {
         const buffer = Buffer.from(extractedBase64, 'base64');
         const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -40,29 +47,65 @@ export default async function handler(req, res) {
         const worksheet = workbook.Sheets[firstSheetName];
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-        userContent += `\n\n[الملف يحتوي على ${rawData.length} صفوف في الشيت الأولى (${firstSheetName}).]`;
+        fileSummary = `الملف يحتوي على ${rawData.length} صفوف في الشيت الأولى (${firstSheetName}).`;
       } catch (parseErr) {
         console.error("Error parsing Excel in chat:", parseErr);
+        fileSummary = "تعذّر تحليل الملف إكسل بشكل آلي، يمكن التعامل معه كنص أو إعادة رفعه.";
       }
     }
 
-    // بناء الرسالة للذكاء
+    // 3) تحليل نية المستخدم (Intent)
+    const lowerText = userContent.toLowerCase();
+    const intent = {
+      isChatOnly: !hasFile && hasText,
+      isFileOnly: hasFile && !hasText,
+      wantsModify:
+        /عدل|تعديل|غيّر|تغيير/.test(lowerText),
+      wantsGenerate:
+        /ولد|توليد|انشئ|إنشاء|create|generate/.test(lowerText),
+      wantsConvert:
+        /حول|تحويل|convert/.test(lowerText),
+      wantsRead:
+        /اقرأ|قراءة|عرض|اظهر|أظهر/.test(lowerText),
+      wantsAnalyze:
+        /حلل|تحليل|analyze/.test(lowerText)
+    };
+
+    // 4) بناء رسالة واضحة للذكاء حسب الحالة
+    let finalUserText = "";
+    let systemBehaviorNote = "";
+
+    if (intent.isChatOnly) {
+      // دردشة فقط
+      systemBehaviorNote = "أنت مساعد ذكاء هجيني: نصفك موظف خبير ونصفك مساعد شخصي، ترد باختصار ووضوح وبشكل بشري مهذّب.";
+      finalUserText = userContent;
+    } else if (intent.isFileOnly) {
+      // ملف بدون نص
+      systemBehaviorNote = "أنت مساعد ذكاء هجيني، وصل ملف بدون تعليمات، مهمتك أن تسأل المستخدم بلطف عن المطلوب من الملف.";
+      finalUserText = `وصل ملف باسم: ${fileName || "ملف غير مسمى"}.\n${fileSummary || ""}\nاسأل المستخدم: "شو المطلوب من الملف؟"`;
+    } else if (hasFile && hasText) {
+      // ملف + نص
+      systemBehaviorNote = "أنت مساعد ذكاء هجيني، تتعامل مع ملف مرفق وتعليمات نصية، مهمتك فهم النية واختيار الأداة أو الرد المناسب.";
+      finalUserText = `تعليمات المستخدم:\n${userContent}\n\nمعلومات عن الملف:\n${fileSummary || "لا يوجد ملخص متاح."}`;
+    } else {
+      // لا نص ولا ملف (حالة نادرة)
+      systemBehaviorNote = "أنت مساعد ذكاء هجيني، لم يصل نص ولا ملف، اسأل المستخدم بلطف أن يوضح طلبه.";
+      finalUserText = `ما وصل لا نص ولا ملف. اسأل المستخدم: "شو حابب نعمل؟"`;
+    }
+
+    // 5) بناء محتوى الرسالة للذكاء
     const contents = [
       {
         role: "system",
         parts: [
-          { text: SYSTEM_PROMPT }
+          { text: SYSTEM_PROMPT },
+          { text: systemBehaviorNote }
         ]
       },
       {
         role: "user",
         parts: [
-          {
-            text:
-              userContent.trim().length > 0
-                ? `اقرأ الملف المرفق الآن واعرض محتواه نصيًا بالكامل.\n\n${userContent}`
-                : `وصل ملف بدون تعليمات. اسأل المستخدم: "شو المطلوب من الملف؟"`
-          },
+          { text: finalUserText },
           ...(extractedBase64 ? [{
             fileData: {
               mimeType: fileMimeType,
@@ -73,6 +116,7 @@ export default async function handler(req, res) {
       }
     ];
 
+    // 6) تعريف الأدوات للذكاء
     const toolsConfig = {
       functionDeclarations: toolsDefinition.map(t => ({
         name: t.function.name,
@@ -81,6 +125,7 @@ export default async function handler(req, res) {
       }))
     };
 
+    // 7) استدعاء النموذج مع الأدوات
     let response;
     try {
       response = await ai.models.generateContent({
@@ -105,6 +150,7 @@ export default async function handler(req, res) {
     const candidate = response.candidates?.[0];
     const functionCalls = candidate?.content?.parts?.filter(p => p.functionCall) || [];
 
+    // 8) تنفيذ الأداة إذا النموذج قرر يستخدمها
     if (functionCalls.length > 0) {
       const { name: toolName, args: toolArgs } = functionCalls[0].functionCall;
 
@@ -115,7 +161,7 @@ export default async function handler(req, res) {
             toolArgs.base64 = extractedBase64;
           }
 
-          // بدون أي منطق جاهز — الذكاء يقرر
+          // إذا أداة توليد وما في تعليمات، نمرّر نص المستخدم
           if (
             toolName.includes('generate') &&
             (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)
@@ -179,6 +225,7 @@ export default async function handler(req, res) {
       }
     }
 
+    // 9) إذا ما في أدوات، نرجّع رد نصّي من النموذج
     const replyText =
       candidate?.content?.parts?.map(p => p.text).join('\n') ||
       "تم الاستلام بنجاح وتمت معالجة الطلب نصيًا.";
@@ -191,4 +238,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ في المعالجة السيادية: " + (error.message || error)
     });
   }
-          }
+            }
