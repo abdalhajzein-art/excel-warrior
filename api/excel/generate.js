@@ -1,5 +1,3 @@
-import pkg from 'xml-xlsx-lite';
-const { Workbook } = pkg;
 import Groq from 'groq-sdk';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -128,6 +126,9 @@ export async function generateExcelHandler(req, res) {
     // ============================================================
     // 📊 إنشاء الملف بناءً على الهيكل من Groq
     // ============================================================
+    // ✅ استيراد xml-xlsx-lite ديناميكياً
+    const { Workbook } = await import('xml-xlsx-lite');
+    
     const workbook = new Workbook();
     const sheetName = structure.sheetName || 'Sheet1';
     const worksheet = workbook.addWorksheet(sheetName);
@@ -203,8 +204,6 @@ export async function generateExcelHandler(req, res) {
       structure.conditionalFormats.forEach((cf) => {
         try {
           const range = worksheet.getRange(cf.range);
-          // تطبيق التنسيق الشرطي (يعتمد على المكتبة)
-          // xml-xlsx-lite يدعم التنسيق الشرطي عبر واجهة مشابهة
           if (cf.type === 'cellValue') {
             range.conditionalFormat({
               type: 'cellValue',
@@ -263,4 +262,4 @@ export default async function handler(req, res) {
     console.error("Error in generate route:", err);
     return res.status(500).json({ error: "خطأ في التوليد: " + err.message });
   }
-        }
+  }
