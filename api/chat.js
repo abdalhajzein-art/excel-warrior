@@ -229,7 +229,7 @@ export default async function handler(req, res) {
             }
           ],
           temperature: 0.1,
-          max_completion_tokens: 10
+          max_completion_tokens: 30
         });
 
         const decision = classification.choices[0].message.content.trim().toLowerCase();
