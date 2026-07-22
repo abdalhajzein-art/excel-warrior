@@ -1,4 +1,3 @@
-// api/word/generate.js
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
 
 export default async function handler(req, res) {
@@ -15,7 +14,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "العنوان والمحتوى مطلوبان لتوليد المستند." });
     }
 
-    // بناء المستند بهيكلية وستايل احترافي
     const doc = new Document({
       sections: [{
         properties: {},
@@ -30,12 +28,12 @@ export default async function handler(req, res) {
             children: [
               new TextRun({
                 text: content,
-                size: 28, // حجم الخط 14pt
-                font: "Segoe UI", // خط عصري ومناسب للغة العربية
+                size: 28,
+                font: "Segoe UI",
               }),
             ],
             alignment: AlignmentType.JUSTIFIED,
-            spacing: { line: 360 }, // تباعد الأسطر لسهولة القراءة
+            spacing: { line: 360 },
           }),
         ],
       }],
@@ -55,5 +53,46 @@ export default async function handler(req, res) {
 }
 
 export async function generateWordHandler(payload) {
-  return { status: "success", message: "تم تحضير أمر توليد الوورد" };
-}
+  try {
+    const { title = "مستند جديد", content = "محتوى تجريبي" } = payload || {};
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({
+            text: title,
+            heading: HeadingLevel.HEADING_1,
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: content,
+                size: 28,
+              }),
+            ],
+            alignment: AlignmentType.JUSTIFIED,
+          }),
+        ],
+      }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+
+    return {
+      success: true,
+      message: "✅ تم توليد مستند Word بنجاح",
+      fileBase64: buffer.toString('base64'),
+      fileName: `${title}.docx`,
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    };
+
+  } catch (error) {
+    console.error("Error in generateWordHandler:", error);
+    return {
+      success: false,
+      message: "❌ فشل توليد الملف: " + error.message
+    };
+  }
+            }
