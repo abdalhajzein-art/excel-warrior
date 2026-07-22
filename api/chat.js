@@ -20,57 +20,71 @@ export default async function handler(req, res) {
     }
 
     let userContent = message || "مساعدة بخصوص الملف المرفق";
-    let fileDataContext = "";
     let extractedBase64 = null;
+    let fileMimeType = null;
+    let fileName = null;
 
-    // استخراج واستلام الملف المرفق ومعالجة بياناته بدقة تامة
+    // استلام الملف من الفرونت
     if (excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64) {
+      const fileObj = excelJSON[0];
+      extractedBase64 = fileObj.fileBase64;
+      fileMimeType = fileObj.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      fileName = fileObj.fileName || 'ملف';
+
+      // تحليل إكسل فقط كـ context نصي إضافي (اختياري)
       try {
-        const fileObj = excelJSON[0];
-        extractedBase64 = fileObj.fileBase64;
         const buffer = Buffer.from(extractedBase64, 'base64');
         const workbook = XLSX.read(buffer, { type: 'buffer' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        
-        fileDataContext = `\n[محتوى الملف المرفق (${fileObj.fileName || 'ملف'}) بالكامل:\n${JSON.stringify(rawData, null, 2)}\n]\n`;
+        userContent += `\n\n[مقتطف من محتوى الملف (${fileName}):\n${JSON.stringify(rawData.slice(0, 10), null, 2)}\n]`;
       } catch (parseErr) {
         console.error("Error parsing Excel in chat:", parseErr);
       }
     }
 
-    const finalPrompt = `${SYSTEM_PROMPT}\n\n${fileDataContext}\n\nطلب المستخدم الحالي: ${userContent}`;
+    // بناء contents بالطريقة اللي Flash يفهمها
+    const contents = [
+      {
+        role: "user",
+        parts: [
+          { text: `${SYSTEM_PROMPT}\n\nطلب المستخدم الحالي:\n${userContent}` },
+          ...(extractedBase64 ? [{
+            fileData: {
+              mimeType: fileMimeType,
+              data: extractedBase64
+            }
+          }] : [])
+        ]
+      }
+    ];
+
+    const toolsConfig = {
+      functionDeclarations: toolsDefinition.map(t => ({
+        name: t.function.name,
+        description: t.function.description,
+        parameters: t.function.parameters
+      }))
+    };
 
     let response;
     try {
       response = await ai.models.generateContent({
         model: 'gemini-1.5-flash',
-        contents: finalPrompt,
+        contents,
         config: {
           temperature: 0.3,
-          tools: [{
-            functionDeclarations: toolsDefinition.map(t => ({
-              name: t.function.name,
-              description: t.function.description,
-              parameters: t.function.parameters
-            }))
-          }]
+          tools: toolsConfig
         }
       });
     } catch (err) {
       response = await ai.models.generateContent({
         model: 'gemini-1.5-pro',
-        contents: finalPrompt,
+        contents,
         config: {
           temperature: 0.3,
-          tools: [{
-            functionDeclarations: toolsDefinition.map(t => ({
-              name: t.function.name,
-              description: t.function.description,
-              parameters: t.function.parameters
-            }))
-          }]
+          tools: toolsConfig
         }
       });
     }
@@ -83,17 +97,17 @@ export default async function handler(req, res) {
 
       if (toolsRegistry[toolName]) {
         try {
-          // ربط ملف الـ Base64 تلقائياً بالأداة إذا كان مطلوباً ولم يتم تمريره ضمن الـ args
+          // ربط الـ Base64 تلقائيًا إذا الأداة تحتاجه
           if (!toolArgs.base64 && extractedBase64) {
             toolArgs.base64 = extractedBase64;
           }
 
-          // معالجة ذكية وتصحيح بارامترات التعديل في حال طلب إضافة عمود معين مثل "سبب الغياب"
+          // تصحيح editMap لأداة تعديل الإكسل
           if (toolName === 'excel_modify' && (!toolArgs.editMap || !toolArgs.editMap.operation)) {
-            const userLower = userContent.toLowerCase();
+            const userLower = (userContent || "").toLowerCase();
             let columnName = "سبب الغياب";
             let afterColumn = "الغياب";
-            
+
             if (userLower.includes("سبب") || userLower.includes("اضافة عمود")) {
               toolArgs.editMap = {
                 operation: "add_column",
@@ -103,8 +117,9 @@ export default async function handler(req, res) {
             }
           }
 
+          // توليد ملفات جديدة
           if (toolName.includes('generate') && (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)) {
-            toolArgs.instruction = userContent || "ملف إكسل جديد";
+            toolArgs.instruction = userContent || "ملف جديد";
             toolArgs.content = userContent;
             toolArgs.prompt = userContent;
           }
@@ -124,26 +139,28 @@ export default async function handler(req, res) {
 
           const handlerFn = toolsRegistry[toolName].handler;
           const directResult = await handlerFn(mockReq, mockRes);
-          
+
           if (directResult && (directResult.fileBase64 || directResult.success)) {
             toolResult = directResult;
           }
 
-          // إذا كانت النتيجة Buffer (ملف إكسل معدل وجاهز للتحميل)
+          // إذا رجعت Buffer (ملف جاهز)
           if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
             const isWord = toolName.includes('word');
             const isPdf = toolName.includes('pdf');
             return res.status(200).json({
-              reply: "✅ أبشر، تم تعديل وتنفيذ طلبك على الملف بنجاح:",
+              reply: "✅ أبشر، تم تنفيذ طلبك على الملف بنجاح:",
               fileBase64: Buffer.from(toolResult).toString('base64'),
               fileName: isWord ? 'document.docx' : (isPdf ? 'document.pdf' : 'modified_file.xlsx'),
-              contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+              contentType: isWord
+                ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                : (isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
             });
           }
 
           if (toolResult && toolResult.fileBase64) {
             return res.status(200).json({
-              reply: toolResult.message || "✨ أبشر، تم تنفيذ العملية بنجاح:",
+              reply: toolResult.message || "✨ تم تنفيذ العملية بنجاح:",
               fileBase64: toolResult.fileBase64,
               fileName: toolResult.fileName || 'alatheer_output.xlsx',
               contentType: toolResult.contentType || 'application/octet-stream'
@@ -159,12 +176,11 @@ export default async function handler(req, res) {
       }
     }
 
-    const replyText = response.text || "تم الاستلام بنجاح.";
+    const replyText = candidate?.content?.parts?.map(p => p.text).join('\n') || "تم الاستلام بنجاح.";
     return res.status(200).json({ reply: replyText });
 
   } catch (error) {
     console.error("Error in Chat API:", error);
     return res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية: " + (error.message || error) });
   }
-}
-
+          }
