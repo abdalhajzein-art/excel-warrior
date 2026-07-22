@@ -3,7 +3,11 @@ import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 import { modifyExcelHandler } from './excel/modify.js';
 import { generateExcelHandler } from './excel/generate.js';
-import { Workbook } from '@office-kit/xlsx';
+// ❌ حذف هذا السطر
+// import { Workbook } from '@office-kit/xlsx';
+
+// ✅ استخدم الاستيراد الديناميكي داخل الدالة
+const { Workbook } = await import('@office-kit/xlsx');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
