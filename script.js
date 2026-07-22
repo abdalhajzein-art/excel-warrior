@@ -315,11 +315,10 @@ document.addEventListener('DOMContentLoaded', () => {
             welcomeScreen.style.display = 'none';
         }
 
-        let displayMessage = message;
-        if (!message && currentFileName) {
-            displayMessage = `تحليل الملف المرفق: ${currentFileName}`;
-        } else if (currentFileName) {
-            displayMessage = `${message} (مع الملف: ${currentFileName})`;
+        let displayMessage = message || "";
+
+        if (message && currentFileName) {
+        displayMessage = `${message}`;
         }
 
         let payloadExcel = null;
@@ -351,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         updateSendButtonState();
 
-        const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة السيادية... ⏳', true);
+        const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة ... ⏳', true);
 
         try {
             const response = await fetch('/api/chat', {
