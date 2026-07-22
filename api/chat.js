@@ -3,7 +3,8 @@ import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 import { modifyExcelHandler } from './excel/modify.js';
 import { generateExcelHandler } from './excel/generate.js';
-import { Workbook } from 'xml-xlsx-lite';
+import pkg from 'xml-xlsx-lite';
+const { Workbook } = pkg;
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
