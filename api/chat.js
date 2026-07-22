@@ -3,18 +3,14 @@ import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 import { modifyExcelHandler } from './excel/modify.js';
 import { generateExcelHandler } from './excel/generate.js';
-// ❌ حذف هذا السطر
-// import { Workbook } from '@office-kit/xlsx';
-
-// ✅ استخدم الاستيراد الديناميكي داخل الدالة
-const { Workbook } = await import('@office-kit/xlsx');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // ✅ دالة للتحقق من إصدار المكتبة
 async function checkLibraryVersion() {
   try {
-    const { version } = await import('@office-kit/xlsx/package.json');
+    const pkg = await import('@office-kit/xlsx/package.json');
+    const version = pkg.version || '0.0.0';
     const [major, minor, patch] = version.split('.').map(Number);
     if (major < 1) {
       return {
@@ -29,6 +25,12 @@ async function checkLibraryVersion() {
       message: `❌ تعذّر قراءة إصدار المكتبة. يرجى إعادة تثبيت @office-kit/xlsx.`
     };
   }
+}
+
+// ✅ دالة مساعدة لاستيراد المكتبة (ديناميكياً)
+async function getWorkbook() {
+  const module = await import('@office-kit/xlsx');
+  return module.Workbook;
 }
 
 // ✅ تعريف الأدوات لـ Groq (مبسطة)
@@ -114,6 +116,9 @@ export default async function handler(req, res) {
         fileSummary = `[ملف مرفق: ${fileName} - تعذّر قراءة الملف]`;
       } else {
         try {
+          // ✅ استيراد Workbook ديناميكياً
+          const Workbook = await getWorkbook();
+          
           const buffer = Buffer.from(extractedBase64, 'base64');
           const workbook = new Workbook();
           await workbook.loadFromBuffer(buffer);
@@ -428,4 +433,4 @@ async function handleManualFallback(res, userContent, extractedBase64) {
   return res.json({ 
     reply: "تمام… عفواً، ما قدرت أفهم طلبك بوضوح. حاول تطلب تعديل أو توليد ملف بشكل مباشر." 
   });
-    }
+            }
