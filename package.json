@@ -7,7 +7,7 @@
     "start": "node app.js"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "express": "^4.19.2",
@@ -15,8 +15,6 @@
     "docx": "^9.0.3",
     "pdf-lib": "^1.17.1",
     "sharp": "^0.33.4",
-    "xml-xlsx-lite": "^1.0.0",
-    "xlsx": "^0.18.5",
-    "exceljs": "^4.4.0"
+    "@office-kit/xlsx": "^0.9.0"
   }
 }
