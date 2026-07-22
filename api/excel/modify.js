@@ -1,4 +1,5 @@
-import { Workbook } from 'xml-xlsx-lite';
+import pkg from 'xml-xlsx-lite';
+const { Workbook } = pkg;
 
 export async function modifyExcelHandler(req, res) {
   try {
