@@ -1,13 +1,8 @@
-// ❌ حذف هذا السطر
-// import { Workbook } from '@office-kit/xlsx';
-
-// ✅ استخدم الاستيراد الديناميكي داخل الدالة
-const { Workbook } = await import('@office-kit/xlsx');
-
 // ✅ دالة للتحقق من إصدار المكتبة
 async function checkLibraryVersion() {
   try {
-    const { version } = await import('@office-kit/xlsx/package.json');
+    const pkg = await import('@office-kit/xlsx/package.json');
+    const version = pkg.version || '0.0.0';
     const [major, minor, patch] = version.split('.').map(Number);
     if (major < 1) {
       return {
@@ -22,6 +17,12 @@ async function checkLibraryVersion() {
       message: `❌ تعذّر قراءة إصدار المكتبة. يرجى إعادة تثبيت @office-kit/xlsx.`
     };
   }
+}
+
+// ✅ دالة مساعدة لاستيراد المكتبة (ديناميكياً)
+async function getWorkbook() {
+  const module = await import('@office-kit/xlsx');
+  return module.Workbook;
 }
 
 export async function modifyExcelHandler(req, res) {
@@ -45,6 +46,9 @@ export async function modifyExcelHandler(req, res) {
       return { success: false, error: "لا يوجد ملف Excel مرفق." };
     }
 
+    // ✅ استيراد Workbook ديناميكياً
+    const Workbook = await getWorkbook();
+    
     const buffer = Buffer.from(base64, 'base64');
     const workbook = new Workbook();
     await workbook.loadFromBuffer(buffer);
@@ -842,4 +846,4 @@ export default async function handler(req, res) {
     console.error("Error in modify route:", err);
     return res.status(500).json({ error: "خطأ في التعديل: " + err.message });
   }
-              }
+}
