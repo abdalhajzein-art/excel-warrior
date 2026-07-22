@@ -1,6 +1,3 @@
-import pkg from 'xml-xlsx-lite';
-const { Workbook } = pkg;
-
 export async function modifyExcelHandler(req, res) {
   try {
     const body = req.body || req || {};
@@ -13,6 +10,9 @@ export async function modifyExcelHandler(req, res) {
       return { success: false, error: "لا يوجد ملف Excel مرفق." };
     }
 
+    // ✅ استيراد xml-xlsx-lite ديناميكياً
+    const { Workbook } = await import('xml-xlsx-lite');
+    
     const buffer = Buffer.from(base64, 'base64');
     const workbook = new Workbook();
     await workbook.loadFromBuffer(buffer);
@@ -801,4 +801,4 @@ export default async function handler(req, res) {
     console.error("Error in modify route:", err);
     return res.status(500).json({ error: "خطأ في التعديل: " + err.message });
   }
-}
+        }
