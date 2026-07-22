@@ -1,101 +1,121 @@
-// api/excel/modify.js
-import ExcelJS from "exceljs";
+import XLSX from 'xlsx';
 
-function normalizeArabic(text) {
-  if (!text) return "";
-  return text
-    .toString()
-    .replace(/[أإآا]/g, "ا")
-    .replace(/[ة]/g, "ه")
-    .replace(/[ى]/g, "ي")
-    .replace(/[^ء-ي0-9 ]/g, "")
-    .trim();
-}
+export async function modifyExcelHandler(req, res) {
+  try {
+    // ✅ استقبال البيانات بشكل صحيح
+    const body = req.body || req || {};
+    const { base64, instruction } = body;
 
-function findClosestHeader(userWord, headers) {
-  const normalizedUser = normalizeArabic(userWord);
-  let bestMatch = null;
-  let bestScore = 0;
+    console.log(`📝 modifyExcelHandler: base64 موجود؟ ${!!base64}`);
+    console.log(`📝 instruction: ${instruction}`);
 
-  headers.forEach(h => {
-    const normalizedHeader = normalizeArabic(h);
-    let score = 0;
-
-    if (normalizedHeader === normalizedUser) score += 5;
-    if (normalizedHeader.includes(normalizedUser)) score += 3;
-    if (normalizedUser.includes(normalizedHeader)) score += 2;
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = h;
+    if (!base64) {
+      console.error("❌ base64 مفقود");
+      return {
+        success: false,
+        error: "لا يوجد ملف Excel مرفق."
+      };
     }
-  });
 
-  return bestMatch;
-}
+    // ✅ تحويل Base64 إلى Buffer
+    const buffer = Buffer.from(base64, 'base64');
+    console.log(`📦 حجم الملف: ${buffer.length} bytes`);
 
-// الدالة البرمجية المسؤولة عن تنفيذ التعديل مباشرة عبر السيرفر
-export async function modifyExcelHandler(payload) {
-  const { base64, editMap } = payload || {};
-  if (!base64) throw new Error("لا يوجد ملف Excel مرفق.");
+    // ✅ قراءة ملف Excel
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    
+    // ✅ تحويل البيانات إلى JSON
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    console.log(`📊 عدد الصفوف: ${jsonData.length}`);
 
-  const buffer = Buffer.from(base64, "base64");
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-
-  const sheet = workbook.worksheets[0];
-  const headers = sheet.getRow(1).values.slice(1);
-
-  if (editMap && editMap.operation === "add_column") {
-    const newColumnName = editMap.new_column?.name || editMap.new_column;
-    const userReference = editMap.position?.after;
-
-    const matchedHeader = findClosestHeader(userReference, headers);
-
-    if (matchedHeader) {
-      const insertIndex = headers.indexOf(matchedHeader) + 2;
-      sheet.spliceColumns(insertIndex, 0, [newColumnName]);
-
-      if (editMap.new_column?.style) {
-        const col = sheet.getColumn(insertIndex);
-        col.eachCell((cell) => {
-          if (editMap.new_column.style.backgroundColor) {
-            cell.fill = {
-              type: "pattern",
-              pattern: "solid",
-              fgColor: { argb: editMap.new_column.style.backgroundColor.replace("#", "") }
-            };
+    // ✅ تنفيذ التعديل المطلوب
+    let modifiedData = [...jsonData];
+    
+    // إذا كانت التعليمات تطلب إضافة عمود
+    const instructionLower = (instruction || "").toLowerCase();
+    if (instructionLower.includes('سبب الغياب') || instructionLower.includes('عمود')) {
+      // ✅ إضافة عمود جديد بعد عمود الغياب (العمود J في مثالنا)
+      // نبحث عن موقع عمود الغياب
+      const headerRow = modifiedData[0];
+      const colIndex = headerRow.findIndex(col => 
+        col && col.toString().includes('غياب')
+      );
+      
+      if (colIndex !== -1) {
+        // إضافة عمود جديد بعد عمود الغياب
+        modifiedData = modifiedData.map((row, index) => {
+          const newRow = [...row];
+          if (index === 0) {
+            // صف العناوين
+            newRow.splice(colIndex + 1, 0, 'سبب الغياب');
+          } else {
+            // باقي الصفوف (فارغة حالياً)
+            newRow.splice(colIndex + 1, 0, '');
           }
-          if (editMap.new_column.style.fontWeight === "bold") {
-            cell.font = { bold: true };
+          return newRow;
+        });
+        console.log(`✅ تم إضافة عمود "سبب الغياب" بعد عمود الغياب`);
+      } else {
+        console.warn(`⚠️ لم يتم العثور على عمود "غياب"`);
+        // نضيف العمود في النهاية
+        modifiedData = modifiedData.map((row, index) => {
+          const newRow = [...row];
+          if (index === 0) {
+            newRow.push('سبب الغياب');
+          } else {
+            newRow.push('');
           }
+          return newRow;
         });
       }
     }
-  }
 
-  const outputBuffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(outputBuffer);
+    // ✅ تحويل البيانات إلى ملف Excel جديد
+    const newWorksheet = XLSX.utils.aoa_to_sheet(modifiedData);
+    const newWorkbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, sheetName);
+
+    const outputBuffer = XLSX.write(newWorkbook, { type: 'buffer', bookType: 'xlsx' });
+
+    return {
+      success: true,
+      message: "✅ تم تعديل ملف Excel بنجاح",
+      fileBase64: outputBuffer.toString('base64'),
+      fileName: `modified_${Date.now()}.xlsx`,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    };
+
+  } catch (error) {
+    console.error("❌ Error in modifyExcelHandler:", error);
+    return {
+      success: false,
+      error: "حدث خطأ أثناء تعديل الملف: " + error.message
+    };
+  }
 }
 
-// مسار الـ API للطلبات المباشرة
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: "Method Not Allowed" });
   }
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const resultBuffer = await modifyExcelHandler(body);
+    const result = await modifyExcelHandler(body);
 
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", "attachment; filename=modified.xlsx");
+    if (result.success && result.fileBase64) {
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(result.fileName)}"`);
+      return res.status(200).send(Buffer.from(result.fileBase64, 'base64'));
+    }
 
-    return res.status(200).send(resultBuffer);
+    return res.status(400).json({ error: result.error || "فشل تعديل الملف" });
 
-  } catch (error) {  // تم تصحيح الخطأ هنا وإزالة كلمة Json الزائدة
-    console.error("خطأ أثناء تعديل الملف:", error);
-    return res.status(500).json({ error: "خطأ أثناء تعديل الملف: " + error.message });
+  } catch (err) {
+    console.error("Error in modify route:", err);
+    return res.status(500).json({ error: "خطأ في التعديل: " + err.message });
   }
-}
+  }
