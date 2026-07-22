@@ -387,7 +387,11 @@ document.addEventListener('DOMContentLoaded', () => {
             removeMessageFromDOM(loadingId);
 
             if (data && data.reply) {
-                appendMessageToDOM('assistant', data.reply);
+                // ✅ تحسين: استخدام innerHTML بدل innerText للسماح بالتنسيق
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'message ai';
+                msgDiv.innerHTML = data.reply.replace(/\n/g, '<br>');
+                chatArea.appendChild(msgDiv);
                 
                 let savedFileData = null;
                 if (data.fileBase64 && chatArea) {
