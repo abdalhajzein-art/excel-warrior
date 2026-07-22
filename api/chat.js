@@ -3,7 +3,7 @@ import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 import { modifyExcelHandler } from './excel/modify.js';
 import { generateExcelHandler } from './excel/generate.js';
-import XLSX from 'xlsx';
+import { Workbook } from 'xml-xlsx-lite';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
     const { message, excelJSON } = body || {};
 
     if (!process.env.GROQ_API_KEY) {
-      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GROQ_API_KEY غير مضاف في متغيرات البيئة." });
+      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GROQ_API_KEY غير مضاف في مت変رات البيئة." });
     }
 
     // =========================
@@ -67,7 +67,7 @@ export default async function handler(req, res) {
     const hasFile = excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64;
 
     // =========================
-    // 2) استقبال الملف وتحليل أولي
+    // 2) استقبال الملف وتحليل أولي (باستخدام xml-xlsx-lite)
     // =========================
     if (hasFile) {
       const fileObj = excelJSON[0];
@@ -83,21 +83,40 @@ export default async function handler(req, res) {
       } else {
         try {
           const buffer = Buffer.from(extractedBase64, 'base64');
-          const workbook = XLSX.read(buffer, { type: 'buffer' });
-          const firstSheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[firstSheetName];
-          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-          // ✅ تحويل الملف بالكامل إلى JSON
-          const fullData = XLSX.utils.sheet_to_json(worksheet);
+          const workbook = new Workbook();
+          await workbook.loadFromBuffer(buffer);
+          
+          const worksheet = workbook.getWorksheet(1);
+          if (!worksheet) {
+            throw new Error("لا يوجد ورقة عمل في الملف");
+          }
+          
+          // ✅ قراءة البيانات باستخدام xml-xlsx-lite
+          const rowCount = worksheet.getRowCount();
+          const colCount = worksheet.getColumnCount();
+          
+          // ✅ بناء JSON من البيانات
+          const fullData = [];
+          const firstSheetName = worksheet.name || 'Sheet1';
+          
+          for (let i = 1; i <= rowCount; i++) {
+            const row = [];
+            for (let j = 1; j <= colCount; j++) {
+              const cell = worksheet.getCell(i, j);
+              row.push(cell.value !== undefined ? cell.value : '');
+            }
+            fullData.push(row);
+          }
+          
+          const rawData = fullData;
           
           fileSummary = `[ملف مرفق: ${fileName}]\n`;
           fileSummary += `نوع الملف: إكسل\n`;
-          fileSummary += `عدد الصفوف: ${rawData.length}\n`;
+          fileSummary += `عدد الصفوف: ${rowCount}\n`;
           fileSummary += `الشيت الأولى: ${firstSheetName}\n`;
-          fileSummary += `\nالبيانات كاملة (JSON):\n${JSON.stringify(fullData, null, 2)}`;
+          fileSummary += `\nالبيانات كاملة (JSON):\n${JSON.stringify(fullData.slice(0, 20), null, 2)}`; // أول 20 صف فقط
           
-          console.log(`✅ تم تحليل الملف: ${fileName}, عدد الصفوف: ${rawData.length}`);
+          console.log(`✅ تم تحليل الملف: ${fileName}, عدد الصفوف: ${rowCount}`);
           
         } catch (parseErr) {
           console.error("Error parsing Excel in chat:", parseErr);
@@ -369,4 +388,4 @@ async function handleManualFallback(res, userContent, extractedBase64) {
   return res.json({ 
     reply: "تمام… عفواً، ما قدرت أفهم طلبك بوضوح. حاول تطلب تعديل أو توليد ملف بشكل مباشر." 
   });
-            }
+}
