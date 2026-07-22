@@ -3,34 +3,19 @@ import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 import { modifyExcelHandler } from './excel/modify.js';
 import { generateExcelHandler } from './excel/generate.js';
+import XLSX from 'xlsx'; // ✅ للقراءة الأساسية (آمن ومستقر)
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ✅ دالة للتحقق من إصدار المكتبة
-async function checkLibraryVersion() {
+// ✅ دالة للتحقق من وجود المكتبة المتقدمة
+async function getAdvancedWorkbook() {
   try {
-    const pkg = await import('@office-kit/xlsx/package.json');
-    const version = pkg.version || '0.0.0';
-    const [major, minor, patch] = version.split('.').map(Number);
-    if (major < 1) {
-      return {
-        isOutdated: true,
-        message: `⚠️ المكتبة في نسخة تجريبية (v${version}). يرجى التحديث إلى v1.0.0 أو أحدث.`
-      };
-    }
-    return { isOutdated: false };
+    const module = await import('@office-kit/xlsx');
+    return module.Workbook;
   } catch (err) {
-    return {
-      isOutdated: true,
-      message: `❌ تعذّر قراءة إصدار المكتبة. يرجى إعادة تثبيت @office-kit/xlsx.`
-    };
+    console.warn('⚠️ @office-kit/xlsx غير متوفرة، سنستخدم xlsx الأساسية');
+    return null;
   }
-}
-
-// ✅ دالة مساعدة لاستيراد المكتبة (ديناميكياً)
-async function getWorkbook() {
-  const module = await import('@office-kit/xlsx');
-  return module.Workbook;
 }
 
 // ✅ تعريف الأدوات لـ Groq (مبسطة)
@@ -73,14 +58,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ✅ التحقق من الإصدار أولاً
-    const versionCheck = await checkLibraryVersion();
-    if (versionCheck.isOutdated) {
-      return res.status(500).json({ 
-        reply: versionCheck.message 
-      });
-    }
-
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const { message, excelJSON } = body || {};
 
@@ -101,7 +78,7 @@ export default async function handler(req, res) {
     const hasFile = excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64;
 
     // =========================
-    // 2) استقبال الملف وتحليل أولي (باستخدام @office-kit/xlsx)
+    // 2) استقبال الملف وتحليل أولي (باستخدام xlsx أولاً)
     // =========================
     if (hasFile) {
       const fileObj = excelJSON[0];
@@ -115,49 +92,70 @@ export default async function handler(req, res) {
         console.error("❌ Base64 مفقود من الملف المرفق");
         fileSummary = `[ملف مرفق: ${fileName} - تعذّر قراءة الملف]`;
       } else {
+        let useAdvanced = false;
+        let rowCount = 0;
+        let colCount = 0;
+        let fullData = [];
+        let firstSheetName = 'Sheet1';
+
         try {
-          // ✅ استيراد Workbook ديناميكياً
-          const Workbook = await getWorkbook();
-          
-          const buffer = Buffer.from(extractedBase64, 'base64');
-          const workbook = new Workbook();
-          await workbook.loadFromBuffer(buffer);
-          
-          const worksheet = workbook.getWorksheet(1);
-          if (!worksheet) {
-            throw new Error("لا يوجد ورقة عمل في الملف");
-          }
-          
-          // ✅ قراءة البيانات باستخدام @office-kit/xlsx
-          const rowCount = worksheet.getRowCount();
-          const colCount = worksheet.getColumnCount();
-          
-          // ✅ بناء JSON من البيانات
-          const fullData = [];
-          const firstSheetName = worksheet.name || 'Sheet1';
-          
-          for (let i = 1; i <= rowCount; i++) {
-            const row = [];
-            for (let j = 1; j <= colCount; j++) {
-              const cell = worksheet.getCell(i, j);
-              row.push(cell.value !== undefined ? cell.value : '');
+          // ✅ محاولة استخدام المكتبة المتقدمة أولاً
+          const AdvancedWorkbook = await getAdvancedWorkbook();
+          if (AdvancedWorkbook) {
+            const buffer = Buffer.from(extractedBase64, 'base64');
+            const workbook = new AdvancedWorkbook();
+            await workbook.loadFromBuffer(buffer);
+            
+            const worksheet = workbook.getWorksheet(1);
+            if (worksheet) {
+              useAdvanced = true;
+              rowCount = worksheet.getRowCount();
+              colCount = worksheet.getColumnCount();
+              firstSheetName = worksheet.name || 'Sheet1';
+              
+              for (let i = 1; i <= rowCount; i++) {
+                const row = [];
+                for (let j = 1; j <= colCount; j++) {
+                  const cell = worksheet.getCell(i, j);
+                  row.push(cell.value !== undefined ? cell.value : '');
+                }
+                fullData.push(row);
+              }
+              console.log(`✅ تم تحليل الملف باستخدام @office-kit/xlsx: ${fileName}, عدد الصفوف: ${rowCount}`);
             }
-            fullData.push(row);
           }
-          
-          const rawData = fullData;
-          
+        } catch (advErr) {
+          console.warn('⚠️ فشل استخدام @office-kit/xlsx، نعود لـ xlsx:', advErr.message);
+          useAdvanced = false;
+        }
+
+        // ✅ إذا فشلت المتقدمة، نستخدم xlsx
+        if (!useAdvanced) {
+          try {
+            const buffer = Buffer.from(extractedBase64, 'base64');
+            const workbook = XLSX.read(buffer, { type: 'buffer' });
+            firstSheetName = workbook.SheetNames[0] || 'Sheet1';
+            const worksheet = workbook.Sheets[firstSheetName];
+            const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            rowCount = data.length;
+            colCount = data[0] ? data[0].length : 0;
+            fullData = data;
+            
+            console.log(`✅ تم تحليل الملف باستخدام xlsx: ${fileName}, عدد الصفوف: ${rowCount}`);
+          } catch (xlsxErr) {
+            console.error("Error parsing Excel with xlsx:", xlsxErr);
+            fileSummary = `[ملف مرفق: ${fileName} - تعذّر تحليل المحتوى]`;
+          }
+        }
+
+        // ✅ بناء الملخص
+        if (fullData.length > 0) {
           fileSummary = `[ملف مرفق: ${fileName}]\n`;
           fileSummary += `نوع الملف: إكسل\n`;
           fileSummary += `عدد الصفوف: ${rowCount}\n`;
           fileSummary += `الشيت الأولى: ${firstSheetName}\n`;
           fileSummary += `\nالبيانات كاملة (JSON):\n${JSON.stringify(fullData.slice(0, 20), null, 2)}`; // أول 20 صف فقط
-          
-          console.log(`✅ تم تحليل الملف: ${fileName}, عدد الصفوف: ${rowCount}`);
-          
-        } catch (parseErr) {
-          console.error("Error parsing Excel in chat:", parseErr);
-          fileSummary = `[ملف مرفق: ${fileName} - تعذّر تحليل المحتوى]`;
         }
       }
     } else {
@@ -187,7 +185,6 @@ export default async function handler(req, res) {
       });
     } catch (groqErr) {
       console.error("❌ Groq API Error:", groqErr);
-      // إذا فشل Groq، ننتقل للـ Manual Fallback
       return handleManualFallback(res, userContent, extractedBase64);
     }
 
@@ -205,14 +202,12 @@ export default async function handler(req, res) {
         toolArgs = JSON.parse(toolCall.function.arguments);
       } catch (parseErr) {
         console.error("❌ Failed to parse tool arguments:", parseErr);
-        // إذا فشل الـ JSON parsing، ننتقل للـ Manual Fallback
         return handleManualFallback(res, userContent, extractedBase64);
       }
 
       console.log(`🔧 Groq استدعى الأداة: ${toolName}`);
       console.log(`📦 Arguments:`, toolArgs);
 
-      // ✅ تنفيذ الأداة المناسبة
       if (toolName === "excel_modify") {
         if (!toolArgs.base64 && extractedBase64) {
           toolArgs.base64 = extractedBase64;
@@ -261,14 +256,13 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // 4.5) Manual Fallback: استخدام كلمات مفتاحية موسعة
+    // 4.5) Manual Fallback
     // =========================
     if (!responseMessage.tool_calls || responseMessage.tool_calls.length === 0) {
       console.log("🔍 Groq ما استدعى أداة، نستخدم الكلمات المفتاحية");
       
       const lowerMsg = (userContent || "").toLowerCase();
       
-      // ✅ كلمات مفتاحية موسعة للتعديل
       const modifyKeywords = [
         'عدل', 'تعديل', 'غيّر', 'تغيير', 'edit', 'update',
         'اضف', 'أضف', 'حذف', 'ازل', 'إزالة', 'أدخل', 'إدراج',
@@ -354,14 +348,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("❌ خطأ في Groq:", error);
-    
-    // ✅ إذا كان الخطأ بسبب عدم توافق الإصدار
-    if (error.message.includes('version') || error.message.includes('unsupported') || error.message.includes('import')) {
-      return res.status(500).json({
-        reply: `⚠️ تعذّرت العملية بسبب قدم إصدار المكتبة. يرجى تحديث @office-kit/xlsx إلى آخر إصدار.`
-      });
-    }
-    
     return res.status(500).json({
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في الاتصال بـ Groq")
     });
@@ -433,4 +419,4 @@ async function handleManualFallback(res, userContent, extractedBase64) {
   return res.json({ 
     reply: "تمام… عفواً، ما قدرت أفهم طلبك بوضوح. حاول تطلب تعديل أو توليد ملف بشكل مباشر." 
   });
-            }
+          }
