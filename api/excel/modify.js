@@ -1,5 +1,36 @@
+import { Workbook } from '@office-kit/xlsx';
+
+// ✅ دالة للتحقق من إصدار المكتبة
+async function checkLibraryVersion() {
+  try {
+    const { version } = await import('@office-kit/xlsx/package.json');
+    const [major, minor, patch] = version.split('.').map(Number);
+    if (major < 1) {
+      return {
+        isOutdated: true,
+        message: `⚠️ المكتبة في نسخة تجريبية (v${version}). يرجى التحديث إلى v1.0.0 أو أحدث.`
+      };
+    }
+    return { isOutdated: false };
+  } catch (err) {
+    return {
+      isOutdated: true,
+      message: `❌ تعذّر قراءة إصدار المكتبة. يرجى إعادة تثبيت @office-kit/xlsx.`
+    };
+  }
+}
+
 export async function modifyExcelHandler(req, res) {
   try {
+    // ✅ التحقق من الإصدار أولاً
+    const versionCheck = await checkLibraryVersion();
+    if (versionCheck.isOutdated) {
+      return {
+        success: false,
+        error: versionCheck.message
+      };
+    }
+
     const body = req.body || req || {};
     const { base64, instruction } = body;
 
@@ -10,9 +41,6 @@ export async function modifyExcelHandler(req, res) {
       return { success: false, error: "لا يوجد ملف Excel مرفق." };
     }
 
-    // ✅ استيراد xml-xlsx-lite ديناميكياً
-    const { Workbook } = await import('xml-xlsx-lite');
-    
     const buffer = Buffer.from(base64, 'base64');
     const workbook = new Workbook();
     await workbook.loadFromBuffer(buffer);
@@ -772,6 +800,15 @@ export async function modifyExcelHandler(req, res) {
 
   } catch (error) {
     console.error("❌ Error in modifyExcelHandler:", error);
+    
+    // ✅ إذا كان الخطأ بسبب عدم توافق الإصدار
+    if (error.message.includes('version') || error.message.includes('unsupported') || error.message.includes('import')) {
+      return {
+        success: false,
+        error: `⚠️ تعذّرت العملية بسبب قدم إصدار المكتبة. يرجى تحديث @office-kit/xlsx إلى آخر إصدار.`
+      };
+    }
+    
     return {
       success: false,
       error: "حدث خطأ أثناء تعديل الملف: " + error.message
@@ -801,4 +838,4 @@ export default async function handler(req, res) {
     console.error("Error in modify route:", err);
     return res.status(500).json({ error: "خطأ في التعديل: " + err.message });
   }
-        }
+              }
