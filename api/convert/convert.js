@@ -1,16 +1,12 @@
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
-// ❌ حذف هذا السطر
-// import { Workbook } from '@office-kit/xlsx';
-
-// ✅ استخدم الاستيراد الديناميكي داخل الدالة
-const { Workbook } = await import('@office-kit/xlsx');
 
 // ✅ دالة للتحقق من إصدار المكتبة
 async function checkLibraryVersion() {
   try {
-    const { version } = await import('@office-kit/xlsx/package.json');
+    const pkg = await import('@office-kit/xlsx/package.json');
+    const version = pkg.version || '0.0.0';
     const [major, minor, patch] = version.split('.').map(Number);
     if (major < 1) {
       return {
@@ -25,6 +21,12 @@ async function checkLibraryVersion() {
       message: `❌ تعذّر قراءة إصدار المكتبة. يرجى إعادة تثبيت @office-kit/xlsx.`
     };
   }
+}
+
+// ✅ دالة مساعدة لاستيراد المكتبة (ديناميكياً)
+async function getWorkbook() {
+  const module = await import('@office-kit/xlsx');
+  return module.Workbook;
 }
 
 export async function convertFileHandler(req, res) {
@@ -47,6 +49,9 @@ export async function convertFileHandler(req, res) {
       };
     }
 
+    // ✅ استيراد Workbook ديناميكياً
+    const Workbook = await getWorkbook();
+    
     const buffer = Buffer.from(base64, 'base64');
     const format = targetFormat.toLowerCase();
     const source = (sourceFormat || '').toLowerCase();
@@ -390,4 +395,4 @@ export default async function handler(req, res) {
     console.error("Error in convert route:", err);
     return res.status(500).json({ error: "خطأ في التحويل: " + err.message });
   }
-          }
+  }
