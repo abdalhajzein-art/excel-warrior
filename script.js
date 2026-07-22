@@ -319,25 +319,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let displayMessage = message || "";
 
-        if (message && currentFileName) {
-            displayMessage = `${message}`;
-        }
-
         let payloadExcel = null;
+        let fileDisplayName = null;
         if (currentFileToProcess) {
             try {
                 payloadExcel = await readFileAsBase64(currentFileToProcess);
+                fileDisplayName = currentFileName;
+                console.log("✅ File converted to Base64:", fileDisplayName);
             } catch (err) {
-                console.error("Error reading file:", err);
+                console.error("❌ Error reading file:", err);
+                appendMessageToDOM('assistant', '⚠️ تعذر قراءة الملف. حاول مرة أخرى.');
+                return;
             }
         }
 
-        appendMessageToDOM('user', displayMessage);
-        saveMessageToCurrentSession('user', displayMessage);
+        // ✅ إضافة رسالة المستخدم مع الملف (في الشات)
+        const userMessageDiv = document.createElement('div');
+        userMessageDiv.className = 'message user';
+        
+        const textSpan = document.createElement('div');
+        textSpan.innerText = displayMessage || '📎 ملف مرفق';
+        userMessageDiv.appendChild(textSpan);
+        
+        if (fileDisplayName) {
+            const fileTag = document.createElement('div');
+            fileTag.style.cssText = `
+                display: inline-block;
+                margin-top: 6px;
+                background: rgba(212, 175, 55, 0.15);
+                color: #d4af37;
+                padding: 4px 10px;
+                border-radius: 6px;
+                font-size: 12px;
+                border: 1px solid rgba(212, 175, 55, 0.3);
+            `;
+            fileTag.innerText = `📎 ${fileDisplayName}`;
+            userMessageDiv.appendChild(fileTag);
+        }
+        
+        chatArea.appendChild(userMessageDiv);
+        chatArea.scrollTop = chatArea.scrollHeight;
+        
+        // ✅ حفظ الرسالة في الجلسة
+        saveMessageToCurrentSession('user', displayMessage || '📎 ملف مرفق', {
+            fileName: fileDisplayName,
+            fileData: payloadExcel
+        });
 
         let sessions = getStoredSessions();
         if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
-            sessions[currentSessionId].title = displayMessage.length > 20 ? displayMessage.substring(0, 20) + '...' : displayMessage;
+            sessions[currentSessionId].title = displayMessage.length > 20 ? displayMessage.substring(0, 20) + '...' : displayMessage || 'ملف مرفق';
             saveSessions(sessions);
             renderSessionsList();
         }
@@ -345,11 +376,9 @@ document.addEventListener('DOMContentLoaded', () => {
         userInput.value = '';
         userInput.style.height = 'auto';
 
-        // لا نمسح الملف بعد الإرسال — نخليه للجلسة
         isFileLoading = false;
         updateSendButtonState();
 
-        // إعادة رسم Bubble الملف بعد الإرسال
         if (fileBubbles && attachedFileName) {
             fileBubbles.innerHTML = `
                 <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; background: rgba(212, 175, 55, 0.15); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(212, 175, 55, 0.4); opacity: 1; margin-bottom: 6px;">
@@ -377,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
-                    message: displayMessage, 
+                    message: displayMessage || "📎 ملف مرفق", 
                     excelJSON: payloadExcel, 
                     sessionId: currentSessionId 
                 })
@@ -387,7 +416,6 @@ document.addEventListener('DOMContentLoaded', () => {
             removeMessageFromDOM(loadingId);
 
             if (data && data.reply) {
-                // ✅ تحسين: استخدام innerHTML بدل innerText للسماح بالتنسيق
                 const msgDiv = document.createElement('div');
                 msgDiv.className = 'message ai';
                 msgDiv.innerHTML = data.reply.replace(/\n/g, '<br>');
@@ -414,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 appendMessageToDOM('assistant', '⚠️ حدث خطأ في استجابة السيرفر.');
             }
         } catch (error) {
-            console.error('Fetch Error:', error);
+            console.error('❌ Fetch Error:', error);
             removeMessageFromDOM(loadingId);
             appendMessageToDOM('assistant', '⚠️ تعذر الاتصال بالسيرفر.');
         }
