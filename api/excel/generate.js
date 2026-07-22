@@ -1,19 +1,7 @@
 import Groq from 'groq-sdk';
-import XLSX from 'xlsx'; // ✅ للتوليد الأساسي (آمن ومستقر)
+import ExcelJS from 'exceljs';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-// ✅ دالة للتحقق من وجود المكتبة المتقدمة
-async function getAdvancedWorkbook() {
-  try {
-    // ✅ محاولة استيراد المكتبة المتقدمة
-    const module = await import('@office-kit/xlsx');
-    return module.Workbook;
-  } catch (err) {
-    console.warn('⚠️ @office-kit/xlsx غير متوفرة، سنستخدم xlsx الأساسية');
-    return null;
-  }
-}
 
 export async function generateExcelHandler(req, res) {
   try {
@@ -48,31 +36,7 @@ export async function generateExcelHandler(req, res) {
   ],
   "formulas": {
     "خلية_مثال": "=SUM(A1:A10)"
-  },
-  "charts": [
-    {
-      "type": "column|line|pie|bar",
-      "dataRange": "A1:B10",
-      "title": "عنوان المخطط"
-    }
-  ],
-  "pivotTables": [
-    {
-      "sourceRange": "A1:D100",
-      "rows": ["اسم_عمود_للصفوف"],
-      "cols": ["اسم_عمود_للأعمدة"],
-      "values": [{ "name": "اسم_عمود_القيم", "agg": "sum|count|average", "displayName": "اسم_العرض" }]
-    }
-  ],
-  "conditionalFormats": [
-    {
-      "range": "A1:A10",
-      "type": "cellValue",
-      "operator": "greaterThan",
-      "value": 100,
-      "format": { "fill": { "color": "FF0000" } }
-    }
-  ]
+  }
 }
 
 📌 **مثال لطلب "ولّد لي جدول حضور وغياب بـ 10 موظفين":**
@@ -86,22 +50,7 @@ export async function generateExcelHandler(req, res) {
   "formulas": {
     "I4": "=COUNTIF(D4:H4,\"حضور\")",
     "M4": "=IF(COUNTA(D4:H4)=0,0,I4/COUNTA(D4:H4))"
-  },
-  "charts": [
-    {
-      "type": "column",
-      "dataRange": "A4:B13",
-      "title": "عدد الحضور لكل موظف"
-    }
-  ],
-  "pivotTables": [
-    {
-      "sourceRange": "A1:M13",
-      "rows": ["القسم"],
-      "cols": ["اليوم 1"],
-      "values": [{ "name": "نسبة الحضور", "agg": "average", "displayName": "متوسط نسبة الحضور" }]
-    }
-  ]
+  }
 }`
         },
         {
@@ -137,129 +86,111 @@ export async function generateExcelHandler(req, res) {
     }
 
     // ============================================================
-    // 📊 توليد الملف
+    // 📊 توليد الملف باستخدام exceljs (مع الألوان)
     // ============================================================
-    
-    // ✅ محاولة استخدام المكتبة المتقدمة
-    let AdvancedWorkbook = await getAdvancedWorkbook();
-    let useAdvanced = false;
-    let workbook, worksheet;
+    console.log('📊 استخدام exceljs للتوليد مع الألوان');
 
-    // ✅ إذا كان الطلب يحتوي مخططات أو جداول محورية، نستخدم المكتبة المتقدمة
-    const needsAdvanced = (structure.charts && structure.charts.length > 0) || 
-                         (structure.pivotTables && structure.pivotTables.length > 0) ||
-                         (structure.conditionalFormats && structure.conditionalFormats.length > 0);
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(structure.sheetName || 'Sheet1');
 
-    if (AdvancedWorkbook && needsAdvanced) {
-      try {
-        console.log('🔧 استخدام المكتبة المتقدمة @office-kit/xlsx');
-        workbook = new AdvancedWorkbook();
-        worksheet = workbook.addWorksheet(structure.sheetName || 'Sheet1');
-        useAdvanced = true;
-      } catch (err) {
-        console.warn('⚠️ فشل استخدام المكتبة المتقدمة، نعود لـ xlsx:', err.message);
-        useAdvanced = false;
-      }
-    }
+    // ✅ إضافة العناوين مع ألوان
+    const headerRow = worksheet.getRow(1);
+    structure.headers.forEach((header, index) => {
+      const cell = headerRow.getCell(index + 1);
+      cell.value = header;
+      // ✅ تنسيق العنوان: خلفية زرقاء، خط أبيض، عريض
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF2E75B6' } // أزرق
+      };
+      cell.font = {
+        color: { argb: 'FFFFFFFF' }, // أبيض
+        bold: true,
+        size: 12
+      };
+      cell.alignment = {
+        horizontal: 'center',
+        vertical: 'middle'
+      };
+      cell.border = {
+        top: { style: 'thin' },
+        bottom: { style: 'thin' },
+        left: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    });
 
-    // ✅ إذا فشلت المتقدمة أو الطلب بسيط، نستخدم xlsx
-    if (!useAdvanced) {
-      console.log('📊 استخدام xlsx للتوليد الأساسي');
-      const data = [structure.headers || []];
-      if (structure.rows) {
-        structure.rows.forEach(row => data.push(row));
-      }
-      
-      const ws = XLSX.utils.aoa_to_sheet(data);
-      workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, ws, structure.sheetName || 'Sheet1');
-      
-      // ✅ نعيد تعريف worksheet عشان الكود يشتغل
-      worksheet = ws;
-    }
-
-    // ✅ إضافة الصيغ (إذا كانت متقدمة)
-    if (useAdvanced && structure.formulas) {
-      Object.entries(structure.formulas).forEach(([cell, formula]) => {
-        try {
-          worksheet.getCell(cell).value = { formula: formula };
-        } catch (e) {
-          console.warn(`⚠️ فشل إضافة الصيغة في ${cell}: ${e.message}`);
-        }
-      });
-    }
-
-    // ✅ إضافة المخططات (إذا كانت متقدمة)
-    if (useAdvanced && structure.charts) {
-      structure.charts.forEach((chart, index) => {
-        try {
-          const chartSheet = workbook.addWorksheet(`مخطط ${index + 1}`);
-          workbook.addChart({
-            type: chart.type || 'column',
-            dataSheet: worksheet.name || 'Sheet1',
-            dataRange: chart.dataRange || 'A1:B10',
-            targetSheet: chartSheet.name,
-            anchorCell: 'A1',
-            title: chart.title || 'مخطط البيانات'
-          });
-        } catch (e) {
-          console.warn(`⚠️ فشل إضافة المخطط ${index + 1}: ${e.message}`);
-        }
-      });
-    }
-
-    // ✅ إضافة الجداول المحورية (إذا كانت متقدمة)
-    if (useAdvanced && structure.pivotTables) {
-      structure.pivotTables.forEach((pivot, index) => {
-        try {
-          const pivotSheet = workbook.addWorksheet(`جدول محوري ${index + 1}`);
-          workbook.addPivotTable({
-            sourceSheet: worksheet.name || 'Sheet1',
-            sourceRange: pivot.sourceRange || 'A1:Z100',
-            targetSheet: pivotSheet.name,
-            anchorCell: 'A3',
-            layout: {
-              rows: pivot.rows ? pivot.rows.map(name => ({ name })) : [{ name: 'الصفوف' }],
-              cols: pivot.cols ? pivot.cols.map(name => ({ name })) : [{ name: 'الأعمدة' }],
-              values: pivot.values || [{ name: 'القيم', agg: 'sum', displayName: 'الإجمالي' }]
-            }
-          });
-        } catch (e) {
-          console.warn(`⚠️ فشل إضافة الجدول المحوري ${index + 1}: ${e.message}`);
-        }
-      });
-    }
-
-    // ✅ إضافة التنسيق الشرطي (إذا كانت متقدمة)
-    if (useAdvanced && structure.conditionalFormats) {
-      structure.conditionalFormats.forEach((cf) => {
-        try {
-          const range = worksheet.getRange(cf.range);
-          if (cf.type === 'cellValue') {
-            range.conditionalFormat({
-              type: 'cellValue',
-              operator: cf.operator || 'greaterThan',
-              value: cf.value || 0,
-              format: cf.format || { fill: { color: 'FF0000' } }
-            });
+    // ✅ إضافة الصفوف مع تنسيق متناوب (Zebra Striping)
+    if (structure.rows && structure.rows.length > 0) {
+      structure.rows.forEach((row, rowIndex) => {
+        const excelRow = worksheet.getRow(rowIndex + 2);
+        row.forEach((value, colIndex) => {
+          const cell = excelRow.getCell(colIndex + 1);
+          cell.value = value;
+          
+          // ✅ تنسيق متناوب: صفوف زوجية لونها فاتح
+          if (rowIndex % 2 === 0) {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFF2F2F2' } // رمادي فاتح
+            };
+          } else {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFFFFF' } // أبيض
+            };
           }
+          
+          // ✅ محاذاة النص
+          cell.alignment = {
+            horizontal: 'center',
+            vertical: 'middle'
+          };
+          
+          // ✅ حدود للخلايا
+          cell.border = {
+            top: { style: 'thin' },
+            bottom: { style: 'thin' },
+            left: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+        });
+      });
+    }
+
+    // ✅ تطبيق الصيغ (إذا وجدت)
+    if (structure.formulas) {
+      Object.entries(structure.formulas).forEach(([cellRef, formula]) => {
+        try {
+          const cell = worksheet.getCell(cellRef);
+          cell.value = { formula: formula };
         } catch (e) {
-          console.warn(`⚠️ فشل إضافة التنسيق الشرطي: ${e.message}`);
+          console.warn(`⚠️ فشل إضافة الصيغة في ${cellRef}: ${e.message}`);
         }
       });
     }
+
+    // ✅ ضبط عرض الأعمدة تلقائياً
+    worksheet.columns.forEach((column) => {
+      let maxLength = 10;
+      column.eachCell({ includeEmpty: true }, (cell) => {
+        const cellValue = cell.value ? cell.value.toString() : '';
+        if (cellValue.length > maxLength) {
+          maxLength = cellValue.length;
+        }
+      });
+      column.width = Math.min(maxLength + 2, 30);
+    });
 
     // ✅ حفظ الملف
-    let outputBuffer;
-    if (useAdvanced) {
-      outputBuffer = await workbook.writeToBuffer();
-    } else {
-      outputBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-    }
+    const outputBuffer = await workbook.xlsx.writeBuffer();
 
     return {
       success: true,
-      message: `✅ تم توليد الملف بنجاح بناءً على طلبك: "${instruction}"`,
+      message: `✅ تم توليد الملف بنجاح مع تنسيق احترافي`,
       fileBase64: outputBuffer.toString('base64'),
       fileName: `generated_${Date.now()}.xlsx`,
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -296,4 +227,4 @@ export default async function handler(req, res) {
     console.error("Error in generate route:", err);
     return res.status(500).json({ error: "خطأ في التوليد: " + err.message });
   }
-                             }
+}
