@@ -3,8 +3,6 @@ import { SYSTEM_PROMPT } from "./agent/system.js";
 import { toolsRegistry, toolsDefinition } from "./tools/index.js";
 import { modifyExcelHandler } from './excel/modify.js';
 import { generateExcelHandler } from './excel/generate.js';
-import pkg from 'xml-xlsx-lite';
-const { Workbook } = pkg;
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -52,7 +50,7 @@ export default async function handler(req, res) {
     const { message, excelJSON } = body || {};
 
     if (!process.env.GROQ_API_KEY) {
-      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GROQ_API_KEY غير مضاف في مت変رات البيئة." });
+      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GROQ_API_KEY غير مضاف في متغيرات البيئة." });
     }
 
     // =========================
@@ -83,6 +81,9 @@ export default async function handler(req, res) {
         fileSummary = `[ملف مرفق: ${fileName} - تعذّر قراءة الملف]`;
       } else {
         try {
+          // ✅ استيراد xml-xlsx-lite ديناميكياً
+          const { Workbook } = await import('xml-xlsx-lite');
+          
           const buffer = Buffer.from(extractedBase64, 'base64');
           const workbook = new Workbook();
           await workbook.loadFromBuffer(buffer);
