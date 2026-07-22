@@ -333,7 +333,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        // =========================
         // ✅ إضافة رسالة المستخدم مع الملف (في الشات)
+        // =========================
         const userMessageDiv = document.createElement('div');
         userMessageDiv.className = 'message user';
         
@@ -360,12 +362,17 @@ document.addEventListener('DOMContentLoaded', () => {
         chatArea.appendChild(userMessageDiv);
         chatArea.scrollTop = chatArea.scrollHeight;
         
+        // =========================
         // ✅ حفظ الرسالة في الجلسة
+        // =========================
         saveMessageToCurrentSession('user', displayMessage || '📎 ملف مرفق', {
             fileName: fileDisplayName,
             fileData: payloadExcel
         });
 
+        // =========================
+        // ✅ تحديث عنوان الجلسة
+        // =========================
         let sessions = getStoredSessions();
         if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
             sessions[currentSessionId].title = displayMessage.length > 20 ? displayMessage.substring(0, 20) + '...' : displayMessage || 'ملف مرفق';
@@ -373,32 +380,27 @@ document.addEventListener('DOMContentLoaded', () => {
             renderSessionsList();
         }
 
+        // =========================
+        // ✅ مسح حقل الإدخال
+        // =========================
         userInput.value = '';
         userInput.style.height = 'auto';
 
+        // =========================
+        // ✅ **إزالة الملف من صندوق الكتابة نهائياً**
+        // =========================
+        selectedFileObject = null;
+        attachedFileName = null;
         isFileLoading = false;
+        fileInput.value = '';
+        if (fileBubbles) {
+            fileBubbles.innerHTML = '';
+        }
         updateSendButtonState();
 
-        if (fileBubbles && attachedFileName) {
-            fileBubbles.innerHTML = `
-                <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; background: rgba(212, 175, 55, 0.15); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(212, 175, 55, 0.4); opacity: 1; margin-bottom: 6px;">
-                    <span>📎 ${attachedFileName}</span>
-                    <button type="button" id="removeFileBtn" style="background:none; border:none; color: #ff5555; cursor:pointer; font-weight:bold; font-size:14px; padding:0; line-height:1;" title="إزالة الملف">&times;</button>
-                </div>
-            `;
-
-            const removeFileBtn = document.getElementById('removeFileBtn');
-            if (removeFileBtn) {
-                removeFileBtn.addEventListener('click', () => {
-                    selectedFileObject = null;
-                    attachedFileName = null;
-                    fileInput.value = '';
-                    fileBubbles.innerHTML = '';
-                    updateSendButtonState();
-                });
-            }
-        }
-
+        // =========================
+        // ✅ رسالة "جاري المعالجة"
+        // =========================
         const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة ... ⏳', true);
 
         try {
