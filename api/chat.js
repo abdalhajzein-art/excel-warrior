@@ -7,20 +7,20 @@ import XLSX from 'xlsx';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ✅ تعريف الأدوات لـ Groq
+// ✅ تعريف الأدوات لـ Groq (مبسطة)
 const tools = [
   {
     type: "function",
     function: {
       name: "excel_modify",
-      description: "تعديل ملف Excel موجود بناءً على تعليمات المستخدم (إضافة عمود، تعديل بيانات، حذف صفوف).",
+      description: "تعديل ملف Excel موجود. استخدم هذه الأداة عندما يطلب المستخدم تعديل ملف مرفق.",
       parameters: {
         type: "object",
         properties: {
-          base64: { type: "string", description: "ملف Excel بصيغة Base64" },
-          instruction: { type: "string", description: "تعليمات التعديل المطلوبة" }
+          base64: { type: "string", description: "ملف Excel بصيغة Base64 (يتم تمريره تلقائياً)" },
+          instruction: { type: "string", description: "تعليمات التعديل المطلوبة من المستخدم" }
         },
-        required: ["base64", "instruction"]
+        required: ["instruction"]
       }
     }
   },
@@ -28,7 +28,7 @@ const tools = [
     type: "function",
     function: {
       name: "excel_generate",
-      description: "توليد ملف Excel جديد بناءً على تعليمات المستخدم.",
+      description: "توليد ملف Excel جديد. استخدم هذه الأداة عندما يطلب المستخدم إنشاء ملف جديد.",
       parameters: {
         type: "object",
         properties: {
@@ -105,17 +105,24 @@ export default async function handler(req, res) {
     // =========================
     // 3) استدعاء Groq مع الأدوات
     // =========================
-    const completion = await groq.chat.completions.create({
-      model: "openai/gpt-oss-120b",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: fullMessage }
-      ],
-      temperature: 0.3,
-      max_completion_tokens: 512,
-      tools: tools,
-      tool_choice: "auto"
-    });
+    let completion;
+    try {
+      completion = await groq.chat.completions.create({
+        model: "openai/gpt-oss-120b",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: fullMessage }
+        ],
+        temperature: 0.3,
+        max_completion_tokens: 512,
+        tools: tools,
+        tool_choice: "auto"
+      });
+    } catch (groqErr) {
+      console.error("❌ Groq API Error:", groqErr);
+      // إذا فشل Groq، ننتقل للـ Manual Fallback
+      return handleManualFallback(res, userContent, extractedBase64);
+    }
 
     const responseMessage = completion.choices[0].message;
 
@@ -125,19 +132,25 @@ export default async function handler(req, res) {
     if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
       const toolCall = responseMessage.tool_calls[0];
       const toolName = toolCall.function.name;
-      const toolArgs = JSON.parse(toolCall.function.arguments);
+      let toolArgs;
+      
+      try {
+        toolArgs = JSON.parse(toolCall.function.arguments);
+      } catch (parseErr) {
+        console.error("❌ Failed to parse tool arguments:", parseErr);
+        // إذا فشل الـ JSON parsing، ننتقل للـ Manual Fallback
+        return handleManualFallback(res, userContent, extractedBase64);
+      }
 
       console.log(`🔧 Groq استدعى الأداة: ${toolName}`);
       console.log(`📦 Arguments:`, toolArgs);
 
       // ✅ تنفيذ الأداة المناسبة
       if (toolName === "excel_modify") {
-        // ✅ التأكد من وجود base64
         if (!toolArgs.base64 && extractedBase64) {
           toolArgs.base64 = extractedBase64;
         }
         
-        // ✅ إذا لسا ما في base64، نرجع خطأ واضح
         if (!toolArgs.base64) {
           return res.json({ 
             reply: "❌ عذراً، لم أستطع العثور على الملف المرفق. يرجى إعادة رفع الملف والمحاولة مرة أخرى." 
@@ -181,7 +194,61 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // 5) إذا ما في أدوات، نرجع الرد النصي
+    // 4.5) Manual Fallback: إذا Groq ما استدعى أداة، نختارها يدوياً
+    // =========================
+    const lowerMsg = (userContent || "").toLowerCase();
+    const wantsModify = /عدل|تعديل|غيّر|تغيير|edit|update|اضف|أضف|حذف|ازل|إزالة/.test(lowerMsg);
+    const wantsGenerate = /ولد|توليد|انشئ|إنشاء|create|generate|جهز|حضّر/.test(lowerMsg);
+    
+    if (wantsModify && extractedBase64) {
+      console.log("🔧 Manual Fallback: تم اكتشاف طلب تعديل، ننفذ الأداة يدوياً");
+      try {
+        const result = await modifyExcelHandler({ 
+          body: { 
+            base64: extractedBase64, 
+            instruction: userContent || "تعديل الملف" 
+          } 
+        });
+        if (result.success && result.fileBase64) {
+          return res.json({
+            reply: result.message || "✅ تم تعديل الملف بنجاح",
+            fileBase64: result.fileBase64,
+            fileName: result.fileName || "modified.xlsx"
+          });
+        } else {
+          return res.json({ reply: result.error || "❌ فشل تعديل الملف" });
+        }
+      } catch (err) {
+        console.error("❌ Error executing manual excel_modify:", err);
+        return res.json({ reply: "❌ حدث خطأ أثناء التعديل: " + err.message });
+      }
+    }
+    
+    if (wantsGenerate) {
+      console.log("🔧 Manual Fallback: تم اكتشاف طلب توليد، ننفذ الأداة يدوياً");
+      try {
+        const result = await generateExcelHandler({ 
+          body: { 
+            instruction: userContent || "توليد ملف Excel" 
+          } 
+        });
+        if (result.success && result.fileBase64) {
+          return res.json({
+            reply: result.message || "✅ تم توليد الملف بنجاح",
+            fileBase64: result.fileBase64,
+            fileName: result.fileName || "generated.xlsx"
+          });
+        } else {
+          return res.json({ reply: result.error || "❌ فشل توليد الملف" });
+        }
+      } catch (err) {
+        console.error("❌ Error executing manual excel_generate:", err);
+        return res.json({ reply: "❌ حدث خطأ أثناء التوليد: " + err.message });
+      }
+    }
+
+    // =========================
+    // 5) إذا ما في أدوات ولا طلب تعديل/توليد، نرجع الرد النصي
     // =========================
     const replyText = responseMessage.content || "تم الاستلام";
 
@@ -208,4 +275,58 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في الاتصال بـ Groq")
     });
   }
-          }
+}
+
+// =========================
+// دالة مساعدة للـ Manual Fallback
+// =========================
+async function handleManualFallback(res, userContent, extractedBase64) {
+  const lowerMsg = (userContent || "").toLowerCase();
+  const wantsModify = /عدل|تعديل|غيّر|تغيير|edit|update|اضف|أضف|حذف|ازل|إزالة/.test(lowerMsg);
+  const wantsGenerate = /ولد|توليد|انشئ|إنشاء|create|generate|جهز|حضّر/.test(lowerMsg);
+  
+  if (wantsModify && extractedBase64) {
+    console.log("🔧 Manual Fallback (from error): تنفيذ تعديل");
+    try {
+      const result = await modifyExcelHandler({ 
+        body: { 
+          base64: extractedBase64, 
+          instruction: userContent || "تعديل الملف" 
+        } 
+      });
+      if (result.success && result.fileBase64) {
+        return res.json({
+          reply: result.message || "✅ تم تعديل الملف بنجاح",
+          fileBase64: result.fileBase64,
+          fileName: result.fileName || "modified.xlsx"
+        });
+      }
+    } catch (err) {
+      console.error("❌ Manual fallback error:", err);
+    }
+  }
+  
+  if (wantsGenerate) {
+    console.log("🔧 Manual Fallback (from error): تنفيذ توليد");
+    try {
+      const result = await generateExcelHandler({ 
+        body: { 
+          instruction: userContent || "توليد ملف Excel" 
+        } 
+      });
+      if (result.success && result.fileBase64) {
+        return res.json({
+          reply: result.message || "✅ تم توليد الملف بنجاح",
+          fileBase64: result.fileBase64,
+          fileName: result.fileName || "generated.xlsx"
+        });
+      }
+    } catch (err) {
+      console.error("❌ Manual fallback error:", err);
+    }
+  }
+  
+  return res.json({ 
+    reply: "تمام… عفواً، ما قدرت أفهم طلبك بوضوح. حاول تطلب تعديل أو توليد ملف بشكل مباشر." 
+  });
+                        }
