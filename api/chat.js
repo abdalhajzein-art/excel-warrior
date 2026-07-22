@@ -7,7 +7,7 @@ import XLSX from 'xlsx';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ✅ تعريف الأدوات لـ Groq (بنفس صيغة OpenAI)
+// ✅ تعريف الأدوات لـ Groq
 const tools = [
   {
     type: "function",
@@ -128,12 +128,22 @@ export default async function handler(req, res) {
       const toolArgs = JSON.parse(toolCall.function.arguments);
 
       console.log(`🔧 Groq استدعى الأداة: ${toolName}`);
+      console.log(`📦 Arguments:`, toolArgs);
 
       // ✅ تنفيذ الأداة المناسبة
       if (toolName === "excel_modify") {
+        // ✅ التأكد من وجود base64
         if (!toolArgs.base64 && extractedBase64) {
           toolArgs.base64 = extractedBase64;
         }
+        
+        // ✅ إذا لسا ما في base64، نرجع خطأ واضح
+        if (!toolArgs.base64) {
+          return res.json({ 
+            reply: "❌ عذراً، لم أستطع العثور على الملف المرفق. يرجى إعادة رفع الملف والمحاولة مرة أخرى." 
+          });
+        }
+        
         try {
           const result = await modifyExcelHandler({ body: toolArgs });
           if (result.success && result.fileBase64) {
@@ -175,7 +185,6 @@ export default async function handler(req, res) {
     // =========================
     const replyText = responseMessage.content || "تم الاستلام";
 
-    // تحسين الرد البشري
     function humanizeReply(text) {
       if (!text) return "تمام، خلّيني ساعدك بخطوة تانية إذا حابب.";
       let reply = text.trim();
@@ -199,4 +208,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في الاتصال بـ Groq")
     });
   }
-  }
+          }
