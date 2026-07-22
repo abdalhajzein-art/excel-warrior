@@ -1,30 +1,27 @@
 document.addEventListener('DOMContentLoaded', () => {
 
-    // عناصر DOM
     const chatArea = document.getElementById('chatArea');
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     const attachBtn = document.getElementById('attachBtn');
-    const fileInput = document.createElement('input');
     const fileBubbles = document.getElementById('fileBubbles');
     const welcomeScreen = document.getElementById('welcomeScreen');
     const newChatBtn = document.getElementById('newChatBtn');
     const newSessionBtn = document.getElementById('newSessionBtn');
     const sessionsList = document.getElementById('sessionsList');
 
-    // إعداد input للملفات
+    // إنشاء input للملفات
+    const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = '.xlsx,.xls,.csv,.pdf,.docx,.png,.jpg';
     fileInput.style.display = 'none';
     document.body.appendChild(fileInput);
 
-    // حالة الجلسات
     let currentSessionId = localStorage.getItem('alatheer_current_session') || generateSessionId();
     let selectedFileObject = null;
     let attachedFileName = null;
     let isFileLoading = false;
 
-    // دوال الجلسات
     function generateSessionId() {
         return 'session_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
     }
@@ -115,10 +112,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // زر الإرفاق
     attachBtn.addEventListener('click', () => fileInput.click());
 
-    // قراءة الملف
     fileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -161,7 +156,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSendButtonState();
     });
 
-    // تحويل الملف إلى Base64
     function readFileAsBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -178,7 +172,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // إرسال الرسالة
     async function handleSendMessage() {
         const message = userInput.value.trim();
         const file = selectedFileObject;
@@ -240,7 +233,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // عرض الرسائل
     function appendMessageToDOM(sender, text, isLoading = false, fileData = null) {
         const messageDiv = document.createElement('div');
         const messageId = isLoading ? 'loading_' + Date.now() : 'msg_' + Date.now();
@@ -268,7 +260,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (el) el.remove();
     }
 
-    // جلسة جديدة
     const createNewSession = () => {
         currentSessionId = generateSessionId();
         localStorage.setItem('alatheer_current_session', currentSessionId);
