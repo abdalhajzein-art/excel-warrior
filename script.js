@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+Document.addEventListener('DOMContentLoaded', () => {
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     const chatArea = document.getElementById('chatArea');
@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let selectedFileObject = null;
     let attachedFileName = null;
-    let isFileLoading = false; // مؤشر لحالة جلب الملف من ذاكرة الهاتف
+    let isFileLoading = false;
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -213,7 +213,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // دالة التحكم الذكي بحالة زر الإرسال بناءً على النص وجاهزية الملف
     function updateSendButtonState() {
         if (!sendBtn) return;
         const hasText = userInput && userInput.value.trim().length > 0;
@@ -236,14 +235,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = e.target.files[0];
         if (!file) return;
 
-        // بدء مرحلة السحب من الذاكرة -> قفل زر الإرسال وعرض عجلة التحميل
         isFileLoading = true;
         updateSendButtonState();
 
         if (fileBubbles) {
             fileBubbles.innerHTML = `
-                <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: rgba(212, 175, 55, 0.05); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px dashed rgba(212, 175, 55, 0.3); opacity: 0.6; margin-bottom: 6px; transition: all 0.3s;">
-                    <span class="spinner-icon"></span>
+                <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: rgba(212, 175, 55, 0.05); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px dashed rgba(212, 175, 55, 0.3); opacity: 0.6; margin-bottom: 6px;">
                     <span>جاري تحميل الملف من الذاكرة...</span>
                 </div>
             `;
@@ -253,15 +250,14 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedFileObject = file;
             attachedFileName = file.name;
             
-            // ضمان استقرار الملف في الذاكرة المؤقتة لصندوق الرسائل
-            await new Promise(resolve => setTimeout(resolve, 600));
+            await new Promise(resolve => setTimeout(resolve, 400));
 
-            isFileLoading = false; // انتهى التحميل وأصبح الملف جاهزاً تماماً
-            updateSendButtonState(); // تفعيل زر الإرسال
+            isFileLoading = false;
+            updateSendButtonState();
 
             if (fileBubbles) {
                 fileBubbles.innerHTML = `
-                    <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; background: rgba(212, 175, 55, 0.15); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(212, 175, 55, 0.4); opacity: 1; margin-bottom: 6px; transition: all 0.3s;">
+                    <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; background: rgba(212, 175, 55, 0.15); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(212, 175, 55, 0.4); opacity: 1; margin-bottom: 6px;">
                         <span>📎 ${file.name}</span>
                         <button type="button" id="removeFileBtn" style="background:none; border:none; color: #ff5555; cursor:pointer; font-weight:bold; font-size:14px; padding:0; line-height:1;" title="إزالة الملف">&times;</button>
                     </div>
@@ -285,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedFileObject = null;
             attachedFileName = null;
             if (fileBubbles) {
-                fileBubbles.innerHTML = '<span style="color:#ff5555; font-size:12px; padding: 4px;">⚠️ فشل تحميل الملف من الذاكرة</span>';
+                fileBubbles.innerHTML = '<span style="color:#ff5555; font-size:12px; padding: 4px;">⚠️ فشل تحميل الملف</span>';
             }
             updateSendButtonState();
         }
@@ -296,20 +292,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const reader = new FileReader();
             reader.onload = (event) => {
                 const base64String = event.target.result.split(',')[1];
-                if (file.name.endsWith('.json') || file.name.endsWith('.txt')) {
-                    try {
-                        resolve(JSON.parse(atob(base64String)));
-                    } catch (err) {
-                        resolve([{ content: atob(base64String) }]);
-                    }
-                } else {
-                    resolve([{
-                        fileName: file.name,
-                        fileBase64: base64String,
-                        size: file.size,
-                        type: file.type
-                    }]);
-                }
+                resolve([{
+                    fileName: file.name,
+                    fileBase64: base64String,
+                    size: file.size,
+                    type: file.type
+                }]);
             };
             reader.onerror = (error) => reject(error);
             reader.readAsDataURL(file);
@@ -336,6 +324,16 @@ document.addEventListener('DOMContentLoaded', () => {
             displayMessage = `${message} (مع الملف: ${currentFileName})`;
         }
 
+        // قراءة الملف وتجهيز الـ Payload أولاً قبل مسح المتغيرات
+        let payloadExcel = null;
+        if (currentFileToProcess) {
+            try {
+                payloadExcel = await readFileAsBase64(currentFileToProcess);
+            } catch (err) {
+                console.error("Error reading file:", err);
+            }
+        }
+
         appendMessageToDOM('user', displayMessage);
         saveMessageToCurrentSession('user', displayMessage);
 
@@ -346,15 +344,6 @@ document.addEventListener('DOMContentLoaded', () => {
             renderSessionsList();
         }
 
-        let payloadExcel = null;
-        if (currentFileToProcess) {
-            try {
-                payloadExcel = await readFileAsBase64(currentFileToProcess);
-            } catch (err) {
-                console.error("Error reading file:", err);
-            }
-        }
-        
         userInput.value = '';
         userInput.style.height = 'auto';
         selectedFileObject = null;
@@ -363,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (fileBubbles) fileBubbles.innerHTML = '';
         fileInput.value = '';
         
-        updateSendButtonState(); // إعادة تعيين الزر ليصبح معطلاً/شفافاً بعد الإرسال
+        updateSendButtonState();
 
         const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة السيادية... ⏳', true);
 
@@ -371,7 +360,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: displayMessage, excelJSON: payloadExcel, sessionId: currentSessionId })
+                body: JSON.stringify({ 
+                    message: displayMessage, 
+                    excelJSON: payloadExcel, 
+                    sessionId: currentSessionId 
+                })
             });
 
             const data = await response.json();
@@ -462,20 +455,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (sendBtn) {
         sendBtn.addEventListener('click', handleSendMessage);
-        updateSendButtonState(); // ضبط الحالة الابتدائية عند فتح الصفحة
+        updateSendButtonState();
     }
 
     if (userInput) {
         userInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
-            updateSendButtonState(); // تحديث حالة الزر أثناء الكتابة
-        });
-
-        userInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                return; // النزول لسطر جديد براحتك على الموبايل
-            }
+            updateSendButtonState();
         });
     }
 });
