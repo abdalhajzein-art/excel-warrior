@@ -6,13 +6,11 @@ export async function modifyExcelHandler(req, res) {
     const { base64, instruction } = body;
 
     console.log(`📝 modifyExcelHandler: base64 موجود؟ ${!!base64}`);
-    console.log(`📝 instruction: ${instruction}`);
 
     if (!base64) {
       return { success: false, error: "لا يوجد ملف Excel مرفق." };
     }
 
-    // ✅ قراءة الملف مع الاحتفاظ بالتنسيق
     const buffer = Buffer.from(base64, 'base64');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
@@ -22,15 +20,23 @@ export async function modifyExcelHandler(req, res) {
       return { success: false, error: "لا يوجد ورقة عمل في الملف." };
     }
 
+    // ✅ التحقق من وجود مخططات
+    let hasCharts = false;
+    try {
+      // exceljs doesn't directly support charts, but we can warn
+      hasCharts = false; // Placeholder for future detection
+    } catch (e) {
+      hasCharts = false;
+    }
+
     console.log(`📊 عدد الصفوف: ${worksheet.rowCount}`);
 
-    // ✅ تنفيذ التعديل المطلوب (إضافة عمود)
+    // ✅ تنفيذ التعديل المطلوب
     const instructionLower = (instruction || "").toLowerCase();
     if (instructionLower.includes('سبب الغياب') || instructionLower.includes('عمود')) {
       
-      // ✅ البحث عن عمود "الغياب"
       let targetColumnIndex = -1;
-      const headerRow = worksheet.getRow(3); // الصف الثالث (العناوين)
+      const headerRow = worksheet.getRow(3);
       
       headerRow.eachCell((cell, colNumber) => {
         if (cell.value && cell.value.toString().includes('غياب')) {
@@ -41,34 +47,30 @@ export async function modifyExcelHandler(req, res) {
       console.log(`🔍 تم العثور على عمود "غياب" في العمود: ${targetColumnIndex}`);
 
       if (targetColumnIndex !== -1) {
-        // ✅ إضافة عمود جديد بعد عمود "الغياب"
         const insertColumnIndex = targetColumnIndex + 1;
         
-        // إضافة العمود في كل الصفوف
         worksheet.eachRow((row, rowNumber) => {
           const cell = row.getCell(insertColumnIndex);
           if (rowNumber === 3) {
-            // صف العناوين
             cell.value = 'سبب الغياب';
-            cell.font = headerRow.getCell(targetColumnIndex).font; // نسخ الخط
-            cell.fill = headerRow.getCell(targetColumnIndex).fill; // نسخ اللون
-            cell.border = headerRow.getCell(targetColumnIndex).border; // نسخ الحدود
+            const sourceCell = headerRow.getCell(targetColumnIndex);
+            if (sourceCell.font) cell.font = sourceCell.font;
+            if (sourceCell.fill) cell.fill = sourceCell.fill;
+            if (sourceCell.border) cell.border = sourceCell.border;
+            if (sourceCell.alignment) cell.alignment = sourceCell.alignment;
           } else {
-            // باقي الصفوف (فارغة)
             cell.value = '';
-            // نسخ التنسيق من العمود المجاور
             const sourceCell = row.getCell(targetColumnIndex);
-            cell.font = sourceCell.font;
-            cell.fill = sourceCell.fill;
-            cell.border = sourceCell.border;
-            cell.alignment = sourceCell.alignment;
+            if (sourceCell.font) cell.font = sourceCell.font;
+            if (sourceCell.fill) cell.fill = sourceCell.fill;
+            if (sourceCell.border) cell.border = sourceCell.border;
+            if (sourceCell.alignment) cell.alignment = sourceCell.alignment;
           }
         });
 
         console.log(`✅ تم إضافة عمود "سبب الغياب" بعد عمود "الغياب" مع الاحتفاظ بالتنسيق`);
       } else {
         console.warn(`⚠️ لم يتم العثور على عمود "غياب"، نضيف في النهاية`);
-        // نضيف العمود في النهاية
         const lastColumn = worksheet.columnCount + 1;
         worksheet.eachRow((row, rowNumber) => {
           const cell = row.getCell(lastColumn);
@@ -81,12 +83,16 @@ export async function modifyExcelHandler(req, res) {
       }
     }
 
-    // ✅ حفظ الملف مع الاحتفاظ بالتنسيق
     const outputBuffer = await workbook.xlsx.writeBuffer();
+
+    let message = "✅ تم تعديل الملف بنجاح مع الاحتفاظ بالتنسيق";
+    if (hasCharts) {
+      message += " ⚠️ لكن المخططات قد لا تبقى بسبب قيود المكتبة.";
+    }
 
     return {
       success: true,
-      message: "✅ تم تعديل الملف بنجاح مع الاحتفاظ بالتنسيق",
+      message: message,
       fileBase64: outputBuffer.toString('base64'),
       fileName: `modified_${Date.now()}.xlsx`,
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -123,4 +129,4 @@ export default async function handler(req, res) {
     console.error("Error in modify route:", err);
     return res.status(500).json({ error: "خطأ في التعديل: " + err.message });
   }
-        }
+      }
