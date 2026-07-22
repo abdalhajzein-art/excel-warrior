@@ -1,9 +1,39 @@
 import Groq from 'groq-sdk';
+import { Workbook } from '@office-kit/xlsx';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// ✅ دالة للتحقق من إصدار المكتبة
+async function checkLibraryVersion() {
+  try {
+    const { version } = await import('@office-kit/xlsx/package.json');
+    const [major, minor, patch] = version.split('.').map(Number);
+    if (major < 1) {
+      return {
+        isOutdated: true,
+        message: `⚠️ المكتبة في نسخة تجريبية (v${version}). يرجى التحديث إلى v1.0.0 أو أحدث.`
+      };
+    }
+    return { isOutdated: false };
+  } catch (err) {
+    return {
+      isOutdated: true,
+      message: `❌ تعذّر قراءة إصدار المكتبة. يرجى إعادة تثبيت @office-kit/xlsx.`
+    };
+  }
+}
+
 export async function generateExcelHandler(req, res) {
   try {
+    // ✅ التحقق من الإصدار أولاً
+    const versionCheck = await checkLibraryVersion();
+    if (versionCheck.isOutdated) {
+      return {
+        success: false,
+        error: versionCheck.message
+      };
+    }
+
     const body = req.body || req || {};
     const { instruction } = body || {};
 
@@ -126,9 +156,6 @@ export async function generateExcelHandler(req, res) {
     // ============================================================
     // 📊 إنشاء الملف بناءً على الهيكل من Groq
     // ============================================================
-    // ✅ استيراد xml-xlsx-lite ديناميكياً
-    const { Workbook } = await import('xml-xlsx-lite');
-    
     const workbook = new Workbook();
     const sheetName = structure.sheetName || 'Sheet1';
     const worksheet = workbook.addWorksheet(sheetName);
@@ -233,6 +260,15 @@ export async function generateExcelHandler(req, res) {
 
   } catch (error) {
     console.error("❌ Error in generateExcelHandler:", error);
+    
+    // ✅ إذا كان الخطأ بسبب عدم توافق الإصدار
+    if (error.message.includes('version') || error.message.includes('unsupported') || error.message.includes('import')) {
+      return {
+        success: false,
+        error: `⚠️ تعذّرت العملية بسبب قدم إصدار المكتبة. يرجى تحديث @office-kit/xlsx إلى آخر إصدار.`
+      };
+    }
+    
     return {
       success: false,
       error: "حدث خطأ أثناء توليد الملف: " + error.message
