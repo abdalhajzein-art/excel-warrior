@@ -19,29 +19,34 @@ export default async function handler(req, res) {
       return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GEMINI_API_KEY غير مضاف في متغيرات البيئة." });
     }
 
-    let userContent = message || "مساعدة بخصوص الملف المرفق";
+    let userContent = message || "تحليل أو معالجة ملف مرفق إن وجد.";
     let extractedBase64 = null;
     let fileMimeType = null;
     let fileName = null;
 
+    // استقبال الملف من الفرونت (كـ Base64)
     if (excelJSON && Array.isArray(excelJSON) && excelJSON[0] && excelJSON[0].fileBase64) {
       const fileObj = excelJSON[0];
       extractedBase64 = fileObj.fileBase64;
       fileMimeType = fileObj.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       fileName = fileObj.fileName || 'ملف';
 
+      // تحليل إكسل اختياري (ممكن تستخدمه لاحقًا لو حبيت)
       try {
         const buffer = Buffer.from(extractedBase64, 'base64');
         const workbook = XLSX.read(buffer, { type: 'buffer' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        userContent += `\n\n[مقتطف من محتوى الملف (${fileName}):\n${JSON.stringify(rawData.slice(0, 10), null, 2)}\n]`;
+
+        // إذا حابب تضيف مقتطف نصي، خليه بسيط:
+        userContent += `\n\n[الملف المرفق يحتوي على ${rawData.length} صفوف تقريبًا في الشيت الأولى (${firstSheetName}).]`;
       } catch (parseErr) {
         console.error("Error parsing Excel in chat:", parseErr);
       }
     }
 
+    // بناء الرسالة للذكاء بشكل محترف وعام
     const contents = [
       {
         role: "system",
@@ -52,7 +57,9 @@ export default async function handler(req, res) {
       {
         role: "user",
         parts: [
-          { text: `الرجاء قراءة الملف المرفق وتحليل محتواه بدقة.\n\nطلب المستخدم:\n${message}` },
+          {
+            text: `تعامل مع الطلب التالي كمنصة ذكاء عام قادرة على فهم النص والملفات المرفقة.\n\nطلب المستخدم:\n${userContent}`
+          },
           ...(extractedBase64 ? [{
             fileData: {
               mimeType: fileMimeType,
@@ -100,26 +107,20 @@ export default async function handler(req, res) {
 
       if (toolsRegistry[toolName]) {
         try {
+          // ربط الـ Base64 تلقائيًا إذا الأداة تحتاجه
           if (!toolArgs.base64 && extractedBase64) {
             toolArgs.base64 = extractedBase64;
           }
 
-          if (toolName === 'excel_modify' && (!toolArgs.editMap || !toolArgs.editMap.operation)) {
-            const userLower = (userContent || "").toLowerCase();
-            let columnName = "سبب الغياب";
-            let afterColumn = "الغياب";
+          // بدون أي منطق جاهز خاص بعمود "سبب الغياب" أو "الغياب"
+          // الأداة نفسها (excel_modify أو غيرها) هي اللي تقرر بناءً على محتوى الملف وطلب المستخدم
 
-            if (userLower.includes("سبب") || userLower.includes("اضافة عمود")) {
-              toolArgs.editMap = {
-                operation: "add_column",
-                new_column: columnName,
-                position: { after: afterColumn }
-              };
-            }
-          }
-
-          if (toolName.includes('generate') && (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)) {
-            toolArgs.instruction = userContent || "ملف جديد";
+          // توليد ملفات جديدة بشكل عام
+          if (
+            toolName.includes('generate') &&
+            (!toolArgs.instruction && !toolArgs.prompt && !toolArgs.title)
+          ) {
+            toolArgs.instruction = userContent || "ملف جديد بناءً على طلب المستخدم.";
             toolArgs.content = userContent;
             toolArgs.prompt = userContent;
           }
@@ -144,13 +145,16 @@ export default async function handler(req, res) {
             toolResult = directResult;
           }
 
+          // إذا رجعت Buffer (ملف جاهز)
           if (Buffer.isBuffer(toolResult) || toolResult instanceof Uint8Array) {
             const isWord = toolName.includes('word');
             const isPdf = toolName.includes('pdf');
             return res.status(200).json({
-              reply: "✅ أبشر، تم تنفيذ طلبك على الملف بنجاح:",
+              reply: "✅ تم تنفيذ العملية على الملف بنجاح.",
               fileBase64: Buffer.from(toolResult).toString('base64'),
-              fileName: isWord ? 'document.docx' : (isPdf ? 'document.pdf' : 'modified_file.xlsx'),
+              fileName: isWord
+                ? 'document.docx'
+                : (isPdf ? 'document.pdf' : 'modified_file.xlsx'),
               contentType: isWord
                 ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 : (isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -159,7 +163,7 @@ export default async function handler(req, res) {
 
           if (toolResult && toolResult.fileBase64) {
             return res.status(200).json({
-              reply: toolResult.message || "✨ تم تنفيذ العملية بنجاح:",
+              reply: toolResult.message || "✨ تم تنفيذ العملية بنجاح.",
               fileBase64: toolResult.fileBase64,
               fileName: toolResult.fileName || 'alatheer_output.xlsx',
               contentType: toolResult.contentType || 'application/octet-stream'
@@ -175,11 +179,16 @@ export default async function handler(req, res) {
       }
     }
 
-    const replyText = candidate?.content?.parts?.map(p => p.text).join('\n') || "تم الاستلام بنجاح.";
+    const replyText =
+      candidate?.content?.parts?.map(p => p.text).join('\n') ||
+      "تم الاستلام بنجاح وتمت معالجة الطلب نصيًا.";
+
     return res.status(200).json({ reply: replyText });
 
   } catch (error) {
     console.error("Error in Chat API:", error);
-    return res.status(500).json({ reply: "⚠️ خطأ في المعالجة السيادية: " + (error.message || error) });
+    return res.status(500).json({
+      reply: "⚠️ خطأ في المعالجة السيادية: " + (error.message || error)
+    });
   }
-              }
+          }
