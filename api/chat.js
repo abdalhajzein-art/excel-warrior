@@ -205,63 +205,99 @@ export default async function handler(req, res) {
     }
 
     // =========================
-    // 4.5) Manual Fallback: إذا Groq ما استدعى أداة، نختارها يدوياً
+    // 4.5) Manual Fallback: استخدام Groq لتحديد نوع الطلب
     // =========================
-    const lowerMsg = (userContent || "").toLowerCase();
-    const wantsModify = /عدل|تعديل|غيّر|تغيير|edit|update|اضف|أضف|حذف|ازل|إزالة/.test(lowerMsg);
-    const wantsGenerate = /ولد|توليد|انشئ|إنشاء|create|generate|جهز|حضّر/.test(lowerMsg);
-
-    console.log(`🔍 Manual Fallback: wantsModify=${wantsModify}, wantsGenerate=${wantsGenerate}, hasBase64=${!!extractedBase64}`);
-
-    if (wantsModify && extractedBase64) {
-      console.log("🔧 Manual Fallback: تنفيذ تعديل");
+    if (!responseMessage.tool_calls || responseMessage.tool_calls.length === 0) {
+      console.log("🔍 Groq ما استدعى أداة، نطلب من Groq تحديد نوع الطلب");
+      
       try {
-        const result = await modifyExcelHandler({ 
-          body: { 
-            base64: extractedBase64, 
-            instruction: userContent || "تعديل الملف" 
-          } 
+        const classification = await groq.chat.completions.create({
+          model: "openai/gpt-oss-120b",
+          messages: [
+            {
+              role: "system",
+              content: `أنت مصنف طلبات. حدد إذا كان طلب المستخدم يطلب:
+1. "modify" - إذا كان يطلب تعديل ملف موجود
+2. "generate" - إذا كان يطلب إنشاء ملف جديد
+3. "chat" - إذا كان مجرد سؤال أو دردشة
+
+أجب فقط بكلمة واحدة: modify أو generate أو chat`
+            },
+            {
+              role: "user",
+              content: `طلب المستخدم: ${userContent || "مرحبا"}`
+            }
+          ],
+          temperature: 0.1,
+          max_completion_tokens: 10
         });
-        if (result.success && result.fileBase64) {
-          return res.json({
-            reply: result.message || "✅ تم تعديل الملف بنجاح",
-            fileBase64: result.fileBase64,
-            fileName: result.fileName || "modified.xlsx"
+
+        const decision = classification.choices[0].message.content.trim().toLowerCase();
+        console.log(`🔍 Groq قرر: ${decision}`);
+
+        if (decision === "modify" && extractedBase64) {
+          console.log("🔧 Manual Fallback: تنفيذ تعديل");
+          const result = await modifyExcelHandler({ 
+            body: { 
+              base64: extractedBase64, 
+              instruction: userContent || "تعديل الملف" 
+            } 
           });
-        } else {
-          return res.json({ reply: result.error || "❌ فشل تعديل الملف" });
+          if (result.success && result.fileBase64) {
+            return res.json({
+              reply: result.message || "✅ تم تعديل الملف بنجاح",
+              fileBase64: result.fileBase64,
+              fileName: result.fileName || "modified.xlsx"
+            });
+          } else {
+            return res.json({ reply: result.error || "❌ فشل تعديل الملف" });
+          }
         }
-      } catch (err) {
-        console.error("❌ Error executing manual excel_modify:", err);
-        return res.json({ reply: "❌ حدث خطأ أثناء التعديل: " + err.message });
-      }
-    } else if (wantsModify && !extractedBase64) {
-      console.log("❌ Manual Fallback: طلب تعديل ولكن لا يوجد Base64");
-      return res.json({ 
-        reply: "❌ عذراً، الملف المرفق غير متوفر. يرجى إعادة رفع الملف والمحاولة مرة أخرى." 
-      });
-    }
-    
-    if (wantsGenerate) {
-      console.log("🔧 Manual Fallback: تنفيذ توليد");
-      try {
-        const result = await generateExcelHandler({ 
-          body: { 
-            instruction: userContent || "توليد ملف Excel" 
-          } 
-        });
-        if (result.success && result.fileBase64) {
-          return res.json({
-            reply: result.message || "✅ تم توليد الملف بنجاح",
-            fileBase64: result.fileBase64,
-            fileName: result.fileName || "generated.xlsx"
+
+        if (decision === "generate") {
+          console.log("🔧 Manual Fallback: تنفيذ توليد");
+          const result = await generateExcelHandler({ 
+            body: { 
+              instruction: userContent || "توليد ملف Excel" 
+            } 
           });
-        } else {
-          return res.json({ reply: result.error || "❌ فشل توليد الملف" });
+          if (result.success && result.fileBase64) {
+            return res.json({
+              reply: result.message || "✅ تم توليد الملف بنجاح",
+              fileBase64: result.fileBase64,
+              fileName: result.fileName || "generated.xlsx"
+            });
+          } else {
+            return res.json({ reply: result.error || "❌ فشل توليد الملف" });
+          }
         }
-      } catch (err) {
-        console.error("❌ Error executing manual excel_generate:", err);
-        return res.json({ reply: "❌ حدث خطأ أثناء التوليد: " + err.message });
+
+        if (decision === "chat") {
+          // نكمل للرد النصي
+          const replyText = responseMessage.content || "تم الاستلام";
+          return res.json({ reply: humanizeReply(replyText) });
+        }
+
+      } catch (classErr) {
+        console.error("❌ خطأ في تصنيف الطلب:", classErr);
+        // Fallback: نستخدم الطريقة القديمة
+        const lowerMsg = (userContent || "").toLowerCase();
+        if ((lowerMsg.includes("عدل") || lowerMsg.includes("ضيف") || lowerMsg.includes("تعديل") || lowerMsg.includes("أضف") || lowerMsg.includes("تغيير")) && extractedBase64) {
+          console.log("🔧 Fallback (Regex): تنفيذ تعديل");
+          const result = await modifyExcelHandler({ 
+            body: { 
+              base64: extractedBase64, 
+              instruction: userContent || "تعديل الملف" 
+            } 
+          });
+          if (result.success && result.fileBase64) {
+            return res.json({
+              reply: result.message || "✅ تم تعديل الملف بنجاح",
+              fileBase64: result.fileBase64,
+              fileName: result.fileName || "modified.xlsx"
+            });
+          }
+        }
       }
     }
 
@@ -300,8 +336,8 @@ export default async function handler(req, res) {
 // =========================
 async function handleManualFallback(res, userContent, extractedBase64) {
   const lowerMsg = (userContent || "").toLowerCase();
-  const wantsModify = /عدل|تعديل|غيّر|تغيير|edit|update|اضف|أضف|حذف|ازل|إزالة/.test(lowerMsg);
-  const wantsGenerate = /ولد|توليد|انشئ|إنشاء|create|generate|جهز|حضّر/.test(lowerMsg);
+  const wantsModify = /عدل|تعديل|غيّر|تغيير|edit|update|اضف|أضف|حذف|ازل|إزالة|أدخل|إدراج|insert|place|ضع|رتب|أضف عمود|ضيف عمود|نظم|رتب|إضافة|اضافة|حذف عمود|ازالة عمود/.test(lowerMsg);
+  const wantsGenerate = /ولد|توليد|انشئ|إنشاء|create|generate|جهز|حضّر|اصنع|عمل|بناء/.test(lowerMsg);
   
   if (wantsModify && extractedBase64) {
     console.log("🔧 Manual Fallback (from error): تنفيذ تعديل");
@@ -353,4 +389,4 @@ async function handleManualFallback(res, userContent, extractedBase64) {
   return res.json({ 
     reply: "تمام… عفواً، ما قدرت أفهم طلبك بوضوح. حاول تطلب تعديل أو توليد ملف بشكل مباشر." 
   });
-                                     }
+}
