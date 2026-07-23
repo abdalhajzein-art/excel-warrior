@@ -114,19 +114,31 @@ export async function modifyExcelHandler({
     pythonProcess.stdin.write(payload);
     pythonProcess.stdin.end();
 
-    // انتظار انتهاء العملية
-    await new Promise((resolve, reject) => {
-      pythonProcess.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`Python exited with code ${code}\nStderr: ${stderr}`));
-        }
-      });
-      pythonProcess.on('error', (err) => {
-        reject(err);
-      });
-    });
+    // ✅ تعيين مهلة (timeout) لمنع التعليق
+    const timeoutMs = 120000; // دقيقتين
+    const timeoutError = new Error(`انتهت المهلة بعد ${timeoutMs/1000} ثانية`);
+
+    // انتظار انتهاء العملية مع مهلة
+    await Promise.race([
+      new Promise((resolve, reject) => {
+        pythonProcess.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Python exited with code ${code}\nStderr: ${stderr}`));
+          }
+        });
+        pythonProcess.on('error', (err) => {
+          reject(err);
+        });
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => {
+          pythonProcess.kill('SIGTERM');
+          reject(timeoutError);
+        }, timeoutMs)
+      )
+    ]);
 
     console.log(`📥 مخرجات Python: ${stdout}`);
 
@@ -235,4 +247,4 @@ export default async function handler(req, res) {
       error: "خطأ داخلي في الخادم: " + err.message 
     });
   }
-      }
+}
