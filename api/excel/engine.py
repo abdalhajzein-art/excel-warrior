@@ -7,16 +7,13 @@ from openpyxl.chart import BarChart, Reference
 def process_excel():
     try:
         input_data = json.loads(sys.stdin.read())
-        action = input_data.get("action", "modify") # modify, generate
+        action = input_data.get("action", "modify")
         file_path = input_data.get("filePath")
         plan = input_data.get("plan", {})
         
         wb = None
         ws = None
 
-        # ==========================================
-        # 1. قسم التوليد (Generate from Scratch)
-        # ==========================================
         if action == "generate":
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -25,7 +22,6 @@ def process_excel():
             headers = plan.get("headers", ["الرقم", "العنصر", "الحالة", "التاريخ"])
             rows = plan.get("rows", [])
 
-            # كتابة وعنوان الترويسة بتنسيق فاخر (خلفية داكنة، خط أبيض عريض)
             ws.append(headers)
             header_row = ws[1]
             
@@ -46,7 +42,6 @@ def process_excel():
                 cell.alignment = header_alignment
                 cell.border = thin_border
 
-            # كتابة صفوف البيانات مع تنسيق نظيف
             data_font = Font(name="Arial", size=10, color="000000")
             data_alignment = Alignment(horizontal="center", vertical="center")
 
@@ -57,23 +52,13 @@ def process_excel():
                     cell.font = data_font
                     cell.alignment = data_alignment
                     cell.border = thin_border
-                    # تلوين صففي تبادلي خفيف (Zebra Striping) لجمالية البصر
                     if r_idx % 2 == 0:
                         cell.fill = PatternFill(start_color="F9FBFD", end_color="F9FBFD", fill_type="solid")
 
-            # ضبط عرض الأعمدة أوتوماتيكياً لتبدو احترافية
-            for col in ws.columns:
-                max_len = max(len(str(cell.value or '')) for cell in col)
-                col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                ws.column_dimensions[col_letter].width = max(max_len + 5, 15)
-
             wb.save(file_path)
-            print(json.dumps({"success": True, "message": "تم توليد ملف الإكسل من الصفر باحترافية مطلقة."}))
+            print(json.dumps({"success": True, "message": "تم توليد ملف الإكسل بنجاح."}))
             return
 
-        # ==========================================
-        # 2. قسم التعديل والإضافة (Modify / Insert Columns)
-        # ==========================================
         if not file_path:
             raise Exception("مسار الملف غير متوفر للمعالجة.")
             
@@ -89,65 +74,65 @@ def process_excel():
         for r in range(1, min(ws.max_row + 1, 10)):
             for c in range(1, ws.max_column + 1):
                 val = str(ws.cell(row=r, column=c).value or "").strip()
-                if any(k in val for k in ["رقم", "اسم", "الغياب", "اليوم", "الموظف", "الرقم"]):
+                if any(k in val for k in ["رقم", "اسم", "الغياب", "اليوم", "الموظف", "نسبة الحضور"]):
                     header_row = r
                     break
             if header_row != 1:
                 break
 
-        # تحديد مكان الإدراج للأعمدة الجديدة
-        if new_columns:
-            target_col_idx = None
-            for c in range(1, ws.max_column + 1):
-                h_val = str(ws.cell(row=header_row, column=c).value or "").strip()
-                if target_column and target_column in h_val:
-                    target_col_idx = c
-                    break
-                elif not target_column and ("الغياب" in h_val or h_val == "غياب"):
-                    target_col_idx = c
-                    break
+        # تحديد مكان الإدراج للأعمدة الجديدة (بجانب نسبة الحضور)
+        if not new_columns:
+            new_columns = ["تقييم الالتزام"]
 
-            insert_pos = (target_col_idx + 1) if target_col_idx else (ws.max_column + 1)
+        target_col_idx = None
+        for c in range(1, ws.max_column + 1):
+            h_val = str(ws.cell(row=header_row, column=c).value or "").strip()
+            if "نسبة الحضور" in h_val:
+                target_col_idx = c
+                break
 
-            # سحب قالب التنسيق من العمود المجاور لضمان تطابق الألوان والخطوط حرفياً
-            sample_col = target_col_idx if target_col_idx else (insert_pos - 1)
-            ref_header = ws.cell(row=header_row, column=sample_col)
-            ref_data = ws.cell(row=header_row + 1, column=sample_col)
+        insert_pos = (target_col_idx + 1) if target_col_idx else (ws.max_column + 1)
 
-            ws.insert_cols(insert_pos, amount=len(new_columns))
+        # إدراج الأعمدة الجديدة بشكل آمن
+        ws.insert_cols(insert_pos, amount=len(new_columns))
 
-            for idx, col_name in enumerate(new_columns):
-                current_col = insert_pos + idx
-                header_cell = ws.cell(row=header_row, column=current_col, value=col_name)
-                
-                # نسخ التنسيق البصري لرأس العمود
-                if ref_header.font: header_cell.font = Font(name=ref_header.font.name, size=ref_header.font.size, bold=True, color=ref_header.font.color)
-                if ref_header.fill: header_cell.fill = PatternFill(fill_type=ref_header.fill.fill_type, start_color=ref_header.fill.start_color, end_color=ref_header.fill.end_color)
-                if ref_header.alignment: header_cell.alignment = Alignment(horizontal=ref_header.alignment.horizontal, vertical=ref_header.alignment.vertical)
-                if ref_header.border: header_cell.border = ref_header.border
+        # تعريف تنسيقات نظيفة وآمنة تماماً لتجنب أي unhashable StyleProxy error
+        safe_header_font = Font(name="Arial", size=11, bold=True, color="000000")
+        safe_header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+        safe_alignment = Alignment(horizontal="center", vertical="center")
+        safe_border = Border(
+            left=Side(style='thin', color='BFBFBF'),
+            right=Side(style='thin', color='BFBFBF'),
+            top=Side(style='thin', color='BFBFBF'),
+            bottom=Side(style='thin', color='BFBFBF')
+        )
+        safe_data_font = Font(name="Arial", size=10, color="000000")
 
-                # تعبئة الصفوف وتطبيق التنسيق القياسي
-                for r in range(header_row + 1, ws.max_row + 1):
-                    if ws.cell(row=r, column=1).value is not None:
-                        cell = ws.cell(row=r, column=current_col)
-                        cell.value = "مرض" if "سبب" in col_name else ("بدون ملاحظات" if "ملاحظات" in col_name else "-")
-                        if ref_data.font: cell.font = ref_data.font
-                        if ref_data.alignment: cell.alignment = ref_data.alignment
-                        if ref_data.border: cell.border = ref_data.border
+        for idx, col_name in enumerate(new_columns):
+            current_col = insert_pos + idx
+            header_cell = ws.cell(row=header_row, column=current_col, value=col_name)
+            header_cell.font = safe_header_font
+            header_cell.fill = safe_header_fill
+            header_cell.alignment = safe_alignment
+            header_cell.border = safe_border
 
-        # 3. دعم المخططات (Charts) إذا طُلبت
-        if add_chart and ws.max_row > 1:
-            chart = BarChart()
-            chart.title = "المخطط التحليلي - الأثير AI"
-            chart.style = 10
-            data = Reference(ws, min_col=ws.max_column, min_row=header_row, max_row=ws.max_row)
-            cats = Reference(ws, min_col=2, min_row=header_row + 1, max_row=ws.max_row)
-            chart.add_data(data, titles_from_data=True)
-            chart.set_categories(cats)
-            ws.add_chart(chart, f"O{header_row}")
+            # تعبئة الخلايا مع تطبيق الصيغة أو تقييم الالتزام بناءً على نسبة الحضور
+            for r in range(header_row + 1, ws.max_row + 1):
+                if ws.cell(row=r, column=1).value is not None:
+                    cell = ws.cell(row=r, column=current_col)
+                    cell.font = safe_data_font
+                    cell.alignment = safe_alignment
+                    cell.border = safe_border
+                    
+                    # إذا كان العمود هو تقييم الالتزام، نضع معادلة إكسل حقيقية أو قيمة مستنتجة
+                    if "تقييم" in col_name and target_col_idx:
+                        col_letter = openpyxl.utils.get_column_letter(target_col_idx)
+                        cell.value = f'=IF({col_letter}{r}>=0.8,"ممتاز",IF({col_letter}{r}>=0.6,"جيد جداً","بحاجة لمتابعة"))'
+                    else:
+                        cell.value = "-"
 
         wb.save(file_path)
-        print(json.dumps({"success": True, "message": "تمت معالجة الملف وتعديله بنجاح مطلَق."}))
+        print(json.dumps({"success": True, "message": "تم تعديل الملف وإضافة عمود تقييم الالتزام بنجاح مطلَق."}))
 
     except Exception as e:
         print(json.dumps({"success": False, "error": str(e)}))
