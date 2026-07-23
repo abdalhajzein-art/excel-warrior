@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { extractExcelMetadata } from './metadata.js';
+import { askGroqStructured } from '../groqService.js';
 
 export async function modifyExcelHandler(req, res) {
   try {
@@ -15,14 +16,31 @@ export async function modifyExcelHandler(req, res) {
 
     const buffer = Buffer.from(base64, 'base64');
 
-    // 1. استخدام المحقق الذكي لاستخلاص الهيكل وتوفير التوكنز والتحليل المسبق
+    // 1. استخلاص الهيكل عبر المحقق الذكي لتوفير التوكنز
     const metaResult = await extractExcelMetadata(buffer);
-    if (metaResult.success) {
-      console.log(`📊 [Metadata Preprocessor] تم تحليل هيكل الملف بنجاح:`, JSON.stringify(metaResult.metadata));
-    } else {
-      console.warn(`⚠️ [Metadata Warning]: ${metaResult.error}`);
+    if (!metaResult.success) {
+      return { success: false, error: "فشل استخلاص هيكل الملف: " + metaResult.error };
     }
+    console.log(`📊 [Metadata Preprocessor] تم تحليل هيكل الملف بنجاح.`);
+
+    // 2. استشارة عقل Groq الذكي والحصول على خطة عمل Structured JSON
+    const aiResponse = await askGroqStructured(metaResult.metadata, instruction || "تحسين وتنسيق الملف بشكل احترافي");
     
+    let aiPlan = {
+      actionType: "custom",
+      targetColumn: null,
+      formula: null,
+      modificationsDescription: ["تنسيق الملف وتطبيق بصمة الأثير الاحترافية"]
+    };
+
+    if (aiResponse.success && aiResponse.data) {
+      aiPlan = aiResponse.data;
+      console.log(`🧠 [Groq Brain]: تم استلام خطة التعديل بنجاح:`, JSON.stringify(aiPlan));
+    } else {
+      console.warn(`⚠️ [Groq Warning]: تعذر استشعار الذكاء الاصطناعي، سيتم المتابعة بالخطة التلقائية.`);
+    }
+
+    // 3. تطبيق التعديلات برمجياً على الملف
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
     const worksheet = workbook.getWorksheet(1);
@@ -31,79 +49,76 @@ export async function modifyExcelHandler(req, res) {
       return { success: false, error: "لا يوجد ورقة عمل في الملف." };
     }
 
-    const instructionLower = (instruction || "").toLowerCase();
-    let modifications = [];
+    let modifications = aiPlan.modificationsDescription || [];
 
-    // ============================================================
-    // البحث الديناميكي عن صف العناوين الفعلي (Header Row)
-    // ============================================================
+    // البحث الديناميكي عن صف العناوين الفعلي
     let headerRowIndex = -1;
     worksheet.eachRow((row, rowNumber) => {
       row.eachCell((cell) => {
         const val = cell.value ? cell.value.toString().trim() : '';
-        if (val === 'رقم الموظف' || val === 'اسم الموظف') {
+        if (val === 'رقم الموظف' || val === 'اسم الموظف' || val.includes('الاسم')) {
           if (headerRowIndex === -1) headerRowIndex = rowNumber;
         }
       });
     });
 
-    // إذا لم يجد صف العناوين، نفترض أنه الصف الثاني أو الثالث كاحتياط
     if (headerRowIndex === -1) headerRowIndex = 2;
-
     const headerRow = worksheet.getRow(headerRowIndex);
 
-    // ============================================================
-    // التنسيق الاحترافي والتطوير
-    // ============================================================
+    // تطبيق التنسيق الاحترافي لصف العناوين
     headerRow.font = { name: 'Arial', bold: true, color: { argb: 'FFFFFF' } };
     headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } }; // أزرق ملكي احترافي
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
-    
-    modifications.push(`تنسيق صف العناوين (الصف ${headerRowIndex}) بلون احترافي وتوسيط النصوص`);
 
-    // البحث عن عمود "نسبة الحضور" أو التأكد من وجوده وتحديثه
-    let percentageColIndex = -1;
-    headerRow.eachCell((cell, colNumber) => {
-      const val = cell.value ? cell.value.toString().trim() : '';
-      if (val.includes('نسبة الحضور')) {
-        percentageColIndex = colNumber;
-      }
-    });
+    // تنفيذ الخطة القادمة من العقل الذكي أو التعديلات العامة
+    if (aiPlan.actionType === 'update_column' && aiPlan.targetColumn) {
+      let targetColIndex = -1;
+      headerRow.eachCell((cell, colNumber) => {
+        const val = cell.value ? cell.value.toString().trim() : '';
+        if (val.includes(aiPlan.targetColumn)) {
+          targetColIndex = colNumber;
+        }
+      });
 
-    // إذا وُجد عمود نسبة الحضور، نقوم بتحديث صيغه بذكاء للصفوف التالية
-    if (percentageColIndex !== -1) {
-      const rowCount = worksheet.rowCount;
-      for (let i = headerRowIndex + 1; i <= rowCount; i++) {
-        const row = worksheet.getRow(i);
-        const empIdCell = row.getCell(1).value;
-        if (empIdCell) {
-          row.getCell(percentageColIndex).value = { formula: `IFERROR(COUNTIF(D${i}:H${i}, "حضور")/COUNTA(D${i}:H${i}), 0)` };
+      if (targetColIndex !== -1 && aiPlan.formula) {
+        const rowCount = worksheet.rowCount;
+        for (let i = headerRowIndex + 1; i <= rowCount; i++) {
+          const row = worksheet.getRow(i);
+          if (row.getCell(1).value) {
+            row.getCell(targetColIndex).value = { formula: aiPlan.formula };
+          }
         }
       }
-      modifications.push('تحديث وتحسين صيغ "نسبة الحضور" لكافة الموظفين بدقة');
     } else {
-      let newColIndex = worksheet.columnCount + 1;
-      worksheet.getCell(headerRowIndex, newColIndex).value = 'نسبة الحضور الذكية';
-      modifications.push('إضافة عمود "نسبة الحضور الذكية"');
+      // تعديل افتراضي ذكي (نسبة الحضور أو بصمة الأثير)
+      let percentageColIndex = -1;
+      headerRow.eachCell((cell, colNumber) => {
+        const val = cell.value ? cell.value.toString().trim() : '';
+        if (val.includes('نسبة الحضور')) {
+          percentageColIndex = colNumber;
+        }
+      });
+
+      if (percentageColIndex !== -1) {
+        const rowCount = worksheet.rowCount;
+        for (let i = headerRowIndex + 1; i <= rowCount; i++) {
+          const row = worksheet.getRow(i);
+          if (row.getCell(1).value) {
+            row.getCell(percentageColIndex).value = { formula: `IFERROR(COUNTIF(D${i}:H${i}, "حضور")/COUNTA(D${i}:H${i}), 0)` };
+          }
+        }
+      }
     }
 
-    if (modifications.length === 0) {
-      worksheet.getCell('A1').value = 'تم التحديث بواسطة الأثير AI';
-      modifications.push('إضافة بصمة الأثير الاحترافية للملف');
-    }
-
-    // ============================================================
     // حفظ الملف وإرجاعه
-    // ============================================================
     const outputBuffer = await workbook.xlsx.writeBuffer();
-
-    let message = "✅ تم تعديل وتطوير الملف بنجاح (مع تحليل المحقق الذكي):\n" + modifications.map((m, i) => `${i+1}. ${m}`).join('\n');
+    let message = "✅ تم تعديل وتطوير الملف بنجاح عبر عقل الأثير الذكي:\n" + modifications.map((m, i) => `${i+1}. ${m}`).join('\n');
 
     return {
       success: true,
       message: message,
       fileBase64: outputBuffer.toString('base64'),
-      fileName: `Alatheer_Pro_${Date.now()}.xlsx`,
+      fileName: `Alatheer_Smart_${Date.now()}.xlsx`,
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     };
 
