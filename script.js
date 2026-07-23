@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const newChatBtn = document.getElementById('newChatBtn');
     const newSessionBtn = document.getElementById('newSessionBtn');
     const sessionsList = document.getElementById('sessionsList');
+    const clearChatBtn = document.getElementById('clearChatBtn');
+    const exportChatBtn = document.getElementById('exportChatBtn');
     
     const attachBtn = document.getElementById('attachBtn');
     const fileBubbles = document.getElementById('fileBubbles');
@@ -13,10 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedFileObject = null;
     let attachedFileName = null;
     let isFileLoading = false;
+    let typingIndicatorId = null;
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = '.xlsx, .xls, .csv, .json, .txt, .docx';
+    fileInput.accept = '.xlsx, .xls, .csv, .json, .txt, .docx, .pdf, .png, .jpg, .jpeg';
     fileInput.style.display = 'none';
     document.body.appendChild(fileInput);
     
@@ -118,6 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </span>
                     <div class="session-badges">
                         ${session.pinned ? '<span class="session-badge" style="font-size: 10px; color: #d4af37; background: rgba(212, 175, 55, 0.1); padding: 2px 6px; border-radius: 4px;">مثبت</span>' : ''}
+                        ${session.messages && session.messages.length > 0 ? `<span style="font-size: 10px; color: #888; background: #2a2a2a; padding: 2px 6px; border-radius: 4px;">${session.messages.length}</span>` : ''}
                     </div>
                 </div>
                 <div class="session-actions" style="display: flex; gap: 12px; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
@@ -304,6 +308,130 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ✅ دالة تنسيق النص بشكل احترافي (Markdown كامل)
+    function formatReply(text) {
+        if (!text) return '';
+        
+        let formatted = text;
+        
+        // حماية الكود من التنسيق
+        formatted = formatted.replace(/```([\s\S]*?)```/g, (match, code) => {
+            return `<pre style="background: #1a1a1a; padding: 12px; border-radius: 8px; overflow-x: auto; border: 1px solid #333; direction: ltr; text-align: left;"><code style="color: #e0e0e0; font-family: monospace;">${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
+        });
+        
+        // العناوين
+        formatted = formatted.replace(/^### (.*?)$/gm, '<h3 style="margin: 12px 0 6px 0; color: #d4af37;">$1</h3>');
+        formatted = formatted.replace(/^## (.*?)$/gm, '<h2 style="margin: 16px 0 8px 0; color: #d4af37;">$1</h2>');
+        formatted = formatted.replace(/^# (.*?)$/gm, '<h1 style="margin: 20px 0 10px 0; color: #d4af37;">$1</h1>');
+        
+        // الخط العريض
+        formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        
+        // الخط المائل
+        formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        
+        // القوائم النقطية
+        formatted = formatted.replace(/^- (.*?)$/gm, '• $1');
+        
+        // القوائم الرقمية
+        formatted = formatted.replace(/^\d+\. (.*?)$/gm, (match, p1) => {
+            const num = match.match(/^\d+/)[0];
+            return `${num}. ${p1}`;
+        });
+        
+        // فواصل الأسطر
+        formatted = formatted.replace(/\n/g, '<br>');
+        
+        return formatted;
+    }
+
+    // ✅ دالة إظهار مؤشر الكتابة
+    function showTypingIndicator() {
+        if (!chatArea) return null;
+        
+        const indicatorId = 'typing_' + Date.now();
+        const div = document.createElement('div');
+        div.id = indicatorId;
+        div.className = 'message ai typing-indicator';
+        div.style.cssText = 'display: flex; align-items: center; gap: 4px; padding: 12px 16px;';
+        div.innerHTML = `
+            <span style="background: #444; width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: typingBounce 1.4s infinite both; animation-delay: 0s;"></span>
+            <span style="background: #444; width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: typingBounce 1.4s infinite both; animation-delay: 0.2s;"></span>
+            <span style="background: #444; width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: typingBounce 1.4s infinite both; animation-delay: 0.4s;"></span>
+        `;
+        
+        chatArea.appendChild(div);
+        chatArea.scrollTop = chatArea.scrollHeight;
+        
+        // إضافة CSS للأنيميشن
+        if (!document.getElementById('typingStyle')) {
+            const style = document.createElement('style');
+            style.id = 'typingStyle';
+            style.textContent = `
+                @keyframes typingBounce {
+                    0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+                    40% { transform: scale(1.2); opacity: 1; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        return indicatorId;
+    }
+
+    // ✅ دالة إخفاء مؤشر الكتابة
+    function hideTypingIndicator(indicatorId) {
+        if (!indicatorId) return;
+        const el = document.getElementById(indicatorId);
+        if (el) el.remove();
+    }
+
+    // ✅ دالة مسح المحادثة
+    function clearChat() {
+        if (!confirm('🗑️ هل تريد مسح جميع رسائل هذه الجلسة؟')) return;
+        
+        let sessions = getStoredSessions();
+        if (sessions[currentSessionId]) {
+            sessions[currentSessionId].messages = [];
+            saveSessions(sessions);
+            loadSession(currentSessionId);
+            if (welcomeScreen) welcomeScreen.style.display = 'flex';
+            renderSessionsList();
+        }
+    }
+
+    // ✅ دالة تصدير المحادثة
+    function exportChat() {
+        const sessions = getStoredSessions();
+        const session = sessions[currentSessionId];
+        if (!session || !session.messages || session.messages.length === 0) {
+            alert('⚠️ لا توجد رسائل لتصديرها.');
+            return;
+        }
+        
+        const text = session.messages.map(m => {
+            const sender = m.sender === 'user' ? '👤 المستخدم' : '🤖 عبد سيك';
+            return `[${sender}]: ${m.text}`;
+        }).join('\n\n');
+        
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat_${session.title || 'session'}_${new Date().toISOString().slice(0,10)}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // ✅ إضافة مستمعات للأزرار الجديدة
+    if (clearChatBtn) {
+        clearChatBtn.addEventListener('click', clearChat);
+    }
+    
+    if (exportChatBtn) {
+        exportChatBtn.addEventListener('click', exportChat);
+    }
+
     async function handleSendMessage() {
         if (!userInput) return;
         const message = userInput.value.trim();
@@ -333,9 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // =========================
-        // ✅ إضافة رسالة المستخدم مع الملف (في الشات)
-        // =========================
+        // عرض رسالة المستخدم
         const userMessageDiv = document.createElement('div');
         userMessageDiv.className = 'message user';
         
@@ -362,17 +488,13 @@ document.addEventListener('DOMContentLoaded', () => {
         chatArea.appendChild(userMessageDiv);
         chatArea.scrollTop = chatArea.scrollHeight;
         
-        // =========================
-        // ✅ حفظ الرسالة في الجلسة
-        // =========================
+        // حفظ الرسالة في الجلسة
         saveMessageToCurrentSession('user', displayMessage || '📎 ملف مرفق', {
             fileName: fileDisplayName,
             fileData: payloadExcel
         });
 
-        // =========================
-        // ✅ تحديث عنوان الجلسة
-        // =========================
+        // تحديث عنوان الجلسة
         let sessions = getStoredSessions();
         if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
             sessions[currentSessionId].title = displayMessage.length > 20 ? displayMessage.substring(0, 20) + '...' : displayMessage || 'ملف مرفق';
@@ -380,15 +502,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderSessionsList();
         }
 
-        // =========================
-        // ✅ مسح حقل الإدخال
-        // =========================
+        // مسح الحقول
         userInput.value = '';
         userInput.style.height = 'auto';
-
-        // =========================
-        // ✅ إزالة الملف من صندوق الكتابة نهائياً
-        // =========================
         selectedFileObject = null;
         attachedFileName = null;
         isFileLoading = false;
@@ -398,10 +514,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateSendButtonState();
 
-        // =========================
-        // ✅ رسالة "جاري المعالجة"
-        // =========================
-        const loadingId = appendMessageToDOM('assistant', 'جاري المعالجة ... ⏳', true);
+        // ✅ إظهار مؤشر الكتابة
+        const typingId = showTypingIndicator();
 
         try {
             const response = await fetch('/api/chat', {
@@ -415,19 +529,15 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await response.json();
-            removeMessageFromDOM(loadingId);
+            
+            // ✅ إخفاء مؤشر الكتابة
+            hideTypingIndicator(typingId);
 
             if (data && data.reply) {
-                // ✅ معالجة النص لعرضه بشكل كامل مع التنسيق
+                // ✅ عرض الرد مع التنسيق
                 const msgDiv = document.createElement('div');
                 msgDiv.className = 'message ai';
-                
-                let replyText = data.reply;
-                replyText = replyText.replace(/\n/g, '<br>');
-                replyText = replyText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                replyText = replyText.replace(/^\* (.*?)$/gm, '• $1');
-                
-                msgDiv.innerHTML = replyText;
+                msgDiv.innerHTML = formatReply(data.reply);
                 chatArea.appendChild(msgDiv);
                 
                 let savedFileData = null;
@@ -452,8 +562,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error('❌ Fetch Error:', error);
-            removeMessageFromDOM(loadingId);
-            appendMessageToDOM('assistant', '⚠️ تعذر الاتصال بالسيرفر.');
+            hideTypingIndicator(typingId);
+            
+            // ✅ عرض زر إعادة المحاولة
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'message ai';
+            errorDiv.innerHTML = `
+                ⚠️ تعذر الاتصال بالسيرفر.
+                <button onclick="location.reload()" style="display: block; margin-top: 8px; background: #d4af37; color: #000; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-weight: bold;">🔄 إعادة المحاولة</button>
+            `;
+            chatArea.appendChild(errorDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
         }
     }
 
@@ -473,20 +592,13 @@ document.addEventListener('DOMContentLoaded', () => {
         messageDiv.id = messageId;
         
         messageDiv.className = `message ${sender === 'user' ? 'user' : 'ai'}`;
-        
-        // ✅ معالجة النص لعرضه كاملاً مع التنسيق
-        let formattedText = text || '';
-        formattedText = formattedText.replace(/\n/g, '<br>');
-        formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        formattedText = formattedText.replace(/^\* (.*?)$/gm, '• $1');
-        
-        messageDiv.innerHTML = formattedText;
+        messageDiv.innerHTML = formatReply(text);
         chatArea.appendChild(messageDiv);
 
-        if (fileData) {
+        if (fileData && fileData.base64) {
             const downloadBtn = document.createElement('a');
             downloadBtn.href = `data:application/octet-stream;base64,${fileData.base64}`;
-            downloadBtn.download = fileData.name;
+            downloadBtn.download = fileData.name || 'file.xlsx';
             downloadBtn.innerText = '📥 اضغط هنا لتحميل الملف الناتج';
             downloadBtn.style.cssText = 'display: inline-block; margin-top: 8px; color: #d4af37; text-decoration: underline; font-weight: bold; cursor: pointer;';
             chatArea.appendChild(downloadBtn);
@@ -527,6 +639,27 @@ document.addEventListener('DOMContentLoaded', () => {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
             updateSendButtonState();
+        });
+        
+        // ✅ تعديل سلوك Enter حسب الجهاز
+        userInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const isMobile = window.innerWidth <= 768;
+                
+                if (isMobile) {
+                    // الموبايل: Enter = سطر جديد دائماً
+                    return; // يترك السلوك الافتراضي (سطر جديد)
+                } else {
+                    // الكمبيوتر: Shift+Enter = سطر جديد، Enter = إرسال
+                    if (!e.shiftKey) {
+                        e.preventDefault();
+                        if (!sendBtn.disabled) {
+                            handleSendMessage();
+                        }
+                    }
+                    // Shift+Enter يترك السلوك الافتراضي (سطر جديد)
+                }
+            }
         });
     }
 });
