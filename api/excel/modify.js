@@ -7,62 +7,51 @@ import { askGroqStructured } from '../groqService.js';
 export async function modifyExcelHandler(req, res) {
   try {
     const body = req.body || req || {};
-    const { base64, instruction } = body;
+    const { base64, instruction, action = "modify" } = body;
 
-    if (!base64) {
-      return { success: false, error: "لا يوجد ملف Excel مرفق." };
+    let tempInputPath = path.join('/tmp', `input_${Date.now()}.xlsx`);
+    let metaResult = { metadata: {} };
+
+    if (base64) {
+      const buffer = Buffer.from(base64, 'base64');
+      fs.writeFileSync(tempInputPath, buffer);
+      metaResult = await extractExcelMetadata(buffer);
     }
 
-    const buffer = Buffer.from(base64, 'base64');
-    
-    // استخلاص الهيكل وخطط Groq
-    const metaResult = await extractExcelMetadata(buffer);
-    const aiResponse = await askGroqStructured(metaResult.metadata, instruction || "تعديل الملف");
-    
+    const aiResponse = await askGroqStructured(metaResult.metadata, instruction || "تعديل الملف وتطويره");
     let aiPlan = aiResponse.success && aiResponse.data ? aiResponse.data : { newColumns: ["سبب الغياب", "ملاحظات"] };
 
-    // كتابة الملف في ملف مؤقت لمعالجته عبر بايثون
-    const tempInputPath = path.join('/tmp', `input_${Date.now()}.xlsx`);
-    fs.writeFileSync(tempInputPath, buffer);
-
-    // تحضير البيانات لمرسليتها لسكربت البايثون
     const payload = JSON.stringify({
+      action: action,
       filePath: tempInputPath,
-      newColumns: aiPlan.newColumns || ["سبب الغياب", "ملاحظات"],
-      targetColumn: aiPlan.targetColumn || null
+      plan: aiPlan
     });
 
-    // استدعاء سكربت البايثون السيادي لتنفيذ المعالجة المعقدة بدقة
-    const scriptPath = path.join(process.cwd(), 'api', 'excel', 'modify.py');
-    const pythonCmd = `python3 "${scriptPath}"`;
-    
-    const output = execSync(pythonCmd, {
+    const scriptPath = path.join(process.cwd(), 'api', 'excel', 'engine.py');
+    const output = execSync(`python3 "${scriptPath}"`, {
       input: payload,
       encoding: 'utf-8'
     });
 
     const resultObj = JSON.parse(output.trim());
     if (!resultObj.success) {
-      throw new Error(resultObj.error || "فشل معالجة بايثون");
+      throw new Error(resultObj.error || "فشل محرك بايثون");
     }
 
-    // قراءة الملف بعد التعديل وإرجاعه كـ Buffer
     const modifiedBuffer = fs.readFileSync(tempInputPath);
-    
-    // تنظيف الملف المؤقت
     try { fs.unlinkSync(tempInputPath); } catch(e) {}
 
     return {
       success: true,
-      message: "✅ تم تعديل الملف واجتياز عقدة الصيغ بنجاح عبر Python & openpyxl.",
+      message: "✅ تم تنفيذ الطلب بنجاح عبر ملكوت إكسل السيادي.",
       fileBase64: modifiedBuffer.toString('base64'),
-      fileName: `Alatheer_Python_Pro_${Date.now()}.xlsx`,
+      fileName: `Alatheer_Absolute_${Date.now()}.xlsx`,
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     };
 
   } catch (error) {
-    console.error("❌ Error in Python Bridge:", error);
-    return { success: false, error: "خطأ في الجسر البرمجي: " + error.message };
+    console.error("❌ Error in Absolute Excel Engine:", error);
+    return { success: false, error: "خطأ في المحرك الشامل: " + error.message };
   }
 }
 
@@ -82,9 +71,8 @@ export default async function handler(req, res) {
       return res.status(200).send(Buffer.from(result.fileBase64, 'base64'));
     }
 
-    return res.status(400).json({ error: result.error || "فشل تعديل الملف" });
+    return res.status(400).json({ error: result.error || "فشل معالجة الطلب" });
   } catch (err) {
     return res.status(500).json({ error: "خطأ داخلي: " + err.message });
   }
 }
-
