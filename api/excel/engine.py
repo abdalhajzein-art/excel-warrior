@@ -7,6 +7,7 @@ from openpyxl.formatting.rule import Rule
 from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.comments import Comment
 import re
+import traceback
 
 class ExcelWarrior:
     """المحرك السيادي الشامل لمعالجة Excel"""
@@ -19,21 +20,31 @@ class ExcelWarrior:
     
     def load_file(self, file_path, sheet_name=None):
         """تحميل ملف Excel مع دعم اختيار الورقة"""
-        self.wb = openpyxl.load_workbook(file_path)
+        try:
+            self.wb = openpyxl.load_workbook(file_path, data_only=False)
+        except Exception as e:
+            raise Exception(f"فشل تحميل الملف: {str(e)}")
+            
         if sheet_name and sheet_name in self.wb.sheetnames:
             self.ws = self.wb[sheet_name]
         else:
             self.ws = self.wb.active
         self._detect_header_row()
+        print(f"✅ تم تحميل الملف: {file_path}", file=sys.stderr)
+        print(f"📊 عدد الصفوف: {self.ws.max_row}, عدد الأعمدة: {self.ws.max_column}", file=sys.stderr)
     
     def _detect_header_row(self):
         """كشف صف العناوين تلقائياً"""
-        for r in range(1, min(self.ws.max_row + 1, 10)):
-            non_empty = sum(1 for c in range(1, self.ws.max_column + 1) 
+        for r in range(1, min(self.ws.max_row + 1, 20)):
+            non_empty = sum(1 for c in range(1, min(self.ws.max_column + 1, 10)) 
                           if self.ws.cell(row=r, column=c).value is not None)
             if non_empty >= 2:
                 self.header_row = r
+                print(f"📍 تم كشف صف العناوين في الصف: {r}", file=sys.stderr)
                 break
+        else:
+            print(f"⚠️ لم يتم كشف صف العناوين، استخدام الصف 1 افتراضياً", file=sys.stderr)
+            self.header_row = 1
     
     def _find_column(self, target_name):
         """البحث عن عمود بالاسم"""
@@ -43,7 +54,9 @@ class ExcelWarrior:
         for c in range(1, self.ws.max_column + 1):
             val = str(self.ws.cell(row=self.header_row, column=c).value or "").strip().lower()
             if target_lower in val or val in target_lower:
+                print(f"🔍 تم العثور على عمود '{target_name}' في العمود {c}", file=sys.stderr)
                 return c
+        print(f"⚠️ لم يتم العثور على عمود '{target_name}'", file=sys.stderr)
         return None
     
     def _apply_style(self, cell, style_type='header'):
@@ -65,6 +78,7 @@ class ExcelWarrior:
     
     def generate(self, plan):
         """توليد ملف Excel جديد من الصفر"""
+        print("🔄 بدء توليد ملف جديد", file=sys.stderr)
         self.wb = openpyxl.Workbook()
         self.ws = self.wb.active
         self.ws.title = plan.get("sheetName", "تقرير_رئيسي")
@@ -87,6 +101,7 @@ class ExcelWarrior:
                 cell = self.ws.cell(row=r_idx, column=c_idx, value=val)
                 self._apply_style(cell, 'data')
         
+        print(f"✅ تم توليد الملف بـ {len(columns)} عمود و {len(rows_data)} صف", file=sys.stderr)
         return {"success": True, "message": "✅ تم توليد الملف بنجاح"}
     
     def add_columns(self, plan):
@@ -99,9 +114,12 @@ class ExcelWarrior:
         if not new_columns:
             return {"success": False, "error": "لا توجد أعمدة جديدة للإضافة"}
         
+        print(f"🔄 إضافة {len(new_columns)} عمود: {new_columns}", file=sys.stderr)
+        
         # البحث عن العمود المستهدف
         target_col_idx = self._find_column(target_column)
         insert_pos = (target_col_idx + 1) if target_col_idx else (self.ws.max_column + 1)
+        print(f"📍 موقع الإدراج: العمود {insert_pos}", file=sys.stderr)
         
         # إدراج الأعمدة
         self.ws.insert_cols(insert_pos, amount=len(new_columns))
@@ -109,11 +127,13 @@ class ExcelWarrior:
         # تنسيق الأعمدة الجديدة
         for idx, col_name in enumerate(new_columns):
             current_col = insert_pos + idx
+            print(f"📝 إضافة عمود: {col_name} في العمود {current_col}", file=sys.stderr)
             # عنوان العمود
             header_cell = self.ws.cell(row=self.header_row, column=current_col, value=col_name)
             self._apply_style(header_cell, 'header')
             
             # تعبئة البيانات
+            filled_count = 0
             for r in range(self.header_row + 1, self.ws.max_row + 1):
                 if self.ws.cell(row=r, column=1).value is not None:
                     cell = self.ws.cell(row=r, column=current_col)
@@ -141,7 +161,11 @@ class ExcelWarrior:
                             cell.value = f'=IF({target_letter}{r}="مطلوب صيانة","عاجل","عادي")'
                         else:
                             cell.value = "-"
+                    filled_count += 1
+            
+            print(f"✅ تم تعبئة {filled_count} خلية في العمود {col_name}", file=sys.stderr)
         
+        print(f"✅ تم إضافة {len(new_columns)} عمود جديد", file=sys.stderr)
         return {"success": True, "message": f"✅ تم إضافة {len(new_columns)} عمود جديد"}
     
     def delete_columns(self, plan):
@@ -197,6 +221,7 @@ class ExcelWarrior:
     
     def analyze(self, plan):
         """تحليل البيانات وإحصائيات"""
+        print("📊 بدء تحليل البيانات", file=sys.stderr)
         analysis = {
             "total_rows": self.ws.max_row - self.header_row,
             "total_columns": self.ws.max_column,
@@ -226,6 +251,7 @@ class ExcelWarrior:
                     "sample": values[:5]
                 }
         
+        print(f"✅ تم تحليل {analysis['total_rows']} صف و {analysis['total_columns']} عمود", file=sys.stderr)
         return {"success": True, "message": "✅ تم التحليل", "analysis": analysis}
     
     def remove_duplicates(self, plan):
@@ -288,12 +314,18 @@ class ExcelWarrior:
     
     def save(self, output_path):
         """حفظ الملف"""
-        self.wb.save(output_path)
-        return {"success": True, "message": "✅ تم حفظ الملف"}
+        try:
+            self.wb.save(output_path)
+            print(f"✅ تم حفظ الملف: {output_path}", file=sys.stderr)
+            return {"success": True, "message": "✅ تم حفظ الملف"}
+        except Exception as e:
+            raise Exception(f"فشل حفظ الملف: {str(e)}")
     
     def execute(self, action, plan, file_path=None, output_path=None):
         """تنفيذ أي أمر بناءً على الإجراء المطلوب"""
         try:
+            print(f"🔄 تنفيذ الإجراء: {action}", file=sys.stderr)
+            
             if action == "generate":
                 return self.generate(plan)
             
@@ -309,6 +341,8 @@ class ExcelWarrior:
                     return self.delete_columns(plan)
                 elif plan.get("updates"):
                     return self.update_cells(plan)
+                else:
+                    return {"success": False, "error": "لا يوجد تعديل محدد في الخطة"}
             elif action == "analyze":
                 return self.analyze(plan)
             elif action == "remove_duplicates":
@@ -319,16 +353,29 @@ class ExcelWarrior:
                 return {"success": False, "error": f"إجراء غير معروف: {action}"}
             
         except Exception as e:
+            print(f"❌ خطأ في التنفيذ: {str(e)}", file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
             return {"success": False, "error": str(e)}
 
 def main():
     """الدالة الرئيسية لاستقبال الأوامر من Node.js"""
     try:
-        input_data = json.loads(sys.stdin.read())
+        # قراءة البيانات من stdin
+        raw_input = sys.stdin.read()
+        if not raw_input:
+            print(json.dumps({"success": False, "error": "لم يتم استلام بيانات"}), flush=True)
+            return
+            
+        input_data = json.loads(raw_input)
         action = input_data.get("action", "modify")
         input_path = input_data.get("inputPath")
         output_path = input_data.get("outputPath")
         plan = input_data.get("plan", {})
+        
+        print(f"📥 استلام طلب: {action}", file=sys.stderr)
+        print(f"📂 مسار الإدخال: {input_path}", file=sys.stderr)
+        print(f"📂 مسار الإخراج: {output_path}", file=sys.stderr)
+        print(f"📋 الخطة: {json.dumps(plan, ensure_ascii=False)[:200]}...", file=sys.stderr)
         
         warrior = ExcelWarrior()
         result = warrior.execute(action, plan, input_path, output_path)
@@ -337,10 +384,12 @@ def main():
         if result["success"] and output_path and action != "analyze":
             warrior.save(output_path)
         
-        print(json.dumps(result))
+        print(json.dumps(result), flush=True)
         
+    except json.JSONDecodeError as e:
+        print(json.dumps({"success": False, "error": f"خطأ في قراءة JSON: {str(e)}"}), flush=True)
     except Exception as e:
-        print(json.dumps({"success": False, "error": str(e)}))
+        print(json.dumps({"success": False, "error": str(e), "traceback": traceback.format_exc()}), flush=True)
 
 if __name__ == "__main__":
     main()
