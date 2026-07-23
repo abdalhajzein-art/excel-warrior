@@ -42,7 +42,7 @@ export const toolsRegistry = {
   },
   file_convert: {
     method: "POST",
-    endpoint: "/api/convert/convert",
+    endpoint: "/api/convert",  // ✅ تم التصحيح
     handler: convertFileHandler
   },
   image_generate: {
@@ -62,14 +62,26 @@ export const toolsDefinition = [
     type: "function",
     function: {
       name: "excel_modify",
-      description: "تعديل محتوى ملف إكسل موجود (إضافة صفوف، تعديل خلايا، أو تحديث البيانات) بناءً على تعليمات المستخدم.",
+      description: "تعديل محتوى ملف إكسل موجود (إضافة أعمدة، حذف أعمدة، تحديث خلايا، إضافة صيغ، قوائم منسدلة) بناءً على تعليمات المستخدم.",
       parameters: {
         type: "object",
         properties: {
           base64: { type: "string", description: "ملف الإكسل بصيغة base64" },
-          editMap: { type: "object", description: "تفاصيل التعديلات المطلوبة على الجداول" }
+          instruction: { type: "string", description: "تعليمات التعديل المطلوبة" },
+          targetColumn: { type: "string", description: "اسم العمود المستهدف (للإضافة بعده)" },
+          newColumns: { 
+            type: "array", 
+            items: { type: "string" },
+            description: "أسماء الأعمدة الجديدة المراد إضافتها" 
+          },
+          formulaTemplate: { type: "string", description: "صيغة مخصصة للتطبيق (مثل: =SUM({target_col}{row}))" },
+          dropdownOptions: { 
+            type: "array", 
+            items: { type: "string" },
+            description: "خيارات القائمة المنسدلة" 
+          }
         },
-        required: ["base64", "editMap"]
+        required: ["base64", "instruction"]
       }
     }
   },
@@ -77,11 +89,22 @@ export const toolsDefinition = [
     type: "function",
     function: {
       name: "excel_generate",
-      description: "إنشاء ملف إكسل جديد بالكامل (جداول بيانات، تقارير مالية، أو قوائم) بناءً على تعليمات المستخدم.",
+      description: "إنشاء ملف إكسل جديد بالكامل (جداول بيانات، تقارير، قوائم) بناءً على تعليمات المستخدم.",
       parameters: {
         type: "object",
         properties: {
-          instruction: { type: "string", description: "وصف تفصيلي لهيكلية ومحتوى ملف الإكسل المطلوب" }
+          instruction: { type: "string", description: "وصف تفصيلي لهيكلية ومحتوى ملف الإكسل المطلوب" },
+          columns: { 
+            type: "array", 
+            items: { type: "string" },
+            description: "أسماء الأعمدة المطلوبة" 
+          },
+          rows: { 
+            type: "array", 
+            items: { type: "array" },
+            description: "البيانات (صفوف) للملف" 
+          },
+          sheetName: { type: "string", description: "اسم الورقة" }
         },
         required: ["instruction"]
       }
@@ -91,7 +114,7 @@ export const toolsDefinition = [
     type: "function",
     function: {
       name: "word_generate",
-      description: "إنشاء مستند Word احترافي جديد بالكامل (تقارير، عقود، أو مقالات) مع التنسيق والعناوين.",
+      description: "إنشاء مستند Word احترافي جديد بالكامل (تقارير، عقود، مقالات) مع التنسيق والعناوين.",
       parameters: {
         type: "object",
         properties: {
@@ -111,9 +134,9 @@ export const toolsDefinition = [
         type: "object",
         properties: {
           base64: { type: "string", description: "ملف الوورد بصيغة base64" },
-          replacements: { type: "object", description: "النصوص المراد البحث عنها واستبدالها" }
+          instruction: { type: "string", description: "تعليمات التعديل المطلوبة" }
         },
-        required: ["base64", "replacements"]
+        required: ["base64", "instruction"]
       }
     }
   },
@@ -121,7 +144,7 @@ export const toolsDefinition = [
     type: "function",
     function: {
       name: "pdf_generate",
-      description: "توليد ملف PDF احترافي جديد (مستندات رسمية، فواتير، أو تقارير موثقة) جاهز للتحميل والطباعة.",
+      description: "توليد ملف PDF احترافي جديد (مستندات رسمية، فواتير، تقارير) جاهز للتحميل والطباعة.",
       parameters: {
         type: "object",
         properties: {
@@ -151,12 +174,13 @@ export const toolsDefinition = [
     type: "function",
     function: {
       name: "file_convert",
-      description: "تحويل الملفات بين جميع الصيغ بسلاسة مطلقة (مثل: إكسل إلى PDF، وورد إلى PDF، إكسل إلى CSV، أو العكس).",
+      description: "تحويل الملفات بين جميع الصيغ (Excel ↔ PDF ↔ Word ↔ CSV ↔ JSON ↔ HTML ↔ SQL ↔ XML ↔ Image).",
       parameters: {
         type: "object",
         properties: {
           base64: { type: "string", description: "الملف المراد تحويله بصيغة base64" },
-          targetFormat: { type: "string", description: "الصيغة المستهدفة للتحويل (مثلاً: pdf, excel, word, csv)" }
+          targetFormat: { type: "string", description: "الصيغة المستهدفة (pdf, excel, word, csv, json, html, sql, xml, png)" },
+          sourceFormat: { type: "string", description: "الصيغة المصدر (excel, word, pdf, image) - اختياري" }
         },
         required: ["base64", "targetFormat"]
       }
@@ -166,7 +190,7 @@ export const toolsDefinition = [
     type: "function",
     function: {
       name: "image_generate",
-      description: "توليد صورة بصرية جديدة أو تصميم فني خارق بناءً على وصف دقيق من المستخدم.",
+      description: "توليد صورة بصرية جديدة بناءً على وصف دقيق من المستخدم.",
       parameters: {
         type: "object",
         properties: {
@@ -180,7 +204,7 @@ export const toolsDefinition = [
     type: "function",
     function: {
       name: "image_modify",
-      description: "تعديل، تحسين، أو معالجة صورة مرفقة (مثل تغيير الحجم أو الأبعاد) بناءً على تعليمات المستخدم.",
+      description: "تعديل، تحسين، أو معالجة صورة مرفقة (تغيير الحجم، اقتصاص، تحويل) بناءً على تعليمات المستخدم.",
       parameters: {
         type: "object",
         properties: {
@@ -192,3 +216,18 @@ export const toolsDefinition = [
     }
   }
 ];
+
+// ✅ دالة مساعدة للحصول على أداة معينة
+export function getTool(toolName) {
+  return toolsRegistry[toolName] || null;
+}
+
+// ✅ دالة مساعدة للحصول على تعريف أداة معينة
+export function getToolDefinition(toolName) {
+  return toolsDefinition.find(t => t.function.name === toolName) || null;
+}
+
+// ✅ دالة مساعدة للحصول على جميع تعريفات الأدوات
+export function getAllToolDefinitions() {
+  return toolsDefinition;
+  }
