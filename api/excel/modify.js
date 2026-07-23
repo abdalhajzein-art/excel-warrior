@@ -1,11 +1,8 @@
-import { exec } from 'child_process';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { promisify } from 'util';
 import { extractExcelMetadata } from './metadata.js';
 import { askGroqStructured } from '../groqService.js';
-
-const execAsync = promisify(exec);
 
 /**
  * تعديل ملف Excel بناءً على تعليمات المستخدم وخطة الذكاء الاصطناعي
@@ -97,13 +94,41 @@ export async function modifyExcelHandler({
 
     console.log(`📤 إرسال البيانات لمحرك Python: ${payload}`);
 
-    // 5️⃣ تشغيل محرك Python (غير متزامن)
+    // 5️⃣ تشغيل محرك Python باستخدام spawn (بديل exec)
     const scriptPath = path.join(process.cwd(), 'api', 'excel', 'engine.py');
-    const { stdout, stderr } = await execAsync(`python3 "${scriptPath}"`, {
-      input: payload,
-      encoding: 'utf-8',
-      maxBuffer: 50 * 1024 * 1024 // 50MB للتعامل مع الملفات الكبيرة
+    
+    const pythonProcess = spawn('python3', [scriptPath]);
+    
+    let stdout = '';
+    let stderr = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
     });
+
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    // إرسال البيانات إلى stdin
+    pythonProcess.stdin.write(payload);
+    pythonProcess.stdin.end();
+
+    // انتظار انتهاء العملية
+    await new Promise((resolve, reject) => {
+      pythonProcess.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Python exited with code ${code}\nStderr: ${stderr}`));
+        }
+      });
+      pythonProcess.on('error', (err) => {
+        reject(err);
+      });
+    });
+
+    console.log(`📥 مخرجات Python: ${stdout}`);
 
     if (stderr) {
       console.warn(`⚠️ تحذير من Python: ${stderr}`);
@@ -210,4 +235,4 @@ export default async function handler(req, res) {
       error: "خطأ داخلي في الخادم: " + err.message 
     });
   }
-  }
+      }
