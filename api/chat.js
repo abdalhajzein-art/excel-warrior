@@ -146,15 +146,43 @@ export default async function handler(req, res) {
             format: action.format || 'pdf',
             targetColumn: action.targetColumn || null,
             newColumns: action.newColumns || [],
-            formulaTemplate: action.formulaTemplate || null
+            formulaTemplate: action.formulaTemplate || null,
+            dropdownOptions: action.dropdownOptions || null
           });
 
           session.step = 'init';
           session.pendingAction = null;
 
           if (result && result.success) {
-            // إذا كانت النتيجة تحتوي على ملف معدل
+            // ✅ إذا كانت النتيجة تحتوي على ملف معدل، قم بتحديث الجلسة
             if (result.fileBase64) {
+              // تحديث الملف المخزن في الجلسة
+              const newFileName = result.fileName || fileName;
+              const newBase64 = result.fileBase64;
+              
+              // تحديث الملخص
+              let newSummary = `[ملف معدل: ${newFileName}]\n`;
+              if (result.summary) {
+                newSummary += `التعديل: ${result.summary}\n`;
+              }
+              if (result.details) {
+                newSummary += `تفاصيل: ${JSON.stringify(result.details)}\n`;
+              }
+              
+              session.lastFile = {
+                base64: newBase64,
+                name: newFileName,
+                summary: newSummary,
+                data: fileData // يمكن تحديث البيانات إذا لزم الأمر
+              };
+              
+              // تحديث المتغيرات الحالية
+              extractedBase64 = newBase64;
+              fileName = newFileName;
+              fileSummary = newSummary;
+              
+              console.log(`🔄 تم تحديث الملف في الجلسة: ${newFileName}`);
+
               return res.json({
                 reply: result.message || "✅ تم التنفيذ بنجاح!",
                 fileBase64: result.fileBase64,
@@ -257,7 +285,8 @@ export default async function handler(req, res) {
         format: analysisResult.format || 'pdf',
         targetColumn: analysisResult.targetColumn || null,
         newColumns: analysisResult.newColumns || [],
-        formulaTemplate: analysisResult.formulaTemplate || null
+        formulaTemplate: analysisResult.formulaTemplate || null,
+        dropdownOptions: analysisResult.dropdownOptions || null
       };
 
       session.step = 'awaiting_confirmation';
@@ -269,7 +298,8 @@ export default async function handler(req, res) {
         format: analysisResult.format || 'pdf',
         targetColumn: analysisResult.targetColumn || null,
         newColumns: analysisResult.newColumns || [],
-        formulaTemplate: analysisResult.formulaTemplate || null
+        formulaTemplate: analysisResult.formulaTemplate || null,
+        dropdownOptions: analysisResult.dropdownOptions || null
       };
       
       let reply = analysisResult.response || `✅ **فهمت طلبك!**\n\n`;
@@ -290,4 +320,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في المعالجة")
     });
   }
-  }
+                                   }
