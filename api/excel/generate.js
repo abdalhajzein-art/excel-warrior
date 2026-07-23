@@ -1,68 +1,162 @@
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { promisify } from 'util';
 import { askGroqStructured } from '../groqService.js';
 
-export async function generateExcelHandler(req, res) {
-  try {
-    const body = req.body || req || {};
-    const { instruction } = body;
+const execAsync = promisify(exec);
 
+/**
+ * توليد ملف Excel جديد من الصفر بناءً على تعليمات المستخدم
+ * @param {Object} params - معاملات التوليد
+ * @param {string} params.instruction - تعليمات المستخدم
+ * @param {string} params.fileName - اسم الملف الناتج
+ * @param {string[]} params.columns - أسماء الأعمدة
+ * @param {Array} params.rows - البيانات (صفوف)
+ * @param {string} params.sheetName - اسم الورقة
+ */
+export async function generateExcelHandler({
+  instruction,
+  fileName = 'generated.xlsx',
+  columns = [],
+  rows = [],
+  sheetName = 'تقرير'
+}) {
+  try {
+    // 1️⃣ التحقق من وجود تعليمات
     if (!instruction) {
-      return { success: false, error: "يرجى تقديم وصف لجدول الإكسل المراد توليده." };
+      return {
+        success: false,
+        error: "⚠️ لا توجد تعليمات لتوليد الملف. يرجى توضيح المطلوب."
+      };
     }
 
-    // 1. طلب خطة تصميم الجدول من عقل Groq
-    const prompt = `أنشئ جدول إكسل بناءً على الطلب التالي: "${instruction}". رجّع النتيجة بـ JSON يحتوي على:
-    - headers: مصفوفة بأسماء الأعمدة (مثل ["رقم", "الاسم", "المبلغ"])
-    - rows: مصفوفة مصفوفات تحتوي على 3 إلى 5 صفوف بيانات تجريبية واقعية مطابقة للطلب.`;
+    // 2️⃣ إنشاء ملف مؤقت للإخراج
+    const timestamp = Date.now();
+    const outputPath = path.join('/tmp', `generated_${timestamp}.xlsx`);
 
-    const aiResponse = await askGroqStructured({}, prompt);
-    let plan = aiResponse.success && aiResponse.data ? aiResponse.data : {
-      headers: ["الرقم", "العنصر", "الحالة", "التاريخ"],
-      rows: [
-        [1, "عنصر تجريبي 1", "نشط", "2026-07-23"],
-        [2, "عنصر تجريبي 2", "قيد المعالجة", "2026-07-23"]
-      ]
+    // 3️⃣ تحليل الطلب عبر Groq إذا لم يتم تحديد الأعمدة والبيانات
+    let plan = {
+      columns: columns,
+      rows: rows,
+      sheetName: sheetName,
+      summary: instruction
     };
 
-    const tempOutputPath = path.join('/tmp', `generated_${Date.now()}.xlsx`);
+    if (!columns.length || !rows.length) {
+      console.log(`📤 إرسال الطلب لـ Groq لتحليل التوليد: ${instruction}`);
+      
+      const groqResponse = await askGroqStructured(
+        { instruction: instruction }, 
+        instruction
+      );
 
-    // 2. إرسال خطة التوليد إلى محرك بايثون الشامل
-    const payload = JSON.stringify({
-      action: "generate",
-      filePath: tempOutputPath,
-      plan: plan
-    });
-
-    const scriptPath = path.join(process.cwd(), 'api', 'excel', 'engine.py');
-    const output = execSync(`python3 "${scriptPath}"`, {
-      input: payload,
-      encoding: 'utf-8'
-    });
-
-    const resultObj = JSON.parse(output.trim());
-    if (!resultObj.success) {
-      throw new Error(resultObj.error || "فشل محرك بايثون في التوليد");
+      if (groqResponse.success && groqResponse.data) {
+        // استخراج الخطة من Groq
+        plan = {
+          columns: groqResponse.data.columns || ['رقم', 'البيان', 'التاريخ', 'القيمة'],
+          rows: groqResponse.data.rows || [
+            [1, 'بيان تجريبي', '2026-07-01', 1000],
+            [2, 'بيان تجريبي', '2026-07-02', 1500]
+          ],
+          sheetName: groqResponse.data.sheetName || 'تقرير_رئيسي',
+          summary: groqResponse.data.summary || instruction
+        };
+      } else {
+        // خطة افتراضية إذا فشل Groq
+        plan = {
+          columns: ['رقم', 'البيان', 'التاريخ', 'القيمة'],
+          rows: [
+            [1, 'بيان تجريبي 1', '2026-07-01', 1000],
+            [2, 'بيان تجريبي 2', '2026-07-02', 1500],
+            [3, 'بيان تجريبي 3', '2026-07-03', 2000]
+          ],
+          sheetName: 'تقرير_رئيسي',
+          summary: instruction
+        };
+      }
     }
 
-    const generatedBuffer = fs.readFileSync(tempOutputPath);
-    try { fs.unlinkSync(tempOutputPath); } catch(e) {}
+    // 4️⃣ بناء البيانات المرسلة لمحرك Python
+    const payload = JSON.stringify({
+      action: 'generate',
+      outputPath: outputPath,
+      plan: {
+        columns: plan.columns,
+        rows: plan.rows,
+        sheetName: plan.sheetName
+      }
+    });
 
+    console.log(`📤 إرسال بيانات التوليد لمحرك Python: ${payload}`);
+
+    // 5️⃣ تشغيل محرك Python
+    const scriptPath = path.join(process.cwd(), 'api', 'excel', 'engine.py');
+    const { stdout, stderr } = await execAsync(`python3 "${scriptPath}"`, {
+      input: payload,
+      encoding: 'utf-8',
+      maxBuffer: 50 * 1024 * 1024
+    });
+
+    if (stderr) {
+      console.warn(`⚠️ تحذير من Python: ${stderr}`);
+    }
+
+    // 6️⃣ تحليل نتيجة Python
+    let resultObj;
+    try {
+      resultObj = JSON.parse(stdout.trim());
+    } catch (parseErr) {
+      console.error("❌ خطأ في تحليل مخرجات Python:", stdout);
+      throw new Error("مخرجات غير صالحة من محرك Python");
+    }
+
+    if (!resultObj.success) {
+      throw new Error(resultObj.error || "فشل محرك Python في توليد الملف");
+    }
+
+    // 7️⃣ قراءة الملف المُولد
+    if (!fs.existsSync(outputPath)) {
+      throw new Error("لم يتم العثور على الملف المُولد");
+    }
+
+    const modifiedBuffer = fs.readFileSync(outputPath);
+
+    // 8️⃣ تنظيف الملف المؤقت
+    try {
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    } catch (cleanErr) {
+      console.warn("⚠️ فشل تنظيف الملف المؤقت:", cleanErr.message);
+    }
+
+    // 9️⃣ إرجاع النتيجة
     return {
       success: true,
-      message: "✅ تم توليد ملف الإكسل من الصفر باحترافية مطلقة.",
-      fileBase64: generatedBuffer.toString('base64'),
-      fileName: `Alatheer_Generated_${Date.now()}.xlsx`,
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      message: resultObj.message || "✅ تم توليد الملف بنجاح!",
+      fileBase64: modifiedBuffer.toString('base64'),
+      fileName: `generated_${fileName}`,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      summary: plan.summary,
+      details: {
+        columns: plan.columns,
+        rows_count: plan.rows.length,
+        sheetName: plan.sheetName
+      }
     };
 
   } catch (error) {
-    console.error("❌ Error in Generate Excel:", error);
-    return { success: false, error: "خطأ في توليد الملف: " + error.message };
+    console.error("❌ خطأ في generateExcelHandler:", error);
+
+    return {
+      success: false,
+      error: error.message || "حدث خطأ أثناء توليد الملف"
+    };
   }
 }
 
+/**
+ * دالة المعالج الرئيسية لـ API (للاستخدام مع Express)
+ */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -71,7 +165,14 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const result = await generateExcelHandler(body);
+    
+    const result = await generateExcelHandler({
+      instruction: body.instruction,
+      fileName: body.fileName || 'generated.xlsx',
+      columns: body.columns || [],
+      rows: body.rows || [],
+      sheetName: body.sheetName || 'تقرير'
+    });
 
     if (result.success && result.fileBase64) {
       res.setHeader("Content-Type", result.contentType);
@@ -79,9 +180,15 @@ export default async function handler(req, res) {
       return res.status(200).send(Buffer.from(result.fileBase64, 'base64'));
     }
 
-    return res.status(400).json({ error: result.error || "فشل توليد الملف" });
-  } catch (err) {
-    return res.status(500).json({ error: "خطأ داخلي: " + err.message });
-  }
-}
+    return res.status(400).json({ 
+      error: result.error || "فشل توليد الملف",
+      details: result.details || {}
+    });
 
+  } catch (err) {
+    console.error("❌ خطأ في معالج API:", err);
+    return res.status(500).json({ 
+      error: "خطأ داخلي في الخادم: " + err.message 
+    });
+  }
+             }
