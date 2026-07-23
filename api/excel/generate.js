@@ -1,10 +1,7 @@
-import { exec } from 'child_process';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { promisify } from 'util';
 import { askGroqStructured } from '../groqService.js';
-
-const execAsync = promisify(exec);
 
 /**
  * توليد ملف Excel جديد من الصفر بناءً على تعليمات المستخدم
@@ -90,13 +87,53 @@ export async function generateExcelHandler({
 
     console.log(`📤 إرسال بيانات التوليد لمحرك Python: ${payload}`);
 
-    // 5️⃣ تشغيل محرك Python
+    // 5️⃣ تشغيل محرك Python باستخدام spawn
     const scriptPath = path.join(process.cwd(), 'api', 'excel', 'engine.py');
-    const { stdout, stderr } = await execAsync(`python3 "${scriptPath}"`, {
-      input: payload,
-      encoding: 'utf-8',
-      maxBuffer: 50 * 1024 * 1024
+    
+    const pythonProcess = spawn('python3', [scriptPath]);
+    
+    let stdout = '';
+    let stderr = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
     });
+
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    // إرسال البيانات إلى stdin
+    pythonProcess.stdin.write(payload);
+    pythonProcess.stdin.end();
+
+    // ✅ تعيين مهلة (timeout) لمنع التعليق
+    const timeoutMs = 120000; // دقيقتين
+    const timeoutError = new Error(`انتهت المهلة بعد ${timeoutMs/1000} ثانية`);
+
+    // انتظار انتهاء العملية مع مهلة
+    await Promise.race([
+      new Promise((resolve, reject) => {
+        pythonProcess.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Python exited with code ${code}\nStderr: ${stderr}`));
+          }
+        });
+        pythonProcess.on('error', (err) => {
+          reject(err);
+        });
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => {
+          pythonProcess.kill('SIGTERM');
+          reject(timeoutError);
+        }, timeoutMs)
+      )
+    ]);
+
+    console.log(`📥 مخرجات Python: ${stdout}`);
 
     if (stderr) {
       console.warn(`⚠️ تحذير من Python: ${stderr}`);
@@ -191,4 +228,4 @@ export default async function handler(req, res) {
       error: "خطأ داخلي في الخادم: " + err.message 
     });
   }
-             }
+}
