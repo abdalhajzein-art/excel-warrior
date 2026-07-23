@@ -1,26 +1,28 @@
 import Groq from 'groq-sdk';
 import { SYSTEM_PROMPT } from "./agent/system.js";
-import { modifyExcelHandler } from './excel/modify.js';
-import { generateExcelHandler } from './excel/generate.js';
-import { convertFileHandler } from './convert/convert.js';
 import XLSX from 'xlsx';
+import executeTool from '../tools/execute.js';
+import { toolsRegistry } from '../tools/index.js';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // تخزين الجلسات
 const sessions = {};
 
-// ✅ دالة موحدة لتوزيع المهام على الأدوات
+// ✅ دالة موحدة لتوزيع المهام على الأدوات عبر execute
 async function callFunction(action, parameters) {
-  switch (action) {
-    case 'modify':
-      return await modifyExcelHandler(parameters);
-    case 'generate':
-      return await generateExcelHandler(parameters);
-    case 'convert':
-      return await convertFileHandler(parameters);
-    case 'analyze':
-      // تحليل الملف مباشرة دون handler
+  // تحويل الـ action إلى اسم الأداة في toolsRegistry
+  const toolMap = {
+    'modify': 'excel_modify',
+    'generate': 'excel_generate',
+    'convert': 'file_convert'
+  };
+
+  const toolName = toolMap[action];
+  
+  // إذا كانت analyze، نعالجها مباشرة (لأنها بسيطة)
+  if (action === 'analyze') {
+    try {
       const buffer = Buffer.from(parameters.base64, 'base64');
       const workbook = XLSX.read(buffer, { type: 'buffer' });
       const sheetName = workbook.SheetNames[0];
@@ -34,9 +36,29 @@ async function callFunction(action, parameters) {
           sample: data.slice(0, 5)
         }
       };
-    default:
-      throw new Error(`إجراء غير معروف: ${action}`);
+    } catch (err) {
+      return {
+        success: false,
+        error: `فشل التحليل: ${err.message}`
+      };
+    }
   }
+
+  if (!toolName || !toolsRegistry[toolName]) {
+    throw new Error(`أداة غير معروفة: ${action}`);
+  }
+
+  // ✅ استخدام execute لتنفيذ الأداة
+  const result = await executeTool({
+    method: 'POST',
+    body: JSON.stringify({
+      tool: toolName,
+      payload: parameters
+    })
+  }, null);
+
+  // استخراج النتيجة من execute
+  return result._data || result;
 }
 
 export default async function handler(req, res) {
@@ -173,7 +195,7 @@ export default async function handler(req, res) {
                 base64: newBase64,
                 name: newFileName,
                 summary: newSummary,
-                data: fileData // يمكن تحديث البيانات إذا لزم الأمر
+                data: fileData
               };
               
               // تحديث المتغيرات الحالية
@@ -320,4 +342,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في المعالجة")
     });
   }
-                                   }
+                  }
