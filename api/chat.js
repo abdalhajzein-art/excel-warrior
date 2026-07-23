@@ -139,13 +139,25 @@ export default async function handler(req, res) {
       content: userContent + (fileSummary ? `\n\n${fileSummary}` : "") 
     });
 
-    // ✅ تحسين إدارة السياق: 15 رسالة مع تلخيص
-    if (session.history.length > 15) {
-      const recent = session.history.slice(-5);
-      const old = session.history.slice(0, -5);
-      const summary = old.map(m => `${m.role}: ${m.content.substring(0, 100)}...`).join('\n');
+    // ✅ تحسين إدارة السياق: 25 رسالة مع تلخيص أفضل
+    if (session.history.length > 25) {
+      // احتفظ بآخر 10 رسائل كاملة
+      const recent = session.history.slice(-10);
+      // خذ أول 15 رسالة للتلخيص
+      const old = session.history.slice(0, -10);
+      
+      // تلخيص أفضل مع الحفاظ على المعلومات المهمة
+      const summary = old.map(m => {
+        const role = m.role === 'user' ? '👤 المستخدم' : '🤖 المساعد';
+        // خذ أول 200 حرف
+        return `${role}: ${m.content.substring(0, 200)}${m.content.length > 200 ? '...' : ''}`;
+      }).join('\n');
+      
       session.history = [
-        { role: 'system', content: `📋 ملخص المحادثة السابقة:\n${summary}` },
+        { 
+          role: 'system', 
+          content: `📋 ملخص المحادثة السابقة:\n${summary}\n\n⚠️ تذكر: استمر بنفس النية (modify/generate) التي طلبها المستخدم، ولا تغيرها إلا إذا طلب ذلك صراحة.` 
+        },
         ...recent
       ];
     }
@@ -272,6 +284,16 @@ export default async function handler(req, res) {
       };
     }
 
+    // ✅ منع تحويل modify إلى generate إذا كان هناك ملف مرفق
+    if (session.lastFile && analysisResult.action === 'generate') {
+      console.warn("⚠️ تم تحويل generate إلى modify بسبب وجود ملف مرفق في الجلسة");
+      analysisResult.action = 'modify';
+      analysisResult.summary = `تعديل الملف الموجود (${session.lastFile.name}) بدلاً من توليد ملف جديد`;
+      if (!analysisResult.plan) {
+        analysisResult.plan = 'تعديل الملف المرفق حسب طلب المستخدم';
+      }
+    }
+
     // حفظ رد المساعد
     session.history.push({ role: 'assistant', content: analysisResult.response });
 
@@ -342,4 +364,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في المعالجة")
     });
   }
-                  }
+}
