@@ -48,12 +48,12 @@ export async function modifyExcelHandler(req, res) {
 
     let modifications = aiPlan.modificationsDescription || [];
 
-    // البحث عن صف العناوين ديناميكياً
+    // البحث عن صف العناوين ديناميكياً بدقة
     let headerRowIndex = -1;
     worksheet.eachRow((row, rowNumber) => {
       row.eachCell((cell) => {
         const val = cell.value ? cell.value.toString().trim() : '';
-        if (val === 'رقم الموظف' || val === 'اسم الموظف' || val.includes('الاسم') || val.includes('اليوم')) {
+        if (val === 'رقم الموظف' || val === 'اسم الموظف' || val.includes('الاسم') || val.includes('اليوم') || val.includes('الغياب')) {
           if (headerRowIndex === -1) headerRowIndex = rowNumber;
         }
       });
@@ -67,41 +67,53 @@ export async function modifyExcelHandler(req, res) {
     headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } };
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
 
-    // التنفيذ الديناميكي بناءً على طلب العقل الذكي
-    // مثلاً إذا طلب المستخدم إضافة أعمدة جديدة (مثل سبب الغياب والملاحظات)
+    // التنفيذ الديناميكي للإدراج الحقيقي باستخدام spliceColumns لضمان عدم تخريب الجدول
     if (aiPlan.newColumns && Array.isArray(aiPlan.newColumns) && aiPlan.newColumns.length > 0) {
       let targetColIdx = -1;
-      if (aiPlan.targetColumn) {
-        headerRow.eachCell((cell, colNum) => {
-          if (cell.value && cell.value.toString().trim().includes(aiPlan.targetColumn)) {
-            targetColIdx = colNum;
-          }
-        });
-      }
       
-      // إذا لم يجد العمود المستهدف، نضيف الأعمدة الجديدة بالنهاية
-      let insertIndex = targetColIdx !== -1 ? targetColIdx + 1 : worksheet.columnCount + 1;
-
-      aiPlan.newColumns.forEach((colName, idx) => {
-        const colToInsert = insertIndex + idx;
-        worksheet.getCell(headerRowIndex, colToInsert).value = colName;
-        
-        // تعبئة بيانات افتراضية أو ذكية للصفوف تحت العناوين الجديدة
-        const rowCount = worksheet.rowCount;
-        for (let i = headerRowIndex + 1; i <= rowCount; i++) {
-          const row = worksheet.getRow(i);
-          if (row.getCell(1).value) {
-            if (colName.includes('سبب')) {
-              row.getCell(colToInsert).value = "إجازة معتمدة";
-            } else if (colName.includes('ملاحظات')) {
-              row.getCell(colToInsert).value = "لا توجد ملاحظات";
-            } else {
-              row.getCell(colToInsert).value = "-";
-            }
-          }
+      // البحث عن عمود الهدف (مثلاً: الغياب)
+      headerRow.eachCell((cell, colNum) => {
+        const cellVal = cell.value ? cell.value.toString().trim() : '';
+        if (aiPlan.targetColumn && cellVal.includes(aiPlan.targetColumn)) {
+          targetColIdx = colNum;
+        } else if (!aiPlan.targetColumn && (cellVal.includes('الغياب') || cellVal === 'غياب')) {
+          targetColIdx = colNum;
         }
       });
-      modifications.push(`إضافة الأعمدة الجديدة (${aiPlan.newColumns.join(', ')}) بنجاح`);
+      
+      // إذا لم يتم العثور على عمود محدد، نجعله بعد العمود الأخير للجدول أو نفتحه بالمنتصف
+      let insertIndex = targetColIdx !== -1 ? targetColIdx + 1 : worksheet.columnCount + 1;
+
+      // إدراج الأعمدة الجديدة باستخدام spliceColumns الصحيحة برمجياً
+      aiPlan.newColumns.forEach((colName, idx) => {
+        const currentInsertPos = insertIndex + idx;
+        
+        // بناء مصفوفة القيم للعمود الجديد (العنوان + بيانات افتراضية لكل صف)
+        const colValues = [colName];
+        const rowCount = worksheet.rowCount;
+        
+        for (let i = headerRowIndex + 1; i <= rowCount; i++) {
+          const row = worksheet.getRow(i);
+          let defaultVal = "-";
+          if (colName.includes('سبب')) {
+            defaultVal = "مرض";
+          } else if (colName.includes('ملاحظات')) {
+            defaultVal = "بدون ملاحظات";
+          }
+          colValues.push(row.getCell(1).value ? defaultVal : null);
+        }
+
+        // إدراج العمود فعلياً وإزاحة الأعمدة القائمة بمعاونة exceljs
+        worksheet.spliceColumns(currentInsertPos, 0, colValues);
+        
+        // تطبيق تنسيق العنوان على الخلية الجديدة
+        const newHeaderCell = worksheet.getCell(headerRowIndex, currentInsertPos);
+        newHeaderCell.font = { name: 'Arial', bold: true, color: { argb: 'FFFFFF' } };
+        newHeaderCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } };
+        newHeaderCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+
+      modifications.push(`إدراج الأعمدة الجديدة (${aiPlan.newColumns.join(', ')}) في مكانها بدقة بجانب عمود الهدف بنجاح`);
     }
 
     // حفظ الملف وإرجاعه
