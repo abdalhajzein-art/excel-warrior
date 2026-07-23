@@ -1,12 +1,11 @@
 /**
- * طبقة التخطيط – النسخة المحترفة
- * تبني خطة تنفيذ بسيطة ومباشرة بناءً على النية
+ * Professional Planning Layer – Copilot-Level
+ * Builds a clear, actionable plan based on the detected intent.
  */
 
 export function buildPlan(intent, context = {}) {
     const { intent: primaryIntent, summary } = intent;
 
-    // الخطة الأساسية
     const plan = {
         action: primaryIntent,
         summary,
@@ -17,49 +16,49 @@ export function buildPlan(intent, context = {}) {
     switch (primaryIntent) {
 
         case "modify":
-            plan.tool = "excel.modify";
+            plan.tool = "file.modify";
             plan.steps = [
-                "تحديد نوع التعديل المطلوب من نص المستخدم",
-                "تحميل الملف الحالي من الجلسة",
-                "تطبيق التعديل المطلوب على الملف",
-                "إرجاع نسخة معدّلة للمستخدم"
+                "Identify the exact modification requested from the user's message.",
+                "Load the latest version of the file from the session.",
+                "Apply the requested modification without generating or assuming missing data.",
+                "Return the updated file to the user."
             ];
             break;
 
         case "generate":
-            plan.tool = "excel.generate";
+            plan.tool = "file.generate";
             plan.steps = [
-                "فهم نوع الملف المطلوب إنشاؤه",
-                "تجهيز هيكل أولي للملف",
-                "إنشاء الملف عبر محرك التوليد",
-                "إرجاع الملف الجديد للمستخدم"
+                "Determine the type of file the user wants to create (Excel, PDF, Word, JSON, etc.).",
+                "Prepare an initial structure for the new file.",
+                "Generate the file using the appropriate engine.",
+                "Return the newly created file to the user."
             ];
             break;
 
         case "analyze":
-            plan.tool = "excel.analyze";
+            plan.tool = "file.analyze";
             plan.steps = [
-                "قراءة الملف الحالي",
-                "استخراج معلومات وإحصائيات",
-                "تلخيص النتائج",
-                "إرجاع تقرير للمستخدم"
+                "Load the latest version of the attached file.",
+                "Extract sheets, columns, rows, missing values, inconsistencies, and relationships.",
+                "Summarize the findings clearly and accurately.",
+                "Return a structured analysis report to the user."
             ];
             break;
 
         case "convert":
-            plan.tool = "convert";
+            plan.tool = "file.convert";
             plan.steps = [
-                "قراءة الملف الحالي",
-                "تحويله للصيغة المطلوبة",
-                "إرجاع النسخة المحوّلة"
+                "Load the latest version of the file.",
+                "Convert the file to the requested format (Excel → PDF, PDF → Image, Word → PDF, etc.).",
+                "Return the converted file to the user."
             ];
             break;
 
         case "chat":
             plan.tool = null;
             plan.steps = [
-                "الرد على المستخدم بأسلوب بشري طبيعي",
-                "تقديم مساعدة أو توضيح حسب الحاجة"
+                "Respond to the user in a warm, human-like Syrian tone.",
+                "Provide guidance, clarification, or support as needed."
             ];
             break;
 
@@ -67,10 +66,10 @@ export function buildPlan(intent, context = {}) {
             plan.action = "chat";
             plan.tool = null;
             plan.steps = [
-                "طلب توضيح من المستخدم لأن النية غير واضحة"
+                "Ask the user for clarification because the intent is unclear."
             ];
             break;
     }
 
     return plan;
-                }
+}
