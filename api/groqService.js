@@ -25,7 +25,7 @@ ${JSON.stringify(metadata, null, 2)}
 `;
 
     const completion = await groq.chat.completions.create({
-      model: "gpt-oss-120b",
+      model: "openai/gpt-oss-120b"
       messages: [
         { role: "system", content: "أنت مساعد برمجي يرجع بيانات JSON صالحة حصراً بدون أي نصوص إضافية." },
         { role: "user", content: prompt }
