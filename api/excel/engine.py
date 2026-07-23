@@ -155,12 +155,12 @@ class ExcelWarrior:
                         self.ws.add_data_validation(dv)
                         dv.add(cell)
                     else:
-                        # صيغة افتراضية
+                        # ✅ الصيغة الصحيحة: تاريخ آخر صيانة + 90 يوم
                         if target_col_idx:
                             target_letter = get_column_letter(target_col_idx)
-                            cell.value = f'=IF({target_letter}{r}="مطلوب صيانة","عاجل","عادي")'
+                            cell.value = f'=IF(ISNUMBER({target_letter}{r}), {target_letter}{r} + 90, "")'
                         else:
-                            cell.value = "-"
+                            cell.value = ""
                     filled_count += 1
             
             print(f"✅ تم تعبئة {filled_count} خلية في العمود {col_name}", file=sys.stderr)
