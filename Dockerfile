@@ -1,13 +1,14 @@
 # استخدام بيئة رسمية تحتوي على Node.js
 FROM node:22-slim
 
-# تثبيت Python3 ومدير الحزم pip ومكتبات الإكسل السيادية openpyxl و pandas
+# تثبيت Python3 و pip
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
-    python3-openpyxl \
-    python3-pandas \
     && rm -rf /var/lib/apt/lists/*
+
+# تثبيت مكتبات Python باستخدام pip
+RUN pip3 install openpyxl pandas --break-system-packages
 
 # تحديد مجلد العمل داخل الحاوية
 WORKDIR /app
