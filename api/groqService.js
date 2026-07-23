@@ -8,23 +8,24 @@ const groq = new Groq({
 export async function askGroqStructured(metadata, userInstruction) {
   try {
     const prompt = `
-أنت محلل ذكي ووكيل خبير لمعالجة جداول البيانات Excel لمنصة "الأثير".
-معطيات الملف (Metadata):
+أنت خبير معالجة جداول بيانات Excel لمنصة "الأثير".
+هيكل الملف (Metadata):
 ${JSON.stringify(metadata, null, 2)}
 
-تعليمات المستخدم: "${userInstruction}"
+طلب المستخدم: "${userInstruction}"
 
-قم بتحليل الطلب وإرجاع النتيجة حصراً بصيغة JSON نقي بالโครงสร้าง التالي بدون أي نص إضافي خارجه:
+قم بتحليل الطلب وإرجاع النتيجة حصراً بصيغة JSON نقي بالهيكل التالي بدون أي نص إضافي خارجه:
 {
-  "actionType": "format_headers" | "update_column" | "add_column" | "custom",
-  "targetColumn": "اسم العمود المستهدف إن وجد أو null",
-  "formula": "الصيغة الإكسل المقترحة إن وجدت أو null",
-  "modificationsDescription": ["وصف دقيق لما تم فهمه وتعديله"]
+  "actionType": "add_columns" | "format_headers" | "update_column" | "custom",
+  "targetColumn": "اسم العمود المرجعي للإضافة بعده إن وجد أو null",
+  "newColumns": ["أسماء الأعمدة الجديدة المراد إضافتها إن وجدت كالمتطلبات"],
+  "formula": "صيغة إكسل مقترحة إن وجدت أو null",
+  "modificationsDescription": ["وصف دقيق بالعربية لما تم تنفيذه"]
 }
 `;
 
     const completion = await groq.chat.completions.create({
-      model: "llama3-70b-8192", // أو نموذج gpt-oss-120b حسب المتاح لديك على Groq
+      model: "gpt-oss-120b",
       messages: [
         { role: "system", content: "أنت مساعد برمجي يرجع بيانات JSON صالحة حصراً بدون أي نصوص إضافية." },
         { role: "user", content: prompt }
