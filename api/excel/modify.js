@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { extractExcelMetadata } from './metadata.js';
 
 export async function modifyExcelHandler(req, res) {
   try {
@@ -13,6 +14,14 @@ export async function modifyExcelHandler(req, res) {
     }
 
     const buffer = Buffer.from(base64, 'base64');
+
+    // 1. استخدام المحقق الذكي لاستخلاص الهيكل وتوفير التوكنز والتحليل المسبق
+    const metaResult = await extractExcelMetadata(buffer);
+    if (metaResult.success) {
+      console.log(`📊 [Metadata Preprocessor] تم تحليل هيكل الملف بنجاح:`, JSON.stringify(metaResult.metadata));
+    } else {
+      console.warn(`⚠️ [Metadata Warning]: ${metaResult.error}`);
+    }
     
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
@@ -66,16 +75,13 @@ export async function modifyExcelHandler(req, res) {
       const rowCount = worksheet.rowCount;
       for (let i = headerRowIndex + 1; i <= rowCount; i++) {
         const row = worksheet.getRow(i);
-        // التأكد من أن الصف يحتوي على بيانات موظف (وجود قيمة في العمود الأول أو الثاني)
         const empIdCell = row.getCell(1).value;
         if (empIdCell) {
-          // تحديث الصيغة الرياضية بشكل دقيق بناءً على أعمدة الأيام الفعلية (مثلاً من العمود 4 إلى 8)
           row.getCell(percentageColIndex).value = { formula: `IFERROR(COUNTIF(D${i}:H${i}, "حضور")/COUNTA(D${i}:H${i}), 0)` };
         }
       }
       modifications.push('تحديث وتحسين صيغ "نسبة الحضور" لكافة الموظفين بدقة');
     } else {
-      // إذا لم يكن موجوداً، نضيفه كعمود جديد
       let newColIndex = worksheet.columnCount + 1;
       worksheet.getCell(headerRowIndex, newColIndex).value = 'نسبة الحضور الذكية';
       modifications.push('إضافة عمود "نسبة الحضور الذكية"');
@@ -91,7 +97,7 @@ export async function modifyExcelHandler(req, res) {
     // ============================================================
     const outputBuffer = await workbook.xlsx.writeBuffer();
 
-    let message = "✅ تم تعديل وتطوير الملف بنجاح:\n" + modifications.map((m, i) => `${i+1}. ${m}`).join('\n');
+    let message = "✅ تم تعديل وتطوير الملف بنجاح (مع تحليل المحقق الذكي):\n" + modifications.map((m, i) => `${i+1}. ${m}`).join('\n');
 
     return {
       success: true,
@@ -133,4 +139,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "خطأ في التعديل: " + err.message });
   }
 }
-
