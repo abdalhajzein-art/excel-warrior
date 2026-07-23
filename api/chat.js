@@ -1,8 +1,8 @@
 import Groq from 'groq-sdk';
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import XLSX from 'xlsx';
-import executeTool from '../tools/execute.js';
-import { toolsRegistry } from '../tools/index.js';
+import executeTool from './tools/execute.js';
+import { toolsRegistry } from './tools/index.js';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
