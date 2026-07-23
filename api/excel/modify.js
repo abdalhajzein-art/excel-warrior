@@ -26,39 +26,64 @@ export async function modifyExcelHandler(req, res) {
     let modifications = [];
 
     // ============================================================
-    // معالجة ذكية وواسعة بناءً على طلبات التطوير العامة
+    // البحث الديناميكي عن صف العناوين الفعلي (Header Row)
     // ============================================================
+    let headerRowIndex = -1;
+    worksheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+        const val = cell.value ? cell.value.toString().trim() : '';
+        if (val === 'رقم الموظف' || val === 'اسم الموظف') {
+          if (headerRowIndex === -1) headerRowIndex = rowNumber;
+        }
+      });
+    });
 
-    // 1) إذا طلب إضافة صيغ حسابية أو أعمدة تلخيصية (مثل حضور، غياب، نسبة، أو "نعم ضيفهم")
-    if (instructionLower.includes('ضيف') || instructionLower.includes('أضف') || instructionLower.includes('اضافة') || instructionLower.includes('إضافة') || instructionLower.includes('تعديل') || instructionLower.includes('تطوير') || instructionLower.includes('نعم')) {
-      
-      const headerRow = worksheet.getRow(3); // افتراض أن رأس الجدول في الصف الثالث
-      
-      // إضافة عمود النسب أو الحسابات التلقائية
-      let colIndex = worksheet.columnCount + 1;
-      worksheet.getCell(3, colIndex).value = 'نسبة الحضور';
-      
-      const rowCount = worksheet.rowCount;
-      for (let i = 4; i <= rowCount; i++) {
-        const row = worksheet.getRow(i);
-        row.getCell(colIndex).value = { formula: `IFERROR(COUNTIF(C${i}:G${i}, "حضور")/COUNTA(C${i}:G${i}), 0)` };
-      }
-      modifications.push('إضافة عمود "نسبة الحضور" مع الصيغ التلقائية الذكية');
-    }
+    // إذا لم يجد صف العناوين، نفترض أنه الصف الثاني أو الثالث كاحتياط
+    if (headerRowIndex === -1) headerRowIndex = 2;
 
-    // 2) تنسيق عام وألوان جذابة للجدول (تلبية للذوق الاحترافي)
-    // يتم تنفيذه افتراضياً مع أي طلب تطوير لرفع جودة مظهر الملف
-    const headerRow = worksheet.getRow(3);
+    const headerRow = worksheet.getRow(headerRowIndex);
+
+    // ============================================================
+    // التنسيق الاحترافي والتطوير
+    // ============================================================
     headerRow.font = { name: 'Arial', bold: true, color: { argb: 'FFFFFF' } };
-    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } }; // أزرق احترافي
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } }; // أزرق ملكي احترافي
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
     
-    modifications.push('تنسيق رأس الجدول بلون احترافي وتوسيط النصوص');
+    modifications.push(`تنسيق صف العناوين (الصف ${headerRowIndex}) بلون احترافي وتوسيط النصوص`);
 
-    // تأكيد إضافي في حال كانت قائمة التعديلات فارغة لأي سبب
+    // البحث عن عمود "نسبة الحضور" أو التأكد من وجوده وتحديثه
+    let percentageColIndex = -1;
+    headerRow.eachCell((cell, colNumber) => {
+      const val = cell.value ? cell.value.toString().trim() : '';
+      if (val.includes('نسبة الحضور')) {
+        percentageColIndex = colNumber;
+      }
+    });
+
+    // إذا وُجد عمود نسبة الحضور، نقوم بتحديث صيغه بذكاء للصفوف التالية
+    if (percentageColIndex !== -1) {
+      const rowCount = worksheet.rowCount;
+      for (let i = headerRowIndex + 1; i <= rowCount; i++) {
+        const row = worksheet.getRow(i);
+        // التأكد من أن الصف يحتوي على بيانات موظف (وجود قيمة في العمود الأول أو الثاني)
+        const empIdCell = row.getCell(1).value;
+        if (empIdCell) {
+          // تحديث الصيغة الرياضية بشكل دقيق بناءً على أعمدة الأيام الفعلية (مثلاً من العمود 4 إلى 8)
+          row.getCell(percentageColIndex).value = { formula: `IFERROR(COUNTIF(D${i}:H${i}, "حضور")/COUNTA(D${i}:H${i}), 0)` };
+        }
+      }
+      modifications.push('تحديث وتحسين صيغ "نسبة الحضور" لكافة الموظفين بدقة');
+    } else {
+      // إذا لم يكن موجوداً، نضيفه كعمود جديد
+      let newColIndex = worksheet.columnCount + 1;
+      worksheet.getCell(headerRowIndex, newColIndex).value = 'نسبة الحضور الذكية';
+      modifications.push('إضافة عمود "نسبة الحضور الذكية"');
+    }
+
     if (modifications.length === 0) {
       worksheet.getCell('A1').value = 'تم التحديث بواسطة الأثير AI';
-      modifications.push('تحديث هيكلية البيانات وإضافة بصمة الأثير الاحترافية');
+      modifications.push('إضافة بصمة الأثير الاحترافية للملف');
     }
 
     // ============================================================
@@ -108,3 +133,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "خطأ في التعديل: " + err.message });
   }
 }
+
