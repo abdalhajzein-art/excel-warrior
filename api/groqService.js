@@ -8,44 +8,41 @@ const groq = new Groq({
 export async function askGroqStructured(metadata, userInstruction) {
   try {
     const prompt = `
-أنت المستشار التقني والمهندس المعماري الخبير لمنصة "الأثير / Alatheer AI Suite".
-هيكل الملف الحالي (Metadata) - قد يكون فارغاً إذا كان الطلب يتطلب إنشاء ملف جديد:
+أنت العقل التنفيذي السيادي لمنصة "الأثير / Alatheer AI Suite".
+هيكل الملف الحالي وحجمه (Metadata):
 ${JSON.stringify(metadata, null, 2)}
 
-طلب المستخدم: "${userInstruction}"
+طلب المستخدم الحالي والسياق السابق: "${userInstruction}"
 
-قواعد التشغيل الاستشاري والتفاعلي (Agentic Consultation Protocol):
-1. قم بتحليل طلب المستخدم بدقة:
-   - إذا كان الطلب عاماً، مختصراً، أو ينقصه تفاصيل جوهرية (مثل: نوع البيانات، الأعمدة المطلوبة، أو الفترة الزمنية)، فلا تقم بالتوليد الفوري. بدلاً من ذلك، حدد الأسئلة الاستفسارية اللازمة وضَعها ضمن مصفوفة الأسئلة، واجعل الحالة "need_clarification".
-   - إذا كان الطلب واضحاً أو يحتوي على تفاصيل كافية (أو رداً على أسئلة سابقة)، فقم بإعداد خطة تنفيذ كاملة ودقيقة ("generate" أو "modify").
-
-2. أرجع النتيجة حصراً بصيغة JSON نقي بدون أي نص إضافي خارجه بالهيكل التالي:
+قواعد التشغيل الحازمة (Strict Agentic Execution Rules):
+1. قم بتحليل الطلب بدقة:
+   - إذا كان الطلب مبهمًا بالكامل وينقصه عناصر أساسية مفقودة تماماً، اجعل "isClear" تساوي false، واطرح أسئلة قصيرة ومباشرة، و"action" تساوي "modify".
+   - إذا كان الطلب واضحاً أو اكتملت التفاصيل في الحوار (مثل تحديد اسم العمود، مكانه، أو الخيارات المطلوبة مثل القوائم المنسدلة)، اجعل "isClear" تساوي true، و"questions" مصفوفة فارغة [], و"action" تساوي "modify" أو "generate".
+2. ضع خطة عمل هندسية دقيقة في "plan" وضع تفاصيل التعديل البرمجي بوضوح (مثل اسم العمود الجديد، موقع إضافته، والمعادلات أو القوائم المطلوبة).
+3. أرجع النتيجة حصراً بصيغة JSON نقي بالهيكل التالي وبدون أي نص خارجه:
 {
-  "status": "need_clarification" | "ready_to_execute",
-  "questions": ["السؤال الأول للتوضيح إن وجد", "السؤال الثاني إن وجد"],
-  "action": "generate" | "modify",
-  "sheetName": "اسم الورقة المستهدفة أو المقترحة",
-  "columns": ["العمود الأول", "العمود الثاني", "..."] (في حال التوليد),
-  "rows": [
-    [قيمة1, قيمة2, ...],
-    [قيمة1, قيمة2, ...]
-  ] (بيانات تجريبية واقعية ومناسبة لسياق طلب المدير),
-  "actionType": "add_columns" | "format_headers" | "update_column" | "generate_new" | "custom",
-  "targetColumn": "اسم العمود المرجعي إن وجد أو null",
-  "newColumns": ["أسماء الأعمدة الجديدة إن وجدت"],
-  "formulaTemplate": "صيغة إكسل مقترحة إن وجدت أو null",
-  "modificationsDescription": ["وصف دقيق لما تم التخطيط له أو تنفيذه"]
+  "isClear": true أو false,
+  "action": "modify" أو "generate",
+  "summary": "ملخص دقيق لما سيتم تنفيذه بالعربية",
+  "plan": "خطوات مفصلة وواضحة لتنفيذها برمجياً",
+  "questions": ["أسئلة قصيرة إن وُجدت وisClear كانت false فقط، وإلا اتركها فارغة []"],
+  "response": "الرد المباشر للمستخدم",
+  "actionType": "add_columns" | "format_headers" | "update_column" | "add_dropdown" | "custom",
+  "targetColumn": "اسم العمود المرجعي للإضافة بعده أو null",
+  "newColumns": ["أسماء الأعمدة الجديدة المراد إضافتها إن وجدت"],
+  "dropdownOptions": ["الخيارات المطلوبة للقائمة المنسدلة إن وجدت أو null"],
+  "formulaTemplate": "صيغة مقترحة أو null"
 }
 `;
 
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-120b",
       messages: [
-        { role: "system", content: "أنت مساعد استشاري ذكي يرجع بيانات JSON صالحة حصراً بدون أي نصوص إضافية." },
+        { role: "system", content: "أنت مساعد برمجي ذكي وحاسم يرجع بيانات JSON صالحة حصراً بدون أي نصوص إضافية." },
         { role: "user", content: prompt }
       ],
       response_format: { type: "json_object" },
-      temperature: 0.2,
+      temperature: 0.1,
     });
 
     const responseContent = completion.choices[0]?.message?.content;
