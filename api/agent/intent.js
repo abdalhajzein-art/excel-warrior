@@ -1,77 +1,68 @@
-import Groq from 'groq-sdk';
+import Groq from "groq-sdk";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 /**
- * طبقة فهم النوايا المتطورة باستخدام Groq
+ * طبقة فهم النوايا – النسخة المحترفة
  */
-export async function analyzeIntentWithAI(message, context = {}) {
+export async function analyzeIntent(message, context = {}) {
     const prompt = `
-أنت خبير في تحليل نوايا المستخدمين وفهم طلباتهم بدقة عالية.
+أنت محلل نوايا ذكي. مهمتك فهم طلب المستخدم بدقة شديدة.
 
-📌 **السياق الحالي:**
-- الرسالة: "${message}"
-- الملف المرفق: ${context.fileName ? context.fileName : 'لا يوجد'}
-- نوع الملف: ${context.fileType ? context.fileType : 'غير معروف'}
-- تاريخ المحادثة: ${context.history ? context.history.join('\n') : 'لا يوجد'}
+الرسالة: "${message}"
+الملف المرفق: ${context.fileName ? context.fileName : "لا يوجد"}
+نوع الملف: ${context.fileType ? context.fileType : "غير معروف"}
 
-🎯 **مهمتك:**
-حلل النية الحقيقية للمستخدم وقدّر:
-1. **النية الرئيسية:** (generate, modify, analyze, consult, convert, chat, unknown)
-2. **النية الثانوية:** (تصميم، تدقيق، اقتراح، تعليم، تنفيذ، استشارة)
-3. **الحالة العاطفية:** (متحمس، محبط، مستعجل، فضولي، محايد)
-4. **درجة الإلحاح:** (عاجل، طبيعي، غير مستعجل)
-5. **درجة التعقيد:** (بسيط، متوسط، معقد)
-6. **الأدوات المقترحة:** (excel, word, pdf, image, python, none)
-7. **الثقة:** (نسبة من 0 إلى 1)
-8. **أسئلة توضيحية:** (إذا كانت النية غير واضحة)
-9. **خطة أولية مقترحة:** (خطة تنفيذية مختصرة)
+🎯 استخرج:
+1) النية الأساسية فقط:
+   - modify (تعديل ملف)
+   - generate (إنشاء ملف جديد)
+   - analyze (تحليل ملف)
+   - convert (تحويل صيغة)
+   - chat (دردشة)
+   - unknown (غير واضح)
 
-📋 **أجب بصيغة JSON حصراً:**
+2) هل الطلب واضح؟ true/false
+
+3) ملخص قصير للطلب
+
+4) أسئلة توضيحية إذا كان غير واضح
+
+📋 أجب بصيغة JSON فقط:
 {
-    "primaryIntent": "generate | modify | analyze | consult | convert | chat | unknown",
-    "secondaryIntent": "تصميم | تدقيق | اقتراح | تعليم | تنفيذ | استشارة",
-    "emotion": "متحمس | محبط | مستعجل | فضولي | محايد",
-    "urgency": "عاجل | طبيعي | غير مستعجل",
-    "complexity": "بسيط | متوسط | معقد",
-    "suggestedTools": ["excel", "word", "pdf", "image", "python"],
-    "confidence": 0.95,
-    "clarifyingQuestions": ["سؤال 1", "سؤال 2"],
-    "initialPlan": "خطة أولية مقترحة"
+  "intent": "modify | generate | analyze | convert | chat | unknown",
+  "isClear": true,
+  "summary": "ملخص قصير",
+  "questions": []
 }
-
-⚠️ **قواعد مهمة:**
-- إذا الطلب واضح، اجعل confidence > 0.8 و clarifyingQuestions فارغة.
-- إذا الطلب غامض، اجعل confidence < 0.6 و اقترح 2-3 أسئلة توضيحية.
-- استخدم suggestedTools المناسبة حسب نوع الطلب.
 `;
 
     try {
         const completion = await groq.chat.completions.create({
             model: "openai/gpt-oss-120b",
             messages: [
-                { role: "system", content: "أنت خبير تحليل نوايا المستخدمين." },
+                { role: "system", content: "أنت محلل نوايا ذكي ودقيق." },
                 { role: "user", content: prompt }
             ],
             response_format: { type: "json_object" },
-            temperature: 0.2,
+            temperature: 0.1,
         });
 
-        const result = JSON.parse(completion.choices[0].message.content);
         return {
             success: true,
-            data: result
+            data: JSON.parse(completion.choices[0].message.content)
         };
+
     } catch (error) {
         console.error("❌ خطأ في تحليل النية:", error);
         return {
             success: false,
-            error: error.message,
             data: {
-                primaryIntent: "unknown",
-                confidence: 0.3,
-                clarifyingQuestions: ["آسف، ما قدرت أفهم طلبك. ممكن تشرحه بطريقة أوضح؟"]
+                intent: "unknown",
+                isClear: false,
+                summary: "تعذر فهم الطلب",
+                questions: ["ممكن تعيد صياغة طلبك؟"]
             }
         };
     }
-          }
+}
