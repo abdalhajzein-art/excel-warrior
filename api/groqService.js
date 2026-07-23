@@ -1,4 +1,4 @@
-Import Groq from "groq-sdk";
+import Groq from "groq-sdk";
 
 // تهيئة عميل Groq باستخدام مفتاح البيئة
 const groq = new Groq({
