@@ -1,5 +1,5 @@
 import { Document, Packer, Paragraph, TextRun } from 'docx';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import sharp from 'sharp';
 import XLSX from 'xlsx';
 
@@ -10,7 +10,7 @@ export async function convertFileHandler(req, res) {
     if (!base64 || !targetFormat) {
       return { 
         success: false, 
-        error: "البيانات غير مكتملة. يرجى توفير الملف والصيغة المطلوبة." 
+        error: "⚠️ البيانات غير مكتملة. يرجى توفير الملف والصيغة المطلوبة." 
       };
     }
 
@@ -213,7 +213,7 @@ export async function convertFileHandler(req, res) {
     // ============================================================
     else if (source.includes('word') || source.includes('docx') || source.includes('doc')) {
       if (format === 'txt' || format === 'text') {
-        const text = "نص مستخرج من ملف Word... (تطوير مستقبلي)";
+        const text = "📝 نص مستخرج من ملف Word... (تطوير مستقبلي)";
         resultData = text;
         contentType = "text/plain";
         fileExtension = "txt";
@@ -222,13 +222,21 @@ export async function convertFileHandler(req, res) {
         const page = pdfDoc.addPage([600, 800]);
         const { height } = page.getSize();
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-        page.drawText("نص من Word إلى PDF...", { x: 30, y: height - 30, size: 12, font: font });
+        page.drawText("📄 نص من Word إلى PDF... (تطوير مستقبلي)", { 
+          x: 30, 
+          y: height - 30, 
+          size: 12, 
+          font: font 
+        });
         const pdfBytes = await pdfDoc.save();
         resultData = Buffer.from(pdfBytes);
         contentType = "application/pdf";
         fileExtension = "pdf";
       } else if (format === 'json') {
-        resultData = JSON.stringify({ message: "Word to JSON (تطوير مستقبلي)" }, null, 2);
+        resultData = JSON.stringify({ 
+          message: "📄 Word to JSON (تطوير مستقبلي)",
+          status: "coming_soon"
+        }, null, 2);
         contentType = "application/json";
         fileExtension = "json";
       } else {
@@ -247,11 +255,15 @@ export async function convertFileHandler(req, res) {
       const pageCount = pdfDoc.getPageCount();
 
       if (format === 'txt' || format === 'text') {
-        resultData = `عدد الصفحات: ${pageCount}\nنص مستخرج من PDF... (تطوير مستقبلي)`;
+        resultData = `📄 عدد الصفحات: ${pageCount}\nنص مستخرج من PDF... (تطوير مستقبلي)`;
         contentType = "text/plain";
         fileExtension = "txt";
       } else if (format === 'json') {
-        resultData = JSON.stringify({ pages: pageCount, message: "PDF to JSON (تطوير مستقبلي)" }, null, 2);
+        resultData = JSON.stringify({ 
+          pages: pageCount, 
+          message: "📄 PDF to JSON (تطوير مستقبلي)",
+          status: "coming_soon"
+        }, null, 2);
         contentType = "application/json";
         fileExtension = "json";
       } else if (format === 'excel' || format === 'xlsx') {
@@ -295,17 +307,17 @@ export async function convertFileHandler(req, res) {
 
     return {
       success: true,
-      message: `✅ تم تحويل الملف بنجاح إلى صيغة ${format}`,
+      message: `✅ تم تحويل الملف بنجاح إلى صيغة ${format.toUpperCase()}`,
       fileBase64: finalBuffer.toString('base64'),
       fileName: `converted.${fileExtension}`,
       contentType: contentType
     };
 
   } catch (error) {
-    console.error("Error in convertFileHandler:", error);
+    console.error("❌ Error in convertFileHandler:", error);
     return {
       success: false,
-      error: "حدث خطأ أثناء معالجة وتحويل الملف: " + error.message
+      error: "❌ حدث خطأ أثناء معالجة وتحويل الملف: " + error.message
     };
   }
 }
@@ -313,7 +325,7 @@ export async function convertFileHandler(req, res) {
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
-    return res.status(405).json({ error: "Method Not Allowed" });
+    return res.status(405).json({ error: "❌ Method Not Allowed" });
   }
 
   try {
@@ -329,10 +341,14 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(400).json({ error: result.error || "فشل تحويل الملف" });
+    return res.status(400).json({ 
+      error: result.error || "❌ فشل تحويل الملف" 
+    });
 
   } catch (err) {
-    console.error("Error in convert route:", err);
-    return res.status(500).json({ error: "خطأ في التحويل: " + err.message });
+    console.error("❌ Error in convert route:", err);
+    return res.status(500).json({ 
+      error: "❌ خطأ في التحويل: " + err.message 
+    });
   }
-              }
+      }
