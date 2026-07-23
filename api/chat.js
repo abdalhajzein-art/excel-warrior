@@ -18,7 +18,6 @@ const toolMap = {
 
 // دالة تنفيذ الأدوات
 async function callFunction(action, parameters) {
-  // تحليل بسيط للملف
   if (action === "analyze") {
     try {
       const buffer = Buffer.from(parameters.base64, "base64");
@@ -91,17 +90,28 @@ export default async function handler(req, res) {
       try {
         const buffer = Buffer.from(extractedBase64, "base64");
         const workbook = XLSX.read(buffer, { type: "buffer" });
-        const sheetName = workbook.SheetNames[0];
-        const data = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-        fileData = data;
 
-        fileSummary = `[ملف مرفق: ${fileName}]\nعدد الصفوف: ${data.length}\nالأعمدة: ${data[0] ? Object.keys(data[0]).join(", ") : "لا يوجد"}\n`;
+        const sheets = workbook.SheetNames.map(name => ({
+          name,
+          data: XLSX.utils.sheet_to_json(workbook.Sheets[name])
+        }));
+
+        fileData = sheets;
+
+        fileSummary = `📄 **الملف المرفق:** ${fileName}\n`;
+        fileSummary += `عدد الأوراق: ${sheets.length}\n\n`;
+
+        sheets.forEach(sheet => {
+          fileSummary += `📝 **${sheet.name}**:\n`;
+          fileSummary += `عدد الصفوف: ${sheet.data.length}\n`;
+          fileSummary += `الأعمدة: ${sheet.data[0] ? Object.keys(sheet.data[0]).join(", ") : "لا يوجد"}\n\n`;
+        });
 
         session.lastFile = {
           base64: extractedBase64,
           name: fileName,
           summary: fileSummary,
-          data
+          data: fileData
         };
 
       } catch (err) {
@@ -118,26 +128,15 @@ export default async function handler(req, res) {
     // حفظ التاريخ
     session.history.push({
       role: "user",
-      content: userContent + (fileSummary ? `\n\n${fileSummary}` : "")
+      content: userContent
     });
 
-    // تقليل التاريخ
-    if (session.history.length > 25) {
-      const recent = session.history.slice(-10);
-      const old = session.history.slice(0, -10);
-
-      const summary = old.map(m => {
-        const role = m.role === "user" ? "👤 المستخدم" : "🤖 المساعد";
-        return `${role}: ${m.content.substring(0, 200)}${m.content.length > 200 ? "..." : ""}`;
-      }).join("\n");
-
-      session.history = [
-        {
-          role: "system",
-          content: `📋 ملخص المحادثة:\n${summary}\n\n⚠️ تذكير: حافظ على النية الحالية.`
-        },
-        ...recent
-      ];
+    // إضافة الملف للرسائل (الإصلاح الأساسي)
+    if (fileData) {
+      session.history.push({
+        role: "system",
+        content: `📎 **بيانات الملف المرفق:**\n${fileSummary}`
+      });
     }
 
     // مرحلة التأكيد
@@ -271,4 +270,4 @@ export default async function handler(req, res) {
   } catch (error) {
     return res.status(500).json({ reply: "⚠️ خطأ: " + error.message });
   }
-        }
+          }
