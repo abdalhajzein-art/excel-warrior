@@ -1,242 +1,76 @@
 /**
- * طبقة التخطيط الديناميكي - بناء خطة تنفيذ بناءً على النية والسياق
+ * طبقة التخطيط – النسخة المحترفة
+ * تبني خطة تنفيذ بسيطة ومباشرة بناءً على النية
  */
+
 export function buildPlan(intent, context = {}) {
+    const { intent: primaryIntent, summary } = intent;
+
+    // الخطة الأساسية
     const plan = {
+        action: primaryIntent,
+        summary,
         steps: [],
-        tools: [],
-        dependencies: [],
-        estimatedTime: '',
-        riskLevel: 'low',
-        fallbackPlan: null
+        tool: null
     };
 
-    switch (intent.primaryIntent) {
-        case 'generate':
-            plan.steps = buildGeneratePlan(intent, context);
-            plan.tools = ['excel', 'python'];
-            plan.estimatedTime = '1-3 دقائق';
+    switch (primaryIntent) {
+
+        case "modify":
+            plan.tool = "excel.modify";
+            plan.steps = [
+                "تحديد نوع التعديل المطلوب من نص المستخدم",
+                "تحميل الملف الحالي من الجلسة",
+                "تطبيق التعديل المطلوب على الملف",
+                "إرجاع نسخة معدّلة للمستخدم"
+            ];
             break;
 
-        case 'modify':
-            plan.steps = buildModifyPlan(intent, context);
-            plan.tools = ['excel', 'python'];
-            plan.estimatedTime = '30 ثانية - 2 دقائق';
+        case "generate":
+            plan.tool = "excel.generate";
+            plan.steps = [
+                "فهم نوع الملف المطلوب إنشاؤه",
+                "تجهيز هيكل أولي للملف",
+                "إنشاء الملف عبر محرك التوليد",
+                "إرجاع الملف الجديد للمستخدم"
+            ];
             break;
 
-        case 'analyze':
-            plan.steps = buildAnalyzePlan(intent, context);
-            plan.tools = ['excel', 'python'];
-            plan.estimatedTime = '1-2 دقائق';
+        case "analyze":
+            plan.tool = "excel.analyze";
+            plan.steps = [
+                "قراءة الملف الحالي",
+                "استخراج معلومات وإحصائيات",
+                "تلخيص النتائج",
+                "إرجاع تقرير للمستخدم"
+            ];
             break;
 
-        case 'consult':
-            plan.steps = buildConsultPlan(intent, context);
-            plan.tools = ['excel', 'word'];
-            plan.estimatedTime = '2-5 دقائق';
+        case "convert":
+            plan.tool = "convert";
+            plan.steps = [
+                "قراءة الملف الحالي",
+                "تحويله للصيغة المطلوبة",
+                "إرجاع النسخة المحوّلة"
+            ];
             break;
 
-        case 'convert':
-            plan.steps = buildConvertPlan(intent, context);
-            plan.tools = ['convert'];
-            plan.estimatedTime = '30 ثانية - 1 دقيقة';
+        case "chat":
+            plan.tool = null;
+            plan.steps = [
+                "الرد على المستخدم بأسلوب بشري طبيعي",
+                "تقديم مساعدة أو توضيح حسب الحاجة"
+            ];
             break;
 
         default:
+            plan.action = "chat";
+            plan.tool = null;
             plan.steps = [
-                { step: 1, action: 'طلب توضيح من المستخدم', description: 'النية غير واضحة' }
+                "طلب توضيح من المستخدم لأن النية غير واضحة"
             ];
-            plan.riskLevel = 'high';
             break;
     }
 
     return plan;
-}
-
-function buildGeneratePlan(intent, context) {
-    const steps = [];
-    let stepCounter = 1;
-
-    // 1. تحليل المتطلبات
-    steps.push({
-        step: stepCounter++,
-        action: 'تحليل متطلبات الملف',
-        description: `فهم الغرض من الملف: ${intent.entities.purpose || 'عام'}`
-    });
-
-    // 2. اقتراح هيكل
-    steps.push({
-        step: stepCounter++,
-        action: 'اقتراح هيكل الملف',
-        description: 'اقتراح الأعمدة والصفوف والصيغ المناسبة'
-    });
-
-    // 3. تأكيد مع المستخدم
-    steps.push({
-        step: stepCounter++,
-        action: 'تأكيد الخطة مع المستخدم',
-        description: 'عرض الهيكل المقترح وطلب الموافقة'
-    });
-
-    // 4. التوليد
-    steps.push({
-        step: stepCounter++,
-        action: 'توليد الملف',
-        description: 'تنفيذ التوليد باستخدام محرك Python'
-    });
-
-    // 5. المراجعة
-    steps.push({
-        step: stepCounter++,
-        action: 'مراجعة النتيجة',
-        description: 'التأكد من صحة البيانات والتنسيقات'
-    });
-
-    // 6. التسليم
-    steps.push({
-        step: stepCounter++,
-        action: 'تسليم الملف للمستخدم',
-        description: 'إرسال الملف مع ملخص التنفيذ'
-    });
-
-    return steps;
-}
-
-function buildModifyPlan(intent, context) {
-    const steps = [];
-    let stepCounter = 1;
-
-    // 1. تحليل التعديل المطلوب
-    steps.push({
-        step: stepCounter++,
-        action: 'تحليل طلب التعديل',
-        description: `نوع التعديل: ${intent.entities.modificationType || 'غير محدد'}`
-    });
-
-    // 2. تحديد الموقع
-    steps.push({
-        step: stepCounter++,
-        action: 'تحديد موقع التعديل',
-        description: `البحث عن العمود/الصف المطلوب`
-    });
-
-    // 3. تنفيذ التعديل
-    steps.push({
-        step: stepCounter++,
-        action: 'تنفيذ التعديل',
-        description: `تطبيق التغييرات مع الحفاظ على التنسيق`
-    });
-
-    // 4. التحقق
-    steps.push({
-        step: stepCounter++,
-        action: 'التحقق من النتيجة',
-        description: 'التأكد من صحة التعديلات والبيانات'
-    });
-
-    // 5. التسليم
-    steps.push({
-        step: stepCounter++,
-        action: 'تسليم الملف المعدل',
-        description: 'إرسال الملف للمستخدم مع ملخص التغييرات'
-    });
-
-    return steps;
-}
-
-function buildAnalyzePlan(intent, context) {
-    const steps = [];
-    let stepCounter = 1;
-
-    // 1. تحليل البيانات
-    steps.push({
-        step: stepCounter++,
-        action: 'تحليل البيانات الأساسية',
-        description: 'استخراج إحصائيات أولية'
-    });
-
-    // 2. تحليل متقدم
-    steps.push({
-        step: stepCounter++,
-        action: 'تحليل متقدم',
-        description: 'استنتاجات وتوصيات بناءً على البيانات'
-    });
-
-    // 3. تقرير
-    steps.push({
-        step: stepCounter++,
-        action: 'توليد تقرير',
-        description: 'تنسيق التحليل في تقرير مفهوم'
-    });
-
-    // 4. التسليم
-    steps.push({
-        step: stepCounter++,
-        action: 'تسليم التقرير',
-        description: 'إرسال التقرير للمستخدم'
-    });
-
-    return steps;
-}
-
-function buildConsultPlan(intent, context) {
-    const steps = [];
-    let stepCounter = 1;
-
-    steps.push({
-        step: stepCounter++,
-        action: 'فهم الاحتياجات',
-        description: `الغرض: ${intent.entities.purpose || 'غير محدد'}`
-    });
-
-    steps.push({
-        step: stepCounter++,
-        action: 'تقديم خيارات',
-        description: 'عرض 2-3 خيارات مع مزايا وعيوب كل خيار'
-    });
-
-    steps.push({
-        step: stepCounter++,
-        action: 'مناقشة مع المستخدم',
-        description: 'الرد على أسئلة المستخدم وتوضيح النقاط'
-    });
-
-    steps.push({
-        step: stepCounter++,
-        action: 'تقديم توصية',
-        description: 'اقتراح الخيار الأنسب حسب السياق'
-    });
-
-    return steps;
-}
-
-function buildConvertPlan(intent, context) {
-    const steps = [];
-    let stepCounter = 1;
-
-    steps.push({
-        step: stepCounter++,
-        action: 'تحليل الملف المصدر',
-        description: `الملف: ${context.fileName || 'غير محدد'}`
-    });
-
-    steps.push({
-        step: stepCounter++,
-        action: 'تحويل الملف',
-        description: `إلى صيغة: ${intent.entities.targetFormat || 'غير محدد'}`
-    });
-
-    steps.push({
-        step: stepCounter++,
-        action: 'التحقق من النتيجة',
-        description: 'التأكد من صحة التحويل والمحتوى'
-    });
-
-    steps.push({
-        step: stepCounter++,
-        action: 'تسليم الملف المحول',
-        description: 'إرسال الملف للمستخدم'
-    });
-
-    return steps;
-}
+                }
