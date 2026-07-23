@@ -1,7 +1,7 @@
 import Groq from 'groq-sdk';
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import XLSX from 'xlsx';
-import executeTool from './tools/execute.js';
+import { executeTool } from './tools/execute.js';
 import { toolsRegistry } from './tools/index.js';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -48,17 +48,9 @@ async function callFunction(action, parameters) {
     throw new Error(`أداة غير معروفة: ${action}`);
   }
 
-  // ✅ استخدام execute لتنفيذ الأداة
-  const result = await executeTool({
-    method: 'POST',
-    body: JSON.stringify({
-      tool: toolName,
-      payload: parameters
-    })
-  }, null);
-
-  // استخراج النتيجة من execute
-  return result._data || result;
+  // ✅ استخدام executeTool كدالة مباشرة (بدون req/res)
+  const result = await executeTool(toolName, parameters);
+  return result;
 }
 
 export default async function handler(req, res) {
@@ -364,4 +356,4 @@ export default async function handler(req, res) {
       reply: "⚠️ خطأ: " + (error.message || "مشكلة في المعالجة")
     });
   }
-}
+            }
