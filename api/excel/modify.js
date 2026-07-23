@@ -1,4 +1,6 @@
-import ExcelJS from 'exceljs';
+import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 import { extractExcelMetadata } from './metadata.js';
 import { askGroqStructured } from '../groqService.js';
 
@@ -12,148 +14,55 @@ export async function modifyExcelHandler(req, res) {
     }
 
     const buffer = Buffer.from(base64, 'base64');
-
-    // 1. استخلاص الهيكل الذكي
+    
+    // استخلاص الهيكل وخطط Groq
     const metaResult = await extractExcelMetadata(buffer);
-    if (!metaResult.success) {
-      return { success: false, error: "فشل استخلاص هيكل الملف: " + metaResult.error };
-    }
-
-    // 2. طلب خطة العمل من عقل Groq
-    const aiResponse = await askGroqStructured(
-      metaResult.metadata, 
-      instruction || "تعديل وتطوير الملف حسب طلب المستخدم"
-    );
+    const aiResponse = await askGroqStructured(metaResult.metadata, instruction || "تعديل الملف");
     
-    let aiPlan = {
-      actionType: "custom",
-      targetColumn: null,
-      newColumns: [],
-      formula: null,
-      modificationsDescription: ["تعديل الملف وتطويره عبر الأثير AI"]
-    };
+    let aiPlan = aiResponse.success && aiResponse.data ? aiResponse.data : { newColumns: ["سبب الغياب", "ملاحظات"] };
 
-    if (aiResponse.success && aiResponse.data) {
-      aiPlan = aiResponse.data;
-    }
+    // كتابة الملف في ملف مؤقت لمعالجته عبر بايثون
+    const tempInputPath = path.join('/tmp', `input_${Date.now()}.xlsx`);
+    fs.writeFileSync(tempInputPath, buffer);
 
-    // 3. تحميل الملف والتعديل عليه برمجياً
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const worksheet = workbook.getWorksheet(1);
-    
-    if (!worksheet) {
-      return { success: false, error: "لا يوجد ورقة عمل في الملف." };
-    }
-
-    // 🛡️ خطوة وقائية سيادية: تنظيف وإلغاء الـ Shared Formulas لمنع كراش الـ XML أثناء الحفظ
-    worksheet.eachRow((row) => {
-      row.eachCell((cell) => {
-        if (cell.type === ExcelJS.ValueType.Formula) {
-          // تحويل الصيغة المشتركة إلى صيغة مستقلة وثابتة لتجنب تتبع الـ Master Cell التالفة
-          if (cell.sharedFormula) {
-            const formulaVal = cell.formula || cell.result;
-            cell.value = { formula: formulaVal, result: cell.result };
-            delete cell.sharedFormula;
-          }
-        }
-      });
+    // تحضير البيانات لمرسليتها لسكربت البايثون
+    const payload = JSON.stringify({
+      filePath: tempInputPath,
+      newColumns: aiPlan.newColumns || ["سبب الغياب", "ملاحظات"],
+      targetColumn: aiPlan.targetColumn || null
     });
 
-    let modifications = aiPlan.modificationsDescription || [];
-
-    // البحث عن صف العناوين ديناميكياً
-    let headerRowIndex = -1;
-    worksheet.eachRow((row, rowNumber) => {
-      row.eachCell((cell) => {
-        const val = cell.value ? cell.value.toString().trim() : '';
-        if (val === 'رقم الموظف' || val === 'اسم الموظف' || val.includes('الاسم') || val.includes('اليوم') || val.includes('الغياب')) {
-          if (headerRowIndex === -1) headerRowIndex = rowNumber;
-        }
-      });
+    // استدعاء سكربت البايثون السيادي لتنفيذ المعالجة المعقدة بدقة
+    const scriptPath = path.join(process.cwd(), 'api', 'excel', 'modify.py');
+    const pythonCmd = `python3 "${scriptPath}"`;
+    
+    const output = execSync(pythonCmd, {
+      input: payload,
+      encoding: 'utf-8'
     });
 
-    if (headerRowIndex === -1) headerRowIndex = 2;
-    const headerRow = worksheet.getRow(headerRowIndex);
-
-    // التنفيذ الآمن لإدراج الأعمدة بعد تنظيف المعادلات
-    if (aiPlan.newColumns && Array.isArray(aiPlan.newColumns) && aiPlan.newColumns.length > 0) {
-      let targetColIdx = -1;
-      
-      headerRow.eachCell((cell, colNum) => {
-        const cellVal = cell.value ? cell.value.toString().trim() : '';
-        if (aiPlan.targetColumn && cellVal.includes(aiPlan.targetColumn)) {
-          targetColIdx = colNum;
-        } else if (!aiPlan.targetColumn && (cellVal.includes('الغياب') || cellVal === 'غياب')) {
-          targetColIdx = colNum;
-        }
-      });
-      
-      let insertIndex = targetColIdx !== -1 ? targetColIdx + 1 : worksheet.columnCount + 1;
-      const numColsToAdd = aiPlan.newColumns.length;
-      const maxCol = worksheet.columnCount;
-      const maxRow = worksheet.rowCount;
-
-      // الزحزحة اليدوية الآمنة للأعمدة نحو اليمين لفتح مساحة للأعمدة الجديدة
-      for (let c = maxCol; c >= insertIndex; c--) {
-        for (let r = 1; r <= maxRow; r++) {
-          const sourceCell = worksheet.getCell(r, c);
-          const targetCell = worksheet.getCell(r, c + numColsToAdd);
-          targetCell.value = sourceCell.value;
-          if (sourceCell.style) {
-            targetCell.style = JSON.parse(JSON.stringify(sourceCell.style));
-          }
-        }
-      }
-
-      // إدراج الأعمدة الجديدة وتعبئتها بالبيانات
-      aiPlan.newColumns.forEach((colName, idx) => {
-        const currentCol = insertIndex + idx;
-        
-        // تعيين عنوان العمود وتنسيقه
-        const headerCell = worksheet.getCell(headerRowIndex, currentCol);
-        headerCell.value = colName;
-        headerCell.font = { name: 'Arial', bold: true, color: { argb: 'FFFFFF' } };
-        headerCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } };
-        headerCell.alignment = { vertical: 'middle', horizontal: 'center' };
-
-        // تعبئة البيانات الافتراضية للصفوف تحت العنوان
-        for (let r = headerRowIndex + 1; r <= maxRow; r++) {
-          const row = worksheet.getRow(r);
-          if (row.getCell(1).value) {
-            const cell = worksheet.getCell(r, currentCol);
-            if (colName.includes('سبب')) {
-              cell.value = "مرض";
-            } else if (colName.includes('ملاحظات')) {
-              cell.value = "بدون ملاحظات";
-            } else {
-              cell.value = "-";
-            }
-          }
-        }
-      });
-
-      modifications.push(`إدراج الأعمدة الجديدة (${aiPlan.newColumns.join(', ')}) في مكانها بدقة بجانب عمود الهدف بنجاح`);
+    const resultObj = JSON.parse(output.trim());
+    if (!resultObj.success) {
+      throw new Error(resultObj.error || "فشل معالجة بايثون");
     }
 
-    // حفظ الملف وإرجاعه
-    const outputBuffer = await workbook.xlsx.writeBuffer();
-    let message = "✅ تم تعديل الملف ديناميكياً بنجاح:\n" + modifications.map((m, i) => `${i+1}. ${m}`).join('\n');
+    // قراءة الملف بعد التعديل وإرجاعه كـ Buffer
+    const modifiedBuffer = fs.readFileSync(tempInputPath);
+    
+    // تنظيف الملف المؤقت
+    try { fs.unlinkSync(tempInputPath); } catch(e) {}
 
     return {
       success: true,
-      message: message,
-      fileBase64: outputBuffer.toString('base64'),
-      fileName: `Alatheer_Dynamic_${Date.now()}.xlsx`,
+      message: "✅ تم تعديل الملف واجتياز عقدة الصيغ بنجاح عبر Python & openpyxl.",
+      fileBase64: modifiedBuffer.toString('base64'),
+      fileName: `Alatheer_Python_Pro_${Date.now()}.xlsx`,
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     };
 
   } catch (error) {
-    console.error("❌ Error in modifyExcelHandler:", error);
-    return {
-      success: false,
-      error: "حدث خطأ أثناء تعديل الملف: " + error.message
-    };
+    console.error("❌ Error in Python Bridge:", error);
+    return { success: false, error: "خطأ في الجسر البرمجي: " + error.message };
   }
 }
 
@@ -168,16 +77,14 @@ export default async function handler(req, res) {
     const result = await modifyExcelHandler(body);
 
     if (result.success && result.fileBase64) {
-      res.setHeader("Content-Type", result.contentType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Type", result.contentType);
       res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(result.fileName)}"`);
       return res.status(200).send(Buffer.from(result.fileBase64, 'base64'));
     }
 
     return res.status(400).json({ error: result.error || "فشل تعديل الملف" });
-
   } catch (err) {
-    console.error("Error in modify route:", err);
-    return res.status(500).json({ error: "خطأ في التعديل: " + err.message });
+    return res.status(500).json({ error: "خطأ داخلي: " + err.message });
   }
 }
 
