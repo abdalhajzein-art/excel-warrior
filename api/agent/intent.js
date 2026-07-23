@@ -3,36 +3,37 @@ import Groq from "groq-sdk";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 /**
- * طبقة فهم النوايا – النسخة المحترفة
+ * Professional Intent Analyzer – Copilot-Level
  */
 export async function analyzeIntent(message, context = {}) {
     const prompt = `
-أنت محلل نوايا ذكي. مهمتك فهم طلب المستخدم بدقة شديدة.
+You are an advanced intent analyzer. Your mission is to understand the user's request with high precision.
 
-الرسالة: "${message}"
-الملف المرفق: ${context.fileName ? context.fileName : "لا يوجد"}
-نوع الملف: ${context.fileType ? context.fileType : "غير معروف"}
+User message: "${message}"
+Attached file: ${context.fileName ? context.fileName : "none"}
+File type: ${context.fileType ? context.fileType : "unknown"}
 
-🎯 استخرج:
-1) النية الأساسية فقط:
-   - modify (تعديل ملف)
-   - generate (إنشاء ملف جديد)
-   - analyze (تحليل ملف)
-   - convert (تحويل صيغة)
-   - chat (دردشة)
-   - unknown (غير واضح)
+🎯 Extract the following:
 
-2) هل الطلب واضح؟ true/false
+1) The **primary intent**, choose only one:
+   - modify      (modify an existing file)
+   - generate    (create a new file)
+   - analyze     (analyze a file)
+   - convert     (convert file format)
+   - chat        (general conversation)
+   - unknown     (unclear)
 
-3) ملخص قصير للطلب
+2) Determine if the request is clear: true/false
 
-4) أسئلة توضيحية إذا كان غير واضح
+3) Provide a short summary of the user's request.
 
-📋 أجب بصيغة JSON فقط:
+4) If unclear, provide clarifying questions.
+
+📋 Respond ONLY in JSON format:
 {
   "intent": "modify | generate | analyze | convert | chat | unknown",
   "isClear": true,
-  "summary": "ملخص قصير",
+  "summary": "short summary",
   "questions": []
 }
 `;
@@ -41,7 +42,7 @@ export async function analyzeIntent(message, context = {}) {
         const completion = await groq.chat.completions.create({
             model: "openai/gpt-oss-120b",
             messages: [
-                { role: "system", content: "أنت محلل نوايا ذكي ودقيق." },
+                { role: "system", content: "You are a precise and intelligent intent analyzer." },
                 { role: "user", content: prompt }
             ],
             response_format: { type: "json_object" },
@@ -54,14 +55,14 @@ export async function analyzeIntent(message, context = {}) {
         };
 
     } catch (error) {
-        console.error("❌ خطأ في تحليل النية:", error);
+        console.error("❌ Intent analysis error:", error);
         return {
             success: false,
             data: {
                 intent: "unknown",
                 isClear: false,
-                summary: "تعذر فهم الطلب",
-                questions: ["ممكن تعيد صياغة طلبك؟"]
+                summary: "Unable to understand the request",
+                questions: ["Could you please rephrase your request?"]
             }
         };
     }
