@@ -46,6 +46,20 @@ export async function modifyExcelHandler(req, res) {
       return { success: false, error: "لا يوجد ورقة عمل في الملف." };
     }
 
+    // 🛡️ خطوة وقائية سيادية: تنظيف وإلغاء الـ Shared Formulas لمنع كراش الـ XML أثناء الحفظ
+    worksheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        if (cell.type === ExcelJS.ValueType.Formula) {
+          // تحويل الصيغة المشتركة إلى صيغة مستقلة وثابتة لتجنب تتبع الـ Master Cell التالفة
+          if (cell.sharedFormula) {
+            const formulaVal = cell.formula || cell.result;
+            cell.value = { formula: formulaVal, result: cell.result };
+            delete cell.sharedFormula;
+          }
+        }
+      });
+    });
+
     let modifications = aiPlan.modificationsDescription || [];
 
     // البحث عن صف العناوين ديناميكياً
@@ -62,7 +76,7 @@ export async function modifyExcelHandler(req, res) {
     if (headerRowIndex === -1) headerRowIndex = 2;
     const headerRow = worksheet.getRow(headerRowIndex);
 
-    // التنفيذ الآمن لإدراج الأعمدة بدون كسر الـ Shared Formulas
+    // التنفيذ الآمن لإدراج الأعمدة بعد تنظيف المعادلات
     if (aiPlan.newColumns && Array.isArray(aiPlan.newColumns) && aiPlan.newColumns.length > 0) {
       let targetColIdx = -1;
       
@@ -96,7 +110,7 @@ export async function modifyExcelHandler(req, res) {
       aiPlan.newColumns.forEach((colName, idx) => {
         const currentCol = insertIndex + idx;
         
-        // تعيين عنوان العمود وتنسيقه الملكي
+        // تعيين عنوان العمود وتنسيقه
         const headerCell = worksheet.getCell(headerRowIndex, currentCol);
         headerCell.value = colName;
         headerCell.font = { name: 'Arial', bold: true, color: { argb: 'FFFFFF' } };
