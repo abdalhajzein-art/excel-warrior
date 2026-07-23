@@ -1,19 +1,20 @@
-import Groq from 'groq-sdk';
+import Groq from "groq-sdk";
 import { SYSTEM_PROMPT } from "./agent/system.js";
-import XLSX from 'xlsx';
-import { executeTool } from './tools/execute.js';
-import { toolsRegistry } from './tools/index.js';
+import XLSX from "xlsx";
+import { executeTool } from "./tools/execute.js";
+import { toolsRegistry } from "./tools/index.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // جلسات المستخدمين
 const sessions = {};
 
-// خريطة الأدوات
+// خريطة الأدوات (قابلة للتوسعة لاحقاً)
 const toolMap = {
   modify: "excel_modify",
   generate: "excel_generate",
-  convert: "file_convert"
+  convert: "file_convert",
+  analyze: "excel_analyze",
 };
 
 // دالة تنفيذ الأدوات
@@ -27,12 +28,12 @@ async function callFunction(action, parameters) {
 
       return {
         success: true,
-        message: "✅ تم التحليل بنجاح!",
+        message: "✅ تم تحليل الملف بنجاح.",
         analysis: {
           rows: data.length,
           columns: data[0] ? Object.keys(data[0]) : [],
-          sample: data.slice(0, 5)
-        }
+          sample: data.slice(0, 5),
+        },
       };
     } catch (err) {
       return { success: false, error: err.message };
@@ -58,7 +59,9 @@ export default async function handler(req, res) {
     const { message, excelJSON, sessionId } = body || {};
 
     if (!process.env.GROQ_API_KEY) {
-      return res.status(500).json({ reply: "⚠️ خطأ: مفتاح GROQ_API_KEY غير موجود." });
+      return res
+        .status(500)
+        .json({ reply: "⚠️ خطأ داخلي: مفتاح GROQ_API_KEY غير موجود." });
     }
 
     // إدارة الجلسة
@@ -68,7 +71,7 @@ export default async function handler(req, res) {
         step: "init",
         pendingAction: null,
         lastFile: null,
-        history: []
+        history: [],
       };
     }
     const session = sessions[sessionKey];
@@ -90,34 +93,23 @@ export default async function handler(req, res) {
       try {
         const buffer = Buffer.from(extractedBase64, "base64");
         const workbook = XLSX.read(buffer, { type: "buffer" });
+        const sheetName = workbook.SheetNames[0];
+        const data = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        fileData = data;
 
-        const sheets = workbook.SheetNames.map(name => ({
-          name,
-          data: XLSX.utils.sheet_to_json(workbook.Sheets[name])
-        }));
-
-        fileData = sheets;
-
-        fileSummary = `📄 **الملف المرفق:** ${fileName}\n`;
-        fileSummary += `عدد الأوراق: ${sheets.length}\n\n`;
-
-        sheets.forEach(sheet => {
-          fileSummary += `📝 **${sheet.name}**:\n`;
-          fileSummary += `عدد الصفوف: ${sheet.data.length}\n`;
-          fileSummary += `الأعمدة: ${sheet.data[0] ? Object.keys(sheet.data[0]).join(", ") : "لا يوجد"}\n\n`;
-        });
+        fileSummary = `[ملف مرفق: ${fileName}]\nعدد الصفوف: ${data.length}\nالأعمدة: ${
+          data[0] ? Object.keys(data[0]).join(", ") : "لا يوجد"
+        }\n`;
 
         session.lastFile = {
           base64: extractedBase64,
           name: fileName,
           summary: fileSummary,
-          data: fileData
+          data,
         };
-
       } catch (err) {
         fileSummary = `[ملف مرفق: ${fileName} - تعذّر التحليل]`;
       }
-
     } else if (session.lastFile) {
       extractedBase64 = session.lastFile.base64;
       fileName = session.lastFile.name;
@@ -128,22 +120,37 @@ export default async function handler(req, res) {
     // حفظ التاريخ
     session.history.push({
       role: "user",
-      content: userContent
+      content: userContent + (fileSummary ? `\n\n${fileSummary}` : ""),
     });
 
-    // إضافة الملف للرسائل (الإصلاح الأساسي)
-    if (fileData) {
-      session.history.push({
-        role: "system",
-        content: `📎 **بيانات الملف المرفق:**\n${fileSummary}`
-      });
+    // تقليل التاريخ مع تلخيص
+    if (session.history.length > 25) {
+      const recent = session.history.slice(-10);
+      const old = session.history.slice(0, -10);
+
+      const summary = old
+        .map((m) => {
+          const role = m.role === "user" ? "👤 المستخدم" : "🤖 المساعد";
+          return `${role}: ${m.content.substring(0, 200)}${
+            m.content.length > 200 ? "..." : ""
+          }`;
+        })
+        .join("\n");
+
+      session.history = [
+        {
+          role: "system",
+          content: `📋 ملخص المحادثة:\n${summary}\n\n⚠️ تذكير: حافظ على النية الحالية واحترام آخر نسخة من الملف.`,
+        },
+        ...recent,
+      ];
     }
 
     // مرحلة التأكيد
     if (session.step === "awaiting_confirmation" && session.pendingAction) {
       const lowerMsg = userContent.toLowerCase();
 
-      if (["نعم", "yes", "ok", "تمام", "موافق"].some(w => lowerMsg.includes(w))) {
+      if (["نعم", "yes", "ok", "تمام", "موافق"].some((w) => lowerMsg.includes(w))) {
         const action = session.pendingAction;
         session.step = "executing";
 
@@ -157,7 +164,7 @@ export default async function handler(req, res) {
             targetColumn: action.targetColumn || null,
             newColumns: action.newColumns || [],
             formulaTemplate: action.formulaTemplate || null,
-            dropdownOptions: action.dropdownOptions || null
+            dropdownOptions: action.dropdownOptions || null,
           });
 
           session.step = "init";
@@ -167,45 +174,47 @@ export default async function handler(req, res) {
             session.lastFile = {
               base64: result.fileBase64,
               name: result.fileName || fileName,
-              summary: result.summary || "تم تعديل الملف",
-              data: fileData
+              summary: result.summary || "تم تعديل الملف.",
+              data: fileData,
             };
 
             return res.json({
               reply: result.message || "✅ تم التنفيذ بنجاح!",
               fileBase64: result.fileBase64,
-              fileName: result.fileName || fileName
+              fileName: result.fileName || fileName,
             });
           }
 
           return res.json({ reply: result.message || "تم التنفيذ." });
-
         } catch (err) {
           session.step = "init";
           session.pendingAction = null;
           return res.json({ reply: `❌ خطأ أثناء التنفيذ: ${err.message}` });
         }
-
-      } else if (["لا", "عدل", "تغيير"].some(w => lowerMsg.includes(w))) {
+      } else if (["لا", "عدل", "تغيير"].some((w) => lowerMsg.includes(w))) {
         session.step = "init";
         session.pendingAction = null;
-        return res.json({ reply: "🔄 تمام… خبرني شو بدك نغيّر بالخطة؟" });
+        return res.json({
+          reply: "🔄 تمام… خبرني شو بدك نغيّر بالخطة أو بالتنفيذ.",
+        });
       }
 
-      return res.json({ reply: "❓ هل توافق على التنفيذ؟ جاوب بـ نعم أو لا." });
+      return res.json({
+        reply: "❓ هل توافق على التنفيذ؟ جاوب بـ نعم أو لا.",
+      });
     }
 
-    // تحليل الطلب عبر Groq
+    // التحليل الأساسي عبر SYSTEM
     const messagesPayload = [
       { role: "system", content: SYSTEM_PROMPT },
-      ...session.history
+      ...session.history,
     ];
 
     const analysis = await groq.chat.completions.create({
       model: "openai/gpt-oss-120b",
       messages: messagesPayload,
       temperature: 0.4,
-      max_completion_tokens: 1500
+      max_completion_tokens: 1500,
     });
 
     const analysisText = analysis.choices[0].message.content;
@@ -215,24 +224,34 @@ export default async function handler(req, res) {
       const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
       analysisResult = JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
     } catch {
-      analysisResult = { isClear: false, action: "chat", response: "مرحبا! كيف فيني ساعدك؟" };
+      analysisResult = {
+        isClear: false,
+        action: "chat",
+        response: "مرحبا عبد، فيني أفهم طلبك أكثر؟",
+      };
     }
 
-    // منع توليد ملف جديد إذا في ملف مرفق
+    // منع توليد ملف جديد إذا في ملف موجود
     if (session.lastFile && analysisResult.action === "generate") {
       analysisResult.action = "modify";
       analysisResult.summary = `تعديل الملف الحالي (${session.lastFile.name})`;
-      analysisResult.plan = "تطبيق التعديلات المطلوبة على الملف الحالي.";
+      analysisResult.plan =
+        "تطبيق التعديلات المطلوبة على الملف الحالي بدون إنشاء ملف جديد.";
     }
 
-    session.history.push({ role: "assistant", content: analysisResult.response });
+    session.history.push({
+      role: "assistant",
+      content: analysisResult.response,
+    });
 
     // إذا الطلب غير واضح
     if (!analysisResult.isClear) {
       let reply = analysisResult.response || "🤔 لحتى أفهمك أكثر…";
       if (analysisResult.questions?.length) {
         reply += "\n❓ أسئلة توضيحية:\n";
-        analysisResult.questions.forEach((q, i) => reply += `${i + 1}. ${q}\n`);
+        analysisResult.questions.forEach((q, i) => {
+          reply += `${i + 1}. ${q}\n`;
+        });
       }
       return res.json({ reply });
     }
@@ -254,20 +273,21 @@ export default async function handler(req, res) {
         targetColumn: analysisResult.targetColumn || null,
         newColumns: analysisResult.newColumns || [],
         formulaTemplate: analysisResult.formulaTemplate || null,
-        dropdownOptions: analysisResult.dropdownOptions || null
+        dropdownOptions: analysisResult.dropdownOptions || null,
       };
 
       let reply = analysisResult.response || "✔ فهمت عليك.\n";
       reply += `📋 الملخص: ${analysisResult.summary}\n`;
-      reply += `📝 الخطة:\n${analysisResult.plan || "سيتم تنفيذ الطلب حسب تعليماتك."}\n\n`;
+      reply += `📝 الخطة:\n${
+        analysisResult.plan || "سيتم تنفيذ الطلب حسب تعليماتك وباحترام الملف الحالي."
+      }\n\n`;
       reply += `❓ هل تريد المتابعة؟ (نعم / عدل على الخطة)`;
 
       return res.json({ reply });
     }
 
     return res.json({ reply: analysisResult.response });
-
   } catch (error) {
     return res.status(500).json({ reply: "⚠️ خطأ: " + error.message });
   }
-          }
+            }
