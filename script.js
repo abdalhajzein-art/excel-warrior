@@ -1,4 +1,4 @@
-Document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     const chatArea = document.getElementById('chatArea');
@@ -15,7 +15,6 @@ Document.addEventListener('DOMContentLoaded', () => {
     let selectedFileObject = null;
     let attachedFileName = null;
     let isFileLoading = false;
-    let typingIndicatorId = null;
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -308,47 +307,31 @@ Document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ✅ دالة تنسيق النص بشكل احترافي (Markdown كامل)
     function formatReply(text) {
         if (!text) return '';
-        
         let formatted = text;
         
-        // حماية الكود من التنسيق
         formatted = formatted.replace(/```([\s\S]*?)```/g, (match, code) => {
             return `<pre style="background: #1a1a1a; padding: 12px; border-radius: 8px; overflow-x: auto; border: 1px solid #333; direction: ltr; text-align: left;"><code style="color: #e0e0e0; font-family: monospace;">${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
         });
         
-        // العناوين
         formatted = formatted.replace(/^### (.*?)$/gm, '<h3 style="margin: 12px 0 6px 0; color: #d4af37;">$1</h3>');
         formatted = formatted.replace(/^## (.*?)$/gm, '<h2 style="margin: 16px 0 8px 0; color: #d4af37;">$1</h2>');
         formatted = formatted.replace(/^# (.*?)$/gm, '<h1 style="margin: 20px 0 10px 0; color: #d4af37;">$1</h1>');
-        
-        // الخط العريض
         formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        
-        // الخط المائل
         formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>');
-        
-        // القوائم النقطية
         formatted = formatted.replace(/^- (.*?)$/gm, '• $1');
-        
-        // القوائم الرقمية
         formatted = formatted.replace(/^\d+\. (.*?)$/gm, (match, p1) => {
             const num = match.match(/^\d+/)[0];
             return `${num}. ${p1}`;
         });
-        
-        // فواصل الأسطر
         formatted = formatted.replace(/\n/g, '<br>');
         
         return formatted;
     }
 
-    // ✅ دالة إظهار مؤشر الكتابة
     function showTypingIndicator() {
         if (!chatArea) return null;
-        
         const indicatorId = 'typing_' + Date.now();
         const div = document.createElement('div');
         div.id = indicatorId;
@@ -359,7 +342,6 @@ Document.addEventListener('DOMContentLoaded', () => {
             <span style="background: #444; width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: typingBounce 1.4s infinite both; animation-delay: 0.2s;"></span>
             <span style="background: #444; width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: typingBounce 1.4s infinite both; animation-delay: 0.4s;"></span>
         `;
-        
         chatArea.appendChild(div);
         chatArea.scrollTop = chatArea.scrollHeight;
         
@@ -374,7 +356,6 @@ Document.addEventListener('DOMContentLoaded', () => {
             `;
             document.head.appendChild(style);
         }
-        
         return indicatorId;
     }
 
@@ -386,7 +367,6 @@ Document.addEventListener('DOMContentLoaded', () => {
 
     function clearChat() {
         if (!confirm('🗑️ هل تريد مسح جميع رسائل هذه الجلسة؟')) return;
-        
         let sessions = getStoredSessions();
         if (sessions[currentSessionId]) {
             sessions[currentSessionId].messages = [];
@@ -404,7 +384,6 @@ Document.addEventListener('DOMContentLoaded', () => {
             alert('⚠️ لا توجد رسائل لتصديرها.');
             return;
         }
-        
         const text = session.messages.map(m => {
             const sender = m.sender === 'user' ? '👤 المستخدم' : '🤖 الأثير';
             return `[${sender}]: ${m.text}`;
@@ -419,19 +398,12 @@ Document.addEventListener('DOMContentLoaded', () => {
         URL.revokeObjectURL(url);
     }
 
-    if (clearChatBtn) {
-        clearChatBtn.addEventListener('click', clearChat);
-    }
-    
-    if (exportChatBtn) {
-        exportChatBtn.addEventListener('click', exportChat);
-    }
+    if (clearChatBtn) clearChatBtn.addEventListener('click', clearChat);
+    if (exportChatBtn) exportChatBtn.addEventListener('click', exportChat);
 
-    // ✅ دالة الإرسال المُصححة والجاهزة بالكامل
     async function handleSendMessage() {
         if (!userInput) return;
         const message = userInput.value.trim();
-        
         const currentFileToProcess = selectedFileObject;
         const currentFileName = attachedFileName;
 
@@ -449,7 +421,6 @@ Document.addEventListener('DOMContentLoaded', () => {
             try {
                 payloadExcel = await readFileAsBase64(currentFileToProcess);
                 fileDisplayName = currentFileName;
-                console.log("✅ File successfully converted to Base64:", fileDisplayName, payloadExcel);
             } catch (err) {
                 console.error("❌ Error reading file:", err);
                 appendMessageToDOM('assistant', '⚠️ تعذر قراءة الملف. حاول مرة أخرى.');
@@ -501,9 +472,7 @@ Document.addEventListener('DOMContentLoaded', () => {
         attachedFileName = null;
         isFileLoading = false;
         fileInput.value = '';
-        if (fileBubbles) {
-            fileBubbles.innerHTML = '';
-        }
+        if (fileBubbles) fileBubbles.innerHTML = '';
         updateSendButtonState();
 
         const typingId = showTypingIndicator();
@@ -515,8 +484,6 @@ Document.addEventListener('DOMContentLoaded', () => {
                 sessionId: currentSessionId 
             };
 
-            console.log("🚀 Sending Payload to Backend:", requestPayload);
-
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -524,7 +491,6 @@ Document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await response.json();
-            
             hideTypingIndicator(typingId);
 
             if (data && data.reply) {
@@ -603,11 +569,9 @@ Document.addEventListener('DOMContentLoaded', () => {
     const createNewSession = () => {
         currentSessionId = generateSessionId();
         localStorage.setItem('alatheer_current_session', currentSessionId);
-        
         let sessions = getStoredSessions();
         sessions[currentSessionId] = { title: 'جلسة جديدة', messages: [], pinned: false };
         saveSessions(sessions);
-
         renderSessionsList();
         loadSession(currentSessionId);
     };
@@ -640,3 +604,4 @@ Document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
