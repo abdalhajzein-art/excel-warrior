@@ -15,8 +15,8 @@ const toolMap = {
 };
 
 async function callFunction(action, parameters) {
-  const toolName = toolMap[action];
-  if (!toolName || !toolsRegistry[toolName]) {
+  const toolName = toolMap[action] || "excel_modify";
+  if (!toolsRegistry[toolName]) {
     throw new Error(`أداة غير معروفة: ${action}`);
   }
   return await executeTool(toolName, parameters);
@@ -45,45 +45,36 @@ export default async function handler(req, res) {
     const session = sessions[sessionKey];
 
     let userContent = (message || "").trim();
-    let extractedBase64 = null;
-    let fileName = null;
     let tempFilePath = null;
+    let fileName = null;
 
     const hasFile = excelJSON && excelJSON[0] && excelJSON[0].fileBase64;
 
     if (hasFile) {
       const fileObj = excelJSON[0];
-      extractedBase64 = fileObj.fileBase64;
+      const buffer = Buffer.from(fileObj.fileBase64, 'base64');
       fileName = fileObj.fileName || "ملف.xlsx";
-      
-      // حفظ الملف مؤقتماً على السيرفر لكي يقرأه بايثون مباشرة
-      const buffer = Buffer.from(extractedBase64, 'base64');
       tempFilePath = path.join(os.tmpdir(), `${Date.now()}_${fileName}`);
       fs.writeFileSync(tempFilePath, buffer);
 
-      session.lastFile = {
-        path: tempFilePath,
-        name: fileName,
-        base64: extractedBase64
-      };
+      session.lastFile = { path: tempFilePath, name: fileName };
     } else if (session.lastFile) {
       tempFilePath = session.lastFile.path;
       fileName = session.lastFile.name;
-      extractedBase64 = session.lastFile.base64;
     }
 
-    // 🧠 عقل التوجيه الخفيف (Gemini 3.5 Flash) لتحديد الإجراء فقط
+    // 🧠 عقل التوجيه الذكي (Gemini) لتحديد نية المستخدم بدقة
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 300,
+        maxOutputTokens: 400,
         responseMimeType: "application/json",
         responseSchema: {
           type: SchemaType.OBJECT,
           properties: {
-            action: { type: SchemaType.STRING, description: "modify إذا طلب قراءة أو تعديل، أو chat للدردشة العامة" },
-            response: { type: SchemaType.STRING, description: "الرد البشري المناسب" }
+            action: { type: SchemaType.STRING, description: "اختر read إذا طلب قراءة أو ملخص أو تحليل، أو formulas إذا طلب الدوال والمعادلات، أو modify إذا طلب تعديل وتغيير، أو chat للدردشة العامة" },
+            response: { type: SchemaType.STRING, description: "مقدمة أو رد أولي مناسب" }
           },
           required: ["action", "response"]
         }
@@ -93,7 +84,7 @@ export default async function handler(req, res) {
     const prompt = `أنت المساعد الذكي لمنصة "الأثير".
 طلب المستخدم: "${userContent}"
 هل الملف مرفق أو موجود في الجلسة؟ ${tempFilePath ? "نعم" : "لا"}
-حدد الإجراء المناسب (modify إذا كان هناك ملف ويطلب قراءته أو تعديله، وإلا chat).`;
+صنف الطلب بدقة إلى أحد الإجراءات التالية: read (للقراءة والتحليل), formulas (للدوال), modify (للتعديل), chat (للدردشة).`;
 
     const result = await model.generateContent(prompt);
     let analysisResult;
@@ -101,7 +92,7 @@ export default async function handler(req, res) {
       analysisResult = JSON.parse(result.response.text());
     } catch {
       analysisResult = {
-        action: tempFilePath ? "modify" : "chat",
+        action: tempFilePath ? "read" : "chat",
         response: "أهلاً بك يا مهندس، أنا مستعد لمعالجة الملف برمجياً."
       };
     }
@@ -110,39 +101,49 @@ export default async function handler(req, res) {
       return res.json({ reply: analysisResult.response });
     }
 
-    // التنفيذ الفوري عبر الأداة ومحرك بايثون مع تمرير مسار الملف الحقيقي
-    if (analysisResult.action === "modify" && tempFilePath) {
-      try {
-        let toolResult = await callFunction("modify", {
-          instruction: userContent,
-          inputPath: tempFilePath,
-          fileName,
-        });
+    // تشغيل محرك بايثون عبر الأداة
+    try {
+      let toolResult = await callFunction("modify", {
+        instruction: userContent,
+        inputPath: tempFilePath,
+        fileName,
+        action: analysisResult.action
+      });
 
-        let finalReply = `${analysisResult.response}\n\n`;
-        if (toolResult && toolResult.message) {
-          finalReply += `📊 **النتيجة:** ${toolResult.message}`;
-        }
+      let finalReply = `${analysisResult.response}\n\n`;
 
-        if (toolResult && toolResult.fileBase64) {
-          return res.json({
-            reply: finalReply,
-            fileBase64: toolResult.fileBase64,
-            fileName: toolResult.fileName || fileName,
-            contentType: toolResult.contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-          });
-        }
-
-        return res.json({ reply: finalReply });
-      } catch (toolError) {
-        console.error("❌ خطأ في تنفيذ الأداة:", toolError);
-        return res.json({ reply: "⚠️ حدث خطأ أثناء المعالجة المحلية: " + toolError.message });
+      // إذا أعطانا بايثون بيانات وصفية (Metadata)، نجعل Gemini ي صيغها بأسلوب ممتع وتحليلي
+      if (toolResult && toolResult.metadata) {
+        const meta = toolResult.metadata;
+        const secondModel = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+        const formattingPrompt = `بناءً على البيانات المستخرجة من ملف الإكسل (إجمالي الصفوف: ${meta.total_rows}, الأعمدة: ${meta.headers.join(', ')}، عينة البيانات: ${JSON.stringify(meta.sample_data.slice(0, 5))})، اكتب تقريراً تحليلياً احترافياً ومفصلاً للمهندس عبدالغني.`;
+        
+        const formattedRes = await secondModel.generateContent(formattingPrompt);
+        finalReply += formattedRes.response.text();
+      } else if (toolResult && toolResult.formulas_list) {
+        finalReply += `⚙️ **الدوال المكتشفة:**\n` + toolResult.formulas_list.join('\n');
+      } else if (toolResult && toolResult.message) {
+        finalReply += `📊 **النتيجة:** ${toolResult.message}`;
       }
+
+      // إرسال الرد وملف التصدير (إن وجد تعديل)
+      if (toolResult && toolResult.fileBase64) {
+        return res.json({
+          reply: finalReply,
+          fileBase64: toolResult.fileBase64,
+          fileName: toolResult.fileName || fileName,
+          contentType: toolResult.contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+      }
+
+      return res.json({ reply: finalReply });
+
+    } catch (toolError) {
+      console.error("❌ خطأ في تنفيذ الأداة:", toolError);
+      return res.json({ reply: "⚠️ حدث خطأ أثناء المعالجة المحلية عبر محرك الكواليس: " + toolError.message });
     }
 
-    return res.json({ reply: analysisResult.response });
   } catch (error) {
-    return res.status(500).json({ reply: "⚠️ خطأ تقني: " + error.message });
+    return res.status(500).json({ reply: "⚠️ خطأ تقني في المعالج: " + error.message });
   }
 }
-
