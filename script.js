@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+Document.addEventListener('DOMContentLoaded', () => {
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
     const chatArea = document.getElementById('chatArea');
@@ -363,7 +363,6 @@ document.addEventListener('DOMContentLoaded', () => {
         chatArea.appendChild(div);
         chatArea.scrollTop = chatArea.scrollHeight;
         
-        // إضافة CSS للأنيميشن
         if (!document.getElementById('typingStyle')) {
             const style = document.createElement('style');
             style.id = 'typingStyle';
@@ -379,14 +378,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return indicatorId;
     }
 
-    // ✅ دالة إخفاء مؤشر الكتابة
     function hideTypingIndicator(indicatorId) {
         if (!indicatorId) return;
         const el = document.getElementById(indicatorId);
         if (el) el.remove();
     }
 
-    // ✅ دالة مسح المحادثة
     function clearChat() {
         if (!confirm('🗑️ هل تريد مسح جميع رسائل هذه الجلسة؟')) return;
         
@@ -400,7 +397,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ✅ دالة تصدير المحادثة
     function exportChat() {
         const sessions = getStoredSessions();
         const session = sessions[currentSessionId];
@@ -410,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const text = session.messages.map(m => {
-            const sender = m.sender === 'user' ? '👤 المستخدم' : '🤖 عبد سيك';
+            const sender = m.sender === 'user' ? '👤 المستخدم' : '🤖 الأثير';
             return `[${sender}]: ${m.text}`;
         }).join('\n\n');
         
@@ -423,7 +419,6 @@ document.addEventListener('DOMContentLoaded', () => {
         URL.revokeObjectURL(url);
     }
 
-    // ✅ إضافة مستمعات للأزرار الجديدة
     if (clearChatBtn) {
         clearChatBtn.addEventListener('click', clearChat);
     }
@@ -432,6 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
         exportChatBtn.addEventListener('click', exportChat);
     }
 
+    // ✅ دالة الإرسال المُصححة والجاهزة بالكامل
     async function handleSendMessage() {
         if (!userInput) return;
         const message = userInput.value.trim();
@@ -446,14 +442,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let displayMessage = message || "";
-
         let payloadExcel = null;
         let fileDisplayName = null;
+
         if (currentFileToProcess) {
             try {
                 payloadExcel = await readFileAsBase64(currentFileToProcess);
                 fileDisplayName = currentFileName;
-                console.log("✅ File converted to Base64:", fileDisplayName);
+                console.log("✅ File successfully converted to Base64:", fileDisplayName, payloadExcel);
             } catch (err) {
                 console.error("❌ Error reading file:", err);
                 appendMessageToDOM('assistant', '⚠️ تعذر قراءة الملف. حاول مرة أخرى.');
@@ -461,7 +457,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // عرض رسالة المستخدم
         const userMessageDiv = document.createElement('div');
         userMessageDiv.className = 'message user';
         
@@ -488,13 +483,11 @@ document.addEventListener('DOMContentLoaded', () => {
         chatArea.appendChild(userMessageDiv);
         chatArea.scrollTop = chatArea.scrollHeight;
         
-        // حفظ الرسالة في الجلسة
         saveMessageToCurrentSession('user', displayMessage || '📎 ملف مرفق', {
             fileName: fileDisplayName,
             fileData: payloadExcel
         });
 
-        // تحديث عنوان الجلسة
         let sessions = getStoredSessions();
         if (sessions[currentSessionId] && sessions[currentSessionId].title === 'جلسة جديدة') {
             sessions[currentSessionId].title = displayMessage.length > 20 ? displayMessage.substring(0, 20) + '...' : displayMessage || 'ملف مرفق';
@@ -502,7 +495,6 @@ document.addEventListener('DOMContentLoaded', () => {
             renderSessionsList();
         }
 
-        // مسح الحقول
         userInput.value = '';
         userInput.style.height = 'auto';
         selectedFileObject = null;
@@ -514,27 +506,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateSendButtonState();
 
-        // ✅ إظهار مؤشر الكتابة
         const typingId = showTypingIndicator();
 
         try {
+            const requestPayload = { 
+                message: displayMessage || "📎 ملف مرفق", 
+                excelJSON: payloadExcel, 
+                sessionId: currentSessionId 
+            };
+
+            console.log("🚀 Sending Payload to Backend:", requestPayload);
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    message: displayMessage || "📎 ملف مرفق", 
-                    excelJSON: payloadExcel, 
-                    sessionId: currentSessionId 
-                })
+                body: JSON.stringify(requestPayload)
             });
 
             const data = await response.json();
             
-            // ✅ إخفاء مؤشر الكتابة
             hideTypingIndicator(typingId);
 
             if (data && data.reply) {
-                // ✅ عرض الرد مع التنسيق
                 const msgDiv = document.createElement('div');
                 msgDiv.className = 'message ai';
                 msgDiv.innerHTML = formatReply(data.reply);
@@ -564,7 +557,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('❌ Fetch Error:', error);
             hideTypingIndicator(typingId);
             
-            // ✅ عرض زر إعادة المحاولة
             const errorDiv = document.createElement('div');
             errorDiv.className = 'message ai';
             errorDiv.innerHTML = `
@@ -608,12 +600,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return messageId;
     }
 
-    function removeMessageFromDOM(id) {
-        if (!id) return;
-        const el = document.getElementById(id);
-        if (el) el.remove();
-    }
-
     const createNewSession = () => {
         currentSessionId = generateSessionId();
         localStorage.setItem('alatheer_current_session', currentSessionId);
@@ -641,23 +627,14 @@ document.addEventListener('DOMContentLoaded', () => {
             updateSendButtonState();
         });
         
-        // ✅ تعديل سلوك Enter حسب الجهاز
         userInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 const isMobile = window.innerWidth <= 768;
-                
-                if (isMobile) {
-                    // الموبايل: Enter = سطر جديد دائماً
-                    return; // يترك السلوك الافتراضي (سطر جديد)
-                } else {
-                    // الكمبيوتر: Shift+Enter = سطر جديد، Enter = إرسال
-                    if (!e.shiftKey) {
-                        e.preventDefault();
-                        if (!sendBtn.disabled) {
-                            handleSendMessage();
-                        }
+                if (!isMobile && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!sendBtn.disabled) {
+                        handleSendMessage();
                     }
-                    // Shift+Enter يترك السلوك الافتراضي (سطر جديد)
                 }
             }
         });
