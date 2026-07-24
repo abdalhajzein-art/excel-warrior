@@ -4,7 +4,6 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import traceback
-import pandas as pd
 
 class ExcelWarrior:
     """المحرك العام والمطلق لمعالجة وتحليل وتوليد ملفات Excel في العالم"""
@@ -38,44 +37,26 @@ class ExcelWarrior:
             self.header_row = 1
     
     def read_and_summarize(self):
-        """استخراج محتوى الملف وملخصه بدقة ليعرضه النموذج للمستخدم"""
-        data = []
+        """استخراج ملخص بشري أنيق ونظيف للملف دون إظهار البيانات الخام"""
         headers = []
-        
-        # قراءة العناوين
         for c in range(1, self.ws.max_column + 1):
             val = self.ws.cell(row=self.header_row, column=c).value
-            headers.append(str(val) if val is not None else f"Column_{c}")
+            if val is not None and not str(val).startswith("Column_"):
+                headers.append(str(val))
             
-        # قراءة الصفوف (بحد أقصى 100 صف لتوفير التوكنز والسرعة)
-        row_count = 0
-        for r in range(self.header_row + 1, min(self.ws.max_row + 1, 100)):
-            row_data = {}
-            has_value = False
-            for c, h in enumerate(headers, start=1):
-                cell_val = self.ws.cell(row=r, column=c).value
-                if cell_val is not None:
-                    has_value = True
-                row_data[h] = cell_val
-            if has_value:
-                data.append(row_data)
-                row_count += 1
-                
-        summary_text = f"📊 ملخص الملف: تم العثور على {self.ws.max_row} صف و {self.ws.max_column} عمود.\n"
-        summary_text += f"📌 صف العناوين: {self.header_row}\n"
-        summary_text += f"📋 العناوين الرئيسية: {', '.join(headers)}\n\n"
-        summary_text += f"🔍 عينة من البيانات (أول {len(data)} صفوف):\n"
+        total_rows = max(0, self.ws.max_row - self.header_row)
         
-        for idx, row in enumerate(data[:15], 1):
-            summary_text += f"صف {idx}: {json.dumps(row, ensure_ascii=False)}\n"
-            
+        summary_text = f"### 📊 تقرير وملخص ملف الإكسل\n\n"
+        summary_text += f"- 📁 **إجمالي الصفوف (البيانات):** {total_rows}\n"
+        summary_text += f"- 📋 **الأعمدة الرئيسية المكتشفة:** {', '.join(headers[:10])}\n\n"
+        summary_text += f"الملف جاهز تماماً لأي عملية تحليل إضافية، حسابات، تلوين شرطي، أو تعديل تريده يا مهندس. كيف تود أن نتابع العمل عليه؟ 🚀"
+        
         return {
             "success": True,
+            "is_read_only": True, # مؤشر قراءة فقط لمنع ظهور زر التحميل
             "message": summary_text,
-            "total_rows": self.ws.max_row,
-            "total_columns": self.ws.max_column,
-            "headers": headers,
-            "sample_data": data[:15]
+            "total_rows": total_rows,
+            "headers": headers
         }
 
     def process_request(self, action, plan, instruction):
@@ -103,12 +84,11 @@ class ExcelWarrior:
                     cell = self.ws.cell(row=r, column=insert_pos)
                     self._apply_style(cell, 'data')
                     if formula:
-                        # استبدال رقم الصف الديناميكي
                         cell.value = formula.replace("{row}", str(r))
                     else:
                         cell.value = 0
 
-        # 3. تعديلات ذكية عامة بناءً على الكلمات المفتاحية إذا لم توجد خطة معقدة
+        # 3. تعديلات ذكية عامة بناءً على الكلمات المفتاحية
         if "أضف" in instruction_lower or "عمود" in instruction_lower:
             if not new_columns:
                 col_name = "مؤشر الأداء"
@@ -128,7 +108,7 @@ class ExcelWarrior:
                         self._apply_style(cell, 'data')
                         cell.value = 0
 
-        # 4. التلوين الشرطي العام (التمييز والتلوين)
+        # 4. التلوين الشرطي العام
         if "لون" in instruction_lower or "تمييز" in instruction_lower or "تحديد" in instruction_lower:
             accent_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
             for r in range(self.header_row + 1, self.ws.max_row + 1):
@@ -140,6 +120,7 @@ class ExcelWarrior:
 
         return {
             "success": True, 
+            "is_read_only": False, # تم تعديل الملف ويجب إظهار زر التحميل
             "message": f"✅ تم تنفيذ التعديلات والعمليات بنجاح تام على الملف! (العملية: {instruction})"
         }
 
@@ -177,6 +158,11 @@ def main():
         
         result = warrior.process_request(action, plan, instruction)
         
+        # إذا كانت عملية قراءة فقط، لا نحفظ ملف خروج جديد
+        if result.get("is_read_only", False):
+            print(json.dumps(result), flush=True)
+            return
+
         if result["success"] and output_path:
             warrior.wb.save(output_path)
             
