@@ -36,13 +36,13 @@ async function callFunction(action, parameters) {
   return await executeTool(toolName, parameters);
 }
 
-// 🛠️ دالة خلفية لقراءة أوراق الإكسل من الـ Base64 إذا لم تكن جاهزة
+// 🛠️ دالة خلفية لقراءة أوراق الإكسل من الـ Base64 بالطريقة الصحيحة عبر ExcelJS
 async function extractSheetsFromBase64(base64Data) {
   const sheets = [];
   try {
     const buffer = Buffer.from(base64Data, 'base64');
     const workbook = new ExcelJS.Workbook();
-    await workbook.load(buffer);
+    await workbook.xlsx.load(buffer); // ✅ التصحيح هنا لتعمل بشكل مثالي
 
     workbook.eachSheet((worksheet) => {
       const name = worksheet.name;
@@ -50,7 +50,6 @@ async function extractSheetsFromBase64(base64Data) {
       
       worksheet.eachRow({ includeEmpty: true }, (row) => {
         const rowValues = [];
-        // ExcelJS row.values starts from index 1, index 0 is usually undefined
         const values = row.values;
         if (Array.isArray(values)) {
           for (let i = 1; i < values.length; i++) {
@@ -68,7 +67,7 @@ async function extractSheetsFromBase64(base64Data) {
       sheets.push({
         name,
         header,
-        rows: rows.slice(1), // باقي الصفوف
+        rows: rows.slice(1),
         teachingRows: [],
         summaryRows: []
       });
@@ -134,7 +133,7 @@ export default async function handler(req, res) {
       extractedBase64 = fileObj.fileBase64;
       fileName = fileObj.fileName || "ملف.xlsx";
       
-      // 🛠️ التحقق من وجود الشيتات، وإذا لم تكن موجودة نقوم باستخراجها خلفياً من الـ Base64
+      // استخراج الأوراق خلفياً إذا لم تكن جاهزة
       sheets = fileObj.sheets && fileObj.sheets.length > 0 ? fileObj.sheets : await extractSheetsFromBase64(extractedBase64);
 
       understood = understandExcel(sheets);
@@ -356,7 +355,7 @@ export default async function handler(req, res) {
       analysisResult = {
         isClear: false,
         action: "chat",
-        response: "فيني أفهم طلبك أكثر؟",
+        response: "مرحبا عبد، فيني أفهم طلبك أكثر؟",
       };
     }
 
@@ -373,7 +372,7 @@ export default async function handler(req, res) {
     });
 
     if (!analysisResult.isClear) {
-      let reply = analysisResult.response || "🤔 مافهمت قصدك …";
+      let reply = analysisResult.response || "🤔 لحتى أفهمك أكثر…";
       if (analysisResult.questions?.length) {
         reply += "\n❓ أسئلة توضيحية:\n";
         analysisResult.questions.forEach((q, i) => {
@@ -419,7 +418,7 @@ export default async function handler(req, res) {
       reply += `📝 الخطة:\n${
         analysisResult.plan || "سيتم تنفيذ الطلب حسب تعليماتك وباحترام الملف الحالي."
       }\n\n`;
-      reply += `❓ بدك نكمل؟ (نعم / عدل على الخطة)`;
+      reply += `❓ هل تريد المتابعة؟ (نعم / عدل على الخطة)`;
 
       return res.json({ reply });
     }
