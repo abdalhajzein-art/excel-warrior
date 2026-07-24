@@ -112,11 +112,16 @@ export default async function handler(req, res) {
 
       let finalReply = `${analysisResult.response}\n\n`;
 
-      // إذا أعطانا بايثون بيانات وصفية (Metadata)، نجعل Gemini ي صيغها بأسلوب ممتع وتحليلي
+      // إذا أعطانا بايثون بيانات وصفية (Metadata)، نجعل Gemini يصيغها بأسلوب هندسي مباشر ومختصر
       if (toolResult && toolResult.metadata) {
         const meta = toolResult.metadata;
         const secondModel = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
-        const formattingPrompt = `بناءً على البيانات المستخرجة من ملف الإكسل (إجمالي الصفوف: ${meta.total_rows}, الأعمدة: ${meta.headers.join(', ')}، عينة البيانات: ${JSON.stringify(meta.sample_data.slice(0, 5))})، اكتب تقريراً تحليلياً احترافياً ومفصلاً للمهندس عبدالغني.`;
+        const formattingPrompt = `بناءً على البيانات المستخرجة من ملف الإكسل (إجمالي الصفوف: ${meta.total_rows}, الأعمدة: ${meta.headers.join(', ')}، عينة البيانات: ${JSON.stringify(meta.sample_data.slice(0, 5))})، 
+اكتب تقريراً هندسياً مختصراً ومباشراً جداً:
+- اعطني ملخصاً سريعاً لما يمثله الملف.
+- اذكر الأعمدة الرئيسية.
+- اذكر عينة كافية سريعة ومنظمة من البيانات.
+- تجنب تماماً المقدمات الإدارية الطويلة، أو الديباجات الحكومية (مثل سعادة المهندس والموضوع). كن تقنياً، مختصراً، وعملياً جداً.`;
         
         const formattedRes = await secondModel.generateContent(formattingPrompt);
         finalReply += formattedRes.response.text();
@@ -147,3 +152,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ تقني في المعالج: " + error.message });
   }
 }
+
