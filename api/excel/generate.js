@@ -1,8 +1,7 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { askGroqStructured } from '../groqService.js';
-
+import { askGeminiStructured } from '../geminiService.js';
 /**
  * توليد ملف Excel جديد من الصفر بناءً على تعليمات المستخدم
  * @param {Object} params - معاملات التوليد
