@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { extractExcelMetadata } from './metadata.js';
-import { askGroqStructured } from '../groqService.js';
+import { askGeminiStructured } from '../geminiService.js';
 
 /**
  * تعديل ملف Excel بناءً على تعليمات المستخدم وخطة الذكاء الاصطناعي
