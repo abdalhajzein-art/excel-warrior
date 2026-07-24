@@ -1,4 +1,4 @@
-import Groq from "groq-sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import ExcelJS from "exceljs";
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { executeTool } from "./tools/execute.js";
@@ -17,7 +17,8 @@ import { autoFillData } from "./excel/autofill.js";
 import { buildSmartTables } from "./excel/tableBuilder.js";
 import { rebuildFullFile } from "./excel/fileRebuilder.js";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// ✅ استبدال Groq بـ Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const sessions = {};
 
@@ -42,7 +43,7 @@ async function extractSheetsFromBase64(base64Data) {
   try {
     const buffer = Buffer.from(base64Data, 'base64');
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer); // ✅ التصحيح هنا لتعمل بشكل مثالي
+    await workbook.xlsx.load(buffer);
 
     workbook.eachSheet((worksheet) => {
       const name = worksheet.name;
@@ -88,9 +89,10 @@ export default async function handler(req, res) {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     const { message, excelJSON, sessionId } = body || {};
 
-    if (!process.env.GROQ_API_KEY) {
+    // ✅ التحقق من مفتاح Gemini
+    if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({
-        reply: "⚠️ خطأ داخلي: مفتاح GROQ_API_KEY غير موجود."
+        reply: "⚠️ خطأ داخلي: مفتاح GEMINI_API_KEY غير موجود."
       });
     }
 
@@ -133,7 +135,6 @@ export default async function handler(req, res) {
       extractedBase64 = fileObj.fileBase64;
       fileName = fileObj.fileName || "ملف.xlsx";
       
-      // استخراج الأوراق خلفياً إذا لم تكن جاهزة
       sheets = fileObj.sheets && fileObj.sheets.length > 0 ? fileObj.sheets : await extractSheetsFromBase64(extractedBase64);
 
       understood = understandExcel(sheets);
@@ -338,14 +339,43 @@ export default async function handler(req, res) {
       ...session.history,
     ];
 
-    const analysis = await groq.chat.completions.create({
-      model: "openai/gpt-oss-120b",
-      messages: messagesPayload,
-      temperature: 0.4,
-      max_completion_tokens: 1500,
+    // ✅ استبدال Groq بـ Gemini
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3.5-flash",
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 1500,
+        responseMimeType: "application/json"
+      }
     });
 
-    const analysisText = analysis.choices[0].message.content;
+    // تحويل messagesPayload إلى نص prompt واحد
+    let promptText = "";
+    for (const msg of messagesPayload) {
+      const role = msg.role === "user" ? "المستخدم" : "المساعد";
+      promptText += `${role}: ${msg.content}\n\n`;
+    }
+
+    // إضافة تعليمات إضافية لضمان JSON
+    promptText += `
+⚠️ **تعليمات مهمة:**
+- أجب بصيغة JSON حصراً بالهيكل التالي:
+{
+  "isClear": true/false,
+  "action": "modify | generate | convert | analyze | chat",
+  "summary": "ملخص الطلب",
+  "plan": "خطة التنفيذ",
+  "questions": ["سؤال 1", "سؤال 2"],
+  "response": "ردك الطبيعي للمستخدم"
+}
+- لا تكتب أي نص خارج JSON.
+- إذا كان الطلب غير واضح، اجعل isClear: false.
+- إذا كان هناك ملف مرفق، استخدم modify بدلاً من generate.
+`;
+
+    const result = await model.generateContent(promptText);
+    const response = result.response;
+    const analysisText = response.text();
 
     let analysisResult;
     try {
@@ -427,4 +457,4 @@ export default async function handler(req, res) {
   } catch (error) {
     return res.status(500).json({ reply: "⚠️ خطأ: " + error.message });
   }
-}
+        }
