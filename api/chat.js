@@ -2,7 +2,19 @@ import Groq from "groq-sdk";
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { executeTool } from "./tools/execute.js";
 import { toolsRegistry } from "./tools/index.js";
+
 import { understandExcel } from "./excel/understanding.js";
+import { cleanExcelStructure } from "./excel/cleaner.js";
+import { extractMultipleTables } from "./excel/extractor.js";
+import { detectSmartColumns } from "./excel/smartColumns.js";
+import { detectRelations } from "./excel/relations.js";
+import { detectKeys } from "./excel/keys.js";
+import { detectIndexes } from "./excel/indexes.js";
+import { detectConstraints } from "./excel/constraints.js";
+import { detectDefaultValues } from "./excel/defaults.js";
+import { autoFillData } from "./excel/autofill.js";
+import { buildSmartTables } from "./excel/tableBuilder.js";
+import { rebuildFullFile } from "./excel/fileRebuilder.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -54,7 +66,20 @@ export default async function handler(req, res) {
     let extractedBase64 = null;
     let fileName = null;
     let sheets = null;
+
     let understood = null;
+    let cleaned = null;
+    let extractedTables = null;
+    let smartColumns = null;
+    let relations = null;
+    let keys = null;
+    let indexes = null;
+    let constraints = null;
+    let defaultValues = null;
+    let autoFilled = null;
+    let smartTables = null;
+    let fullRebuild = null;
+
     let fileSummary = "";
 
     const hasFile = excelJSON && excelJSON[0] && excelJSON[0].fileBase64;
@@ -67,34 +92,118 @@ export default async function handler(req, res) {
       sheets = fileObj.sheets || [];
 
       understood = understandExcel(sheets);
+      cleaned = cleanExcelStructure(understood);
+      extractedTables = extractMultipleTables(understood);
+      smartColumns = detectSmartColumns(understood);
+      relations = detectRelations(understood, smartColumns);
+      keys = detectKeys(understood, smartColumns, relations);
+      indexes = detectIndexes(understood, smartColumns, keys);
+      constraints = detectConstraints(understood, smartColumns, keys);
+      defaultValues = detectDefaultValues(understood, smartColumns, constraints);
+      autoFilled = autoFillData(understood, smartColumns, relations, keys, defaultValues);
+      smartTables = buildSmartTables(
+        understood,
+        cleaned,
+        smartColumns,
+        relations,
+        keys,
+        indexes,
+        constraints,
+        defaultValues,
+        autoFilled
+      );
+      fullRebuild = rebuildFullFile(
+        understood,
+        cleaned,
+        smartColumns,
+        relations,
+        keys,
+        indexes,
+        constraints,
+        defaultValues,
+        autoFilled,
+        smartTables
+      );
 
       fileSummary = `[ملف مرفق: ${fileName}]\n`;
       fileSummary += `عدد الأوراق: ${sheets.length}\n`;
       fileSummary += `الجداول المكتشفة: ${understood.tables.length}\n`;
-      fileSummary += `صفوف تعليمية: ${understood.teaching.length}\n`;
-      fileSummary += `صفوف ملخص: ${understood.summary.length}\n`;
-      fileSummary += `Dashboard: ${understood.dashboard.length}\n`;
+      fileSummary += `الجداول المنظّفة: ${cleaned.cleanedTables.length}\n`;
+      fileSummary += `جداول متعددة مستخرجة: ${extractedTables.length}\n`;
+      fileSummary += `تحليل الأعمدة الذكي: ${smartColumns.length}\n`;
+      fileSummary += `العلاقات الذكية: ${relations.length}\n`;
+      fileSummary += `المفاتيح الذكية: ${keys.length}\n`;
+      fileSummary += `الفهارس الذكية: ${indexes.length}\n`;
+      fileSummary += `القيود الذكية: ${constraints.length}\n`;
+      fileSummary += `القيم الافتراضية الذكية: ${defaultValues.length}\n`;
+      fileSummary += `Auto-Fill الذكي: ${autoFilled.length}\n`;
+      fileSummary += `الجداول الذكية المبنية: ${smartTables.length}\n`;
+      fileSummary += `إعادة بناء كامل: ${fullRebuild.rebuiltSheets.length} ورقة\n`;
 
       session.lastFile = {
         base64: extractedBase64,
         name: fileName,
         sheets,
         understood,
+        cleaned,
+        extractedTables,
+        smartColumns,
+        relations,
+        keys,
+        indexes,
+        constraints,
+        defaultValues,
+        autoFilled,
+        smartTables,
+        fullRebuild,
         summary: fileSummary,
       };
-    }
-
-    else if (session.lastFile) {
-      extractedBase64 = session.lastFile.base64;
-      fileName = session.lastFile.name;
-      sheets = session.lastFile.sheets;
-      understood = session.lastFile.understood;
-      fileSummary = session.lastFile.summary;
+    } else if (session.lastFile) {
+      ({
+        base64: extractedBase64,
+        name: fileName,
+        sheets,
+        understood,
+        cleaned,
+        extractedTables,
+        smartColumns,
+        relations,
+        keys,
+        indexes,
+        constraints,
+        defaultValues,
+        autoFilled,
+        smartTables,
+        fullRebuild,
+        summary: fileSummary
+      } = session.lastFile);
     }
 
     session.history.push({
       role: "user",
-      content: userContent + "\n\n" + fileSummary + "\n\n" + JSON.stringify(understood, null, 2),
+      content:
+        userContent +
+        "\n\n" +
+        fileSummary +
+        "\n\n" +
+        JSON.stringify(
+          {
+            understood,
+            cleaned,
+            extractedTables,
+            smartColumns,
+            relations,
+            keys,
+            indexes,
+            constraints,
+            defaultValues,
+            autoFilled,
+            smartTables,
+            fullRebuild
+          },
+          null,
+          2
+        ),
     });
 
     if (session.history.length > 25) {
@@ -133,6 +242,17 @@ export default async function handler(req, res) {
             fileName,
             sheets,
             understood,
+            cleaned,
+            extractedTables,
+            smartColumns,
+            relations,
+            keys,
+            indexes,
+            constraints,
+            defaultValues,
+            autoFilled,
+            smartTables,
+            fullRebuild,
             format: action.format || "pdf",
             targetColumn: action.targetColumn || null,
             newColumns: action.newColumns || [],
@@ -144,13 +264,9 @@ export default async function handler(req, res) {
           session.pendingAction = null;
 
           if (result.success && result.fileBase64) {
-            session.lastFile = {
-              base64: result.fileBase64,
-              name: result.fileName || fileName,
-              sheets,
-              understood,
-              summary: result.summary || "تم تعديل الملف.",
-            };
+            session.lastFile.base64 = result.fileBase64;
+            session.lastFile.name = result.fileName || fileName;
+            session.lastFile.summary = result.summary || "تم تعديل الملف.";
 
             return res.json({
               reply: result.message || "✅ تم التنفيذ بنجاح!",
@@ -234,6 +350,17 @@ export default async function handler(req, res) {
         fileName,
         sheets,
         understood,
+        cleaned,
+        extractedTables,
+        smartColumns,
+        relations,
+        keys,
+        indexes,
+        constraints,
+        defaultValues,
+        autoFilled,
+        smartTables,
+        fullRebuild,
         format: analysisResult.format || "pdf",
         targetColumn: analysisResult.targetColumn || null,
         newColumns: analysisResult.newColumns || [],
@@ -255,4 +382,4 @@ export default async function handler(req, res) {
   } catch (error) {
     return res.status(500).json({ reply: "⚠️ خطأ: " + error.message });
   }
-  }
+      }
