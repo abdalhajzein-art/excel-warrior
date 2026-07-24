@@ -151,7 +151,12 @@ export default async function handler(req, res) {
         understood, cleaned, smartColumns, relations, keys, indexes, constraints, defaultValues, autoFilled, smartTables
       );
 
-      fileSummary = `[ملف مرفق: ${fileName}]\nعدد الأوراق: ${sheets.length}\n`;
+      // 🧠 التعديل الجذري: حقن أسماء الأوراق والأعمدة مباشرة ليرها النموذج طيرانًا بدون طلب نسخ ولصق
+      let sheetDetails = sheets.map(s => 
+        `- الورقة: "${s.name}"\n  الأعمدة الأساسية: [${s.header.join(', ')}]\n  عدد الصفوف الكلي: ${s.rows.length}`
+      ).join('\n');
+
+      fileSummary = `[ملف مرفق: ${fileName}]\nتفاصيل الملف المستخرجة برمجياً:\n${sheetDetails}\n`;
       
       session.lastFile = {
         base64: extractedBase64,
@@ -277,4 +282,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ تقني: " + error.message });
   }
 }
-
