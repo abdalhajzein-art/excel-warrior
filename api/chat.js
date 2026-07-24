@@ -151,12 +151,13 @@ export default async function handler(req, res) {
         understood, cleaned, smartColumns, relations, keys, indexes, constraints, defaultValues, autoFilled, smartTables
       );
 
-      // 🧠 التعديل المعماري المطور: استعراض تفصيلي ذكي ومرن للهيكل دون حصر بقالب
-      let sheetDetails = sheets.map(s => 
-        `- الورقة: "${s.name}"\n  الأعمدة الأساسية: [${s.header.join(', ')}]\n  إجمالي الصفوف: ${s.rows.length}`
-      ).join('\n');
+      // 🧠 الحقن السيادي للبيانات: تمرير الأعمدة مع عينة واضحة من الصفوف ليمتلك النموذج الرؤية المطلقة
+      let sheetDetails = sheets.map(s => {
+        let sampleRows = s.rows.slice(0, 15).map(r => `    [${r.join(', ')}]`).join('\n');
+        return `- الورقة: "${s.name}"\n  الأعمدة: [${s.header.join(', ')}]\n  إجمالي الصفوف: ${s.rows.length}\n  عينة من البيانات:\n${sampleRows}`;
+      }).join('\n');
 
-      fileSummary = `[ملف مرفق: ${fileName}]\nملخص الهيكل المستخرج برمجياً:\n${sheetDetails}\n`;
+      fileSummary = `[ملف مرفق: ${fileName}]\nتفاصيل الهيكل والبيانات المستخرجة برمجياً:\n${sheetDetails}\n`;
       
       session.lastFile = {
         base64: extractedBase64,
@@ -190,13 +191,13 @@ export default async function handler(req, res) {
       ...session.history,
     ];
 
-    // إعداد النموذج مع رفع حد التوكنز للردود المكتملة
+    // إعداد النموذج المعماري بحد أقصى للتوكنز ومخطط صارم
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
       systemInstruction: SYSTEM_PROMPT,
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 4000, // 🚀 رفع الحد لمنع قطع الردود الطويلة
+        maxOutputTokens: 4000,
         responseMimeType: "application/json",
         responseSchema: {
           type: SchemaType.OBJECT,
@@ -232,11 +233,6 @@ export default async function handler(req, res) {
       };
     }
 
-    if (session.lastFile && analysisResult.action === "generate") {
-      analysisResult.action = "modify";
-      analysisResult.summary = `تعديل الملف الحالي (${session.lastFile.name})`;
-    }
-
     session.history.push({
       role: "model",
       content: analysisResult.response,
@@ -257,24 +253,33 @@ export default async function handler(req, res) {
       return res.json({ reply: analysisResult.response });
     }
 
+    // 🚀 التنفيذ السيادي الفوري للأدوات عند رصد أي عملية تحليل أو تعديل
     if (["modify", "generate", "convert", "analyze"].includes(analysisResult.action)) {
-      session.step = "awaiting_confirmation";
-      session.pendingAction = {
-        type: analysisResult.action,
-        instruction: userContent,
-        base64: extractedBase64,
-        fileName,
-        sheets,
-        understood,
-        cleaned,
-      };
+      try {
+        let toolResult = await callFunction(analysisResult.action, {
+          instruction: userContent,
+          base64: extractedBase64,
+          fileName,
+          sheets,
+          understood,
+          cleaned,
+          smartTables,
+          fullRebuild
+        });
 
-      let reply = analysisResult.response || "✔ فهمت عليك.\n";
-      reply += `📋 الملخص: ${analysisResult.summary || "معالجة الملف المرفق"}\n`;
-      reply += `📝 الخطة:\n${analysisResult.plan || "تنفيذ الطلب حسب تعليماتك."}\n\n`;
-      reply += `❓ هل تريد المتابعة؟ (نعم / لا)`;
+        let finalReply = `${analysisResult.response}\n\n`;
+        if (toolResult && typeof toolResult === "string") {
+          finalReply += `📊 **النتيجة البرمجية التنفيذية:**\n${toolResult}`;
+        } else if (toolResult && toolResult.message) {
+          finalReply += `📊 **النتيجة:** ${toolResult.message}`;
+        }
 
-      return res.json({ reply });
+        return res.json({ reply: finalReply });
+      } catch (toolError) {
+        console.error("❌ خطأ في تنفيذ الأداة برمجياً:", toolError);
+        // في حال فشل الأداة البرمجية المباشرة، يعود بالرد التحليلي للنموذج حصرياً
+        return res.json({ reply: analysisResult.response });
+      }
     }
 
     return res.json({ reply: analysisResult.response });
