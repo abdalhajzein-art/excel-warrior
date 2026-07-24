@@ -1,4 +1,5 @@
 import Groq from "groq-sdk";
+import ExcelJS from "exceljs";
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { executeTool } from "./tools/execute.js";
 import { toolsRegistry } from "./tools/index.js";
@@ -33,6 +34,49 @@ async function callFunction(action, parameters) {
     throw new Error(`أداة غير معروفة: ${action}`);
   }
   return await executeTool(toolName, parameters);
+}
+
+// 🛠️ دالة خلفية لقراءة أوراق الإكسل من الـ Base64 إذا لم تكن جاهزة
+async function extractSheetsFromBase64(base64Data) {
+  const sheets = [];
+  try {
+    const buffer = Buffer.from(base64Data, 'base64');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.load(buffer);
+
+    workbook.eachSheet((worksheet) => {
+      const name = worksheet.name;
+      const rows = [];
+      
+      worksheet.eachRow({ includeEmpty: true }, (row) => {
+        const rowValues = [];
+        // ExcelJS row.values starts from index 1, index 0 is usually undefined
+        const values = row.values;
+        if (Array.isArray(values)) {
+          for (let i = 1; i < values.length; i++) {
+            rowValues.push(values[i] !== undefined && values[i] !== null ? values[i] : "");
+          }
+        }
+        rows.push(rowValues);
+      });
+
+      let header = [];
+      if (rows.length > 0) {
+        header = rows[0].map(cell => (cell ? cell.toString().trim() : ""));
+      }
+
+      sheets.push({
+        name,
+        header,
+        rows: rows.slice(1), // باقي الصفوف
+        teachingRows: [],
+        summaryRows: []
+      });
+    });
+  } catch (err) {
+    console.error("❌ خطأ في قراءة ملف الإكسل خلفياً عبر ExcelJS:", err);
+  }
+  return sheets;
 }
 
 export default async function handler(req, res) {
@@ -88,8 +132,10 @@ export default async function handler(req, res) {
       const fileObj = excelJSON[0];
 
       extractedBase64 = fileObj.fileBase64;
-      fileName = fileObj.fileName || "ملف";
-      sheets = fileObj.sheets || [];
+      fileName = fileObj.fileName || "ملف.xlsx";
+      
+      // 🛠️ التحقق من وجود الشيتات، وإذا لم تكن موجودة نقوم باستخراجها خلفياً من الـ Base64
+      sheets = fileObj.sheets && fileObj.sheets.length > 0 ? fileObj.sheets : await extractSheetsFromBase64(extractedBase64);
 
       understood = understandExcel(sheets);
       cleaned = cleanExcelStructure(understood);
@@ -310,7 +356,7 @@ export default async function handler(req, res) {
       analysisResult = {
         isClear: false,
         action: "chat",
-        response: "مرحبا عبد، فيني أفهم طلبك أكثر؟",
+        response: "فيني أفهم طلبك أكثر؟",
       };
     }
 
@@ -327,7 +373,7 @@ export default async function handler(req, res) {
     });
 
     if (!analysisResult.isClear) {
-      let reply = analysisResult.response || "🤔 لحتى أفهمك أكثر…";
+      let reply = analysisResult.response || "🤔 مافهمت قصدك …";
       if (analysisResult.questions?.length) {
         reply += "\n❓ أسئلة توضيحية:\n";
         analysisResult.questions.forEach((q, i) => {
@@ -373,7 +419,7 @@ export default async function handler(req, res) {
       reply += `📝 الخطة:\n${
         analysisResult.plan || "سيتم تنفيذ الطلب حسب تعليماتك وباحترام الملف الحالي."
       }\n\n`;
-      reply += `❓ هل تريد المتابعة؟ (نعم / عدل على الخطة)`;
+      reply += `❓ بدك نكمل؟ (نعم / عدل على الخطة)`;
 
       return res.json({ reply });
     }
@@ -382,4 +428,4 @@ export default async function handler(req, res) {
   } catch (error) {
     return res.status(500).json({ reply: "⚠️ خطأ: " + error.message });
   }
-      }
+}
