@@ -3,7 +3,6 @@ import { executeTool } from "./tools/execute.js";
 import { toolsRegistry } from "./tools/index.js";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
 const sessions = {};
 
 const toolMap = {
@@ -38,10 +37,7 @@ export default async function handler(req, res) {
 
     const sessionKey = sessionId || "default";
     if (!sessions[sessionKey]) {
-      sessions[sessionKey] = {
-        lastFile: null,
-        history: [],
-      };
+      sessions[sessionKey] = { lastFile: null };
     }
     const session = sessions[sessionKey];
 
@@ -55,20 +51,15 @@ export default async function handler(req, res) {
       const fileObj = excelJSON[0];
       extractedBase64 = fileObj.fileBase64;
       fileName = fileObj.fileName || "ملف.xlsx";
-      
-      // حفظ الملف في الجلسة بدون حقن البيانات الضخمة في الـ Context للتوكنز
-      session.lastFile = {
-        base64: extractedBase64,
-        name: fileName,
-      };
+      session.lastFile = { base64: extractedBase64, name: fileName };
     } else if (session.lastFile) {
       extractedBase64 = session.lastFile.base64;
       fileName = session.lastFile.name;
     }
 
-    // 🧠 العقل الخفيف والسيادي: جيميني للدردشة وتحديد نوع الإجراء فقط بدون استنزاف التوكنز
+    // 🧠 الاعتماد الحصري على نموذج gemini-3.5-flash للسرعة وصفر استهلاك للتوكنز
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash", // استخدام موديل خفيف وسريع جداً لتوفير الحصة
+      model: "gemini-3.5-flash",
       generationConfig: {
         temperature: 0.2,
         maxOutputTokens: 500,
@@ -76,17 +67,17 @@ export default async function handler(req, res) {
         responseSchema: {
           type: SchemaType.OBJECT,
           properties: {
-            action: { type: SchemaType.STRING, description: "اخترmodify إذا طلب تعديل، أو chat للدردشة العادية" },
-            response: { type: SchemaType.STRING, description: "الرد البشري المناسب للمستخدم" }
+            action: { type: SchemaType.STRING, description: "modify أو chat" },
+            response: { type: SchemaType.STRING, description: "الرد البشري المناسب" }
           },
           required: ["action", "response"]
         }
       }
     });
 
-    const prompt = `أنت المساعد الذكي لمنصة "الأثير". افهم طلب المستخدم وتجنب استهلاك التوكنز.
+    const prompt = `أنت المساعد الذكي لمنصة "الأثير". افهم طلب المستخدم:
 طلب المستخدم: "${userContent}"
-هل طلب تعديل ملف إكسل (مثل إضافة أعمدة، تلوين، حسابات)؟ حدد الإجراء بـ modify وإلا اجعله chat.`;
+هل يتطلب تعديل ملف إكسل؟ حدد الإجراء بـ modify وإلا اجعله chat.`;
 
     const result = await model.generateContent(prompt);
     let analysisResult;
@@ -95,16 +86,14 @@ export default async function handler(req, res) {
     } catch {
       analysisResult = {
         action: hasFile ? "modify" : "chat",
-        response: "أهلاً بك يا مهندس، أنا أستلمت طلبك وجاهز لتنفيذه عبر محرك بايثون."
+        response: "أهلاً بك يا مهندس، أنا مستعد لتنفيذ طلبك عبر محرك بايثون العام."
       };
     }
 
-    // إذا كان الطلب دردشة عادية
     if (analysisResult.action === "chat" || !hasFile) {
       return res.json({ reply: analysisResult.response });
     }
 
-    // التنفيذ الفوري والسيادي عبر محرك الأداة وبايثون المحلي
     if (analysisResult.action === "modify" && extractedBase64) {
       try {
         let toolResult = await callFunction("modify", {
@@ -129,8 +118,8 @@ export default async function handler(req, res) {
 
         return res.json({ reply: finalReply });
       } catch (toolError) {
-        console.error("❌ خطأ في تنفيذ الأداة برمجياً:", toolError);
-        return res.json({ reply: "⚠️ حدث خطأ أثناء معالجة الملف محلياً: " + toolError.message });
+        console.error("❌ خطأ في التنفيذ:", toolError);
+        return res.json({ reply: "⚠️ حدث خطأ أثناء المعالجة المحلية: " + toolError.message });
       }
     }
 
@@ -139,4 +128,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ تقني: " + error.message });
   }
 }
-
