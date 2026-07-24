@@ -11,7 +11,8 @@ export async function modifyExcelHandler({
   newColumns = [],
   formulaTemplate = null,
   dropdownOptions = null,
-  fileName = 'modified.xlsx'
+  fileName = 'modified.xlsx',
+  action = 'modify' // 👈 استقبال الـ action الحقيقي (read, formulas, modify) بمرونة تامة
 }) {
   if (!base64 && !inputPath) {
     return {
@@ -48,18 +49,20 @@ export async function modifyExcelHandler({
     }
 
     const aiPlan = {
-      summary: instruction || "تعديل الملف بناءً على تعليمات المستخدم",
+      summary: instruction || "معالجة الملف بناءً على تعليمات المستخدم",
       newColumns: newColumns.length > 0 ? newColumns : [],
       targetColumn: targetColumn,
       formulaTemplate: formulaTemplate,
       dropdownOptions: dropdownOptions
     };
 
+    // ✅ تمرير الـ action القادم من العقل بذكاء لمحرّك بايثون
     const payload = JSON.stringify({
-      action: 'modify',
+      action: action || 'modify',
       inputPath: tempInputPath,
       outputPath: tempOutputPath,
-      plan: aiPlan
+      plan: aiPlan,
+      instruction: instruction
     });
 
     console.log(`📤 إرسال البيانات لمحرك Python: ${payload}`);
@@ -104,6 +107,22 @@ export async function modifyExcelHandler({
       throw new Error(resultObj.error || "فشل محرك Python في معالجة الملف");
     }
 
+    // ✅ التعامل مع عمليات القراءة والاستعلام فقط (بدون توليد ملف معدل للتحميل)
+    if (resultObj.is_read_only) {
+      try {
+        if (base64 && tempInputPath && fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
+      } catch (e) {}
+
+      return {
+        success: true,
+        is_read_only: true,
+        metadata: resultObj.metadata || null,
+        formulas_list: resultObj.formulas_list || null,
+        message: resultObj.message || "✅ تم استقراء البيانات بنجاح.",
+        summary: aiPlan.summary
+      };
+    }
+
     let modifiedBuffer;
     if (fs.existsSync(tempOutputPath)) {
       modifiedBuffer = fs.readFileSync(tempOutputPath);
@@ -114,7 +133,6 @@ export async function modifyExcelHandler({
     }
 
     try {
-      // تنظيف الملف المؤقت فقط إذا كان منشأ من base64 وليس من inputPath الخاص بالجلسة
       if (base64 && tempInputPath && fs.existsSync(tempInputPath)) {
         fs.unlinkSync(tempInputPath);
       }
@@ -162,10 +180,11 @@ export default async function handler(req, res) {
       newColumns: body.newColumns || [],
       formulaTemplate: body.formulaTemplate || null,
       dropdownOptions: body.dropdownOptions || null,
-      fileName: body.fileName || 'modified.xlsx'
+      fileName: body.fileName || 'modified.xlsx',
+      action: body.action || 'modify' // 👈 استقبال واستشعار الـ action القادم من واجهة الـ API
     });
 
-    if (result.success && result.fileBase64) {
+    if (result.success) {
       return res.status(200).json(result);
     }
 
@@ -174,4 +193,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "خطأ داخلي في الخادم: " + err.message });
   }
 }
-
