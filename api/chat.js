@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import ExcelJS from "exceljs";
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { executeTool } from "./tools/execute.js";
@@ -17,7 +17,6 @@ import { autoFillData } from "./excel/autofill.js";
 import { buildSmartTables } from "./excel/tableBuilder.js";
 import { rebuildFullFile } from "./excel/fileRebuilder.js";
 
-// ✅ استبدال Groq بـ Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const sessions = {};
@@ -37,7 +36,6 @@ async function callFunction(action, parameters) {
   return await executeTool(toolName, parameters);
 }
 
-// 🛠️ دالة خلفية لقراءة أوراق الإكسل من الـ Base64 بالطريقة الصحيحة عبر ExcelJS
 async function extractSheetsFromBase64(base64Data) {
   const sheets = [];
   try {
@@ -89,7 +87,6 @@ export default async function handler(req, res) {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     const { message, excelJSON, sessionId } = body || {};
 
-    // ✅ التحقق من مفتاح Gemini
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({
         reply: "⚠️ خطأ داخلي: مفتاح GEMINI_API_KEY غير موجود."
@@ -148,60 +145,20 @@ export default async function handler(req, res) {
       defaultValues = detectDefaultValues(understood, smartColumns, constraints);
       autoFilled = autoFillData(understood, smartColumns, relations, keys, defaultValues);
       smartTables = buildSmartTables(
-        understood,
-        cleaned,
-        smartColumns,
-        relations,
-        keys,
-        indexes,
-        constraints,
-        defaultValues,
-        autoFilled
+        understood, cleaned, smartColumns, relations, keys, indexes, constraints, defaultValues, autoFilled
       );
       fullRebuild = rebuildFullFile(
-        understood,
-        cleaned,
-        smartColumns,
-        relations,
-        keys,
-        indexes,
-        constraints,
-        defaultValues,
-        autoFilled,
-        smartTables
+        understood, cleaned, smartColumns, relations, keys, indexes, constraints, defaultValues, autoFilled, smartTables
       );
 
-      fileSummary = `[ملف مرفق: ${fileName}]\n`;
-      fileSummary += `عدد الأوراق: ${sheets.length}\n`;
-      fileSummary += `الجداول المكتشفة: ${understood.tables.length}\n`;
-      fileSummary += `الجداول المنظّفة: ${cleaned.cleanedTables.length}\n`;
-      fileSummary += `جداول متعددة مستخرجة: ${extractedTables.length}\n`;
-      fileSummary += `تحليل الأعمدة الذكي: ${smartColumns.length}\n`;
-      fileSummary += `العلاقات الذكية: ${relations.length}\n`;
-      fileSummary += `المفاتيح الذكية: ${keys.length}\n`;
-      fileSummary += `الفهارس الذكية: ${indexes.length}\n`;
-      fileSummary += `القيود الذكية: ${constraints.length}\n`;
-      fileSummary += `القيم الافتراضية الذكية: ${defaultValues.length}\n`;
-      fileSummary += `Auto-Fill الذكي: ${autoFilled.length}\n`;
-      fileSummary += `الجداول الذكية المبنية: ${smartTables.length}\n`;
-      fileSummary += `إعادة بناء كامل: ${fullRebuild.rebuiltSheets.length} ورقة\n`;
-
+      fileSummary = `[ملف مرفق: ${fileName}]\nعدد الأوراق: ${sheets.length}\n`;
+      
       session.lastFile = {
         base64: extractedBase64,
         name: fileName,
         sheets,
         understood,
         cleaned,
-        extractedTables,
-        smartColumns,
-        relations,
-        keys,
-        indexes,
-        constraints,
-        defaultValues,
-        autoFilled,
-        smartTables,
-        fullRebuild,
         summary: fileSummary,
       };
     } else if (session.lastFile) {
@@ -211,193 +168,72 @@ export default async function handler(req, res) {
         sheets,
         understood,
         cleaned,
-        extractedTables,
-        smartColumns,
-        relations,
-        keys,
-        indexes,
-        constraints,
-        defaultValues,
-        autoFilled,
-        smartTables,
-        fullRebuild,
         summary: fileSummary
       } = session.lastFile);
     }
 
     session.history.push({
       role: "user",
-      content:
-        userContent +
-        "\n\n" +
-        fileSummary +
-        "\n\n" +
-        JSON.stringify(
-          {
-            understood,
-            cleaned,
-            extractedTables,
-            smartColumns,
-            relations,
-            keys,
-            indexes,
-            constraints,
-            defaultValues,
-            autoFilled,
-            smartTables,
-            fullRebuild
-          },
-          null,
-          2
-        ),
+      content: userContent + "\n\n" + fileSummary,
     });
 
-    if (session.history.length > 25) {
-      const recent = session.history.slice(-10);
-      const old = session.history.slice(0, -10);
-
-      const summary = old
-        .map((m) => {
-          const role = m.role === "user" ? "👤 المستخدم" : "🤖 المساعد";
-          return `${role}: ${m.content.substring(0, 200)}${
-            m.content.length > 200 ? "..." : ""
-          }`;
-        })
-        .join("\n");
-
-      session.history = [
-        {
-          role: "system",
-          content: `📋 ملخص المحادثة:\n${summary}\n\n⚠️ تذكير: حافظ على النية الحالية واحترام آخر نسخة من الملف.`,
-        },
-        ...recent,
-      ];
-    }
-
-    if (session.step === "awaiting_confirmation" && session.pendingAction) {
-      const lowerMsg = userContent.toLowerCase();
-
-      if (["نعم", "yes", "ok", "تمام", "موافق"].some((w) => lowerMsg.includes(w))) {
-        const action = session.pendingAction;
-        session.step = "executing";
-
-        try {
-          const result = await callFunction(action.type, {
-            instruction: action.instruction,
-            base64: extractedBase64,
-            fileName,
-            sheets,
-            understood,
-            cleaned,
-            extractedTables,
-            smartColumns,
-            relations,
-            keys,
-            indexes,
-            constraints,
-            defaultValues,
-            autoFilled,
-            smartTables,
-            fullRebuild,
-            format: action.format || "pdf",
-            targetColumn: action.targetColumn || null,
-            newColumns: action.newColumns || [],
-            formulaTemplate: action.formulaTemplate || null,
-            dropdownOptions: action.dropdownOptions || null,
-          });
-
-          session.step = "init";
-          session.pendingAction = null;
-
-          if (result.success && result.fileBase64) {
-            session.lastFile.base64 = result.fileBase64;
-            session.lastFile.name = result.fileName || fileName;
-            session.lastFile.summary = result.summary || "تم تعديل الملف.";
-
-            return res.json({
-              reply: result.message || "✅ تم التنفيذ بنجاح!",
-              fileBase64: result.fileBase64,
-              fileName: result.fileName || fileName,
-            });
-          }
-
-          return res.json({ reply: result.message || "تم التنفيذ." });
-        } catch (err) {
-          session.step = "init";
-          session.pendingAction = null;
-          return res.json({ reply: `❌ خطأ أثناء التنفيذ: ${err.message}` });
-        }
-      }
-
-      return res.json({
-        reply: "❓ هل توافق على التنفيذ؟ جاوب بـ نعم أو لا."
-      });
+    if (session.history.length > 15) {
+      session.history = session.history.slice(-10);
     }
 
     const messagesPayload = [
-      { role: "system", content: SYSTEM_PROMPT },
       ...session.history,
     ];
 
-    // ✅ استبدال Groq بـ Gemini
+    // إعداد النموذج مع فرض مخطط JSON صارم (Response Schema)
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
+      systemInstruction: SYSTEM_PROMPT,
       generationConfig: {
-        temperature: 0.4,
+        temperature: 0.3,
         maxOutputTokens: 1500,
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: SchemaType.OBJECT,
+          properties: {
+            isClear: { type: SchemaType.BOOLEAN },
+            action: { type: SchemaType.STRING, description: "modify, generate, convert, analyze, or chat" },
+            summary: { type: SchemaType.STRING },
+            plan: { type: SchemaType.STRING },
+            questions: { 
+              type: SchemaType.ARRAY,
+              items: { type: SchemaType.STRING }
+            },
+            response: { type: SchemaType.STRING }
+          },
+          required: ["isClear", "action", "response"]
+        }
       }
     });
 
-    // تحويل messagesPayload إلى نص prompt واحد
-    let promptText = "";
-    for (const msg of messagesPayload) {
-      const role = msg.role === "user" ? "المستخدم" : "المساعد";
-      promptText += `${role}: ${msg.content}\n\n`;
-    }
-
-    // إضافة تعليمات إضافية لضمان JSON
-    promptText += `
-⚠️ **تعليمات مهمة:**
-- أجب بصيغة JSON حصراً بالهيكل التالي:
-{
-  "isClear": true/false,
-  "action": "modify | generate | convert | analyze | chat",
-  "summary": "ملخص الطلب",
-  "plan": "خطة التنفيذ",
-  "questions": ["سؤال 1", "سؤال 2"],
-  "response": "ردك الطبيعي للمستخدم"
-}
-- لا تكتب أي نص خارج JSON.
-- إذا كان الطلب غير واضح، اجعل isClear: false.
-- إذا كان هناك ملف مرفق، استخدم modify بدلاً من generate.
-`;
+    let promptText = messagesPayload.map(m => `${m.role === "user" ? "المستخدم" : "المساعد"}: ${m.content}`).join("\n\n");
 
     const result = await model.generateContent(promptText);
-    const response = result.response;
-    const analysisText = response.text();
+    const analysisText = result.response.text();
 
     let analysisResult;
     try {
-      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-      analysisResult = JSON.parse(jsonMatch ? jsonMatch[0] : "{}");
+      analysisResult = JSON.parse(analysisText);
     } catch {
       analysisResult = {
-        isClear: false,
+        isClear: true,
         action: "chat",
-        response: "مرحبا عبد، فيني أفهم طلبك أكثر؟",
+        response: analysisText || "أهلاً بك يا عبد، تفضل كيف أساعدك بالملف؟",
       };
     }
 
     if (session.lastFile && analysisResult.action === "generate") {
       analysisResult.action = "modify";
       analysisResult.summary = `تعديل الملف الحالي (${session.lastFile.name})`;
-      analysisResult.plan =
-        "تطبيق التعديلات المطلوبة على الملف الحالي بدون إنشاء ملف جديد.";
     }
 
     session.history.push({
-      role: "assistant",
+      role: "model",
       content: analysisResult.response,
     });
 
@@ -426,35 +262,19 @@ export default async function handler(req, res) {
         sheets,
         understood,
         cleaned,
-        extractedTables,
-        smartColumns,
-        relations,
-        keys,
-        indexes,
-        constraints,
-        defaultValues,
-        autoFilled,
-        smartTables,
-        fullRebuild,
-        format: analysisResult.format || "pdf",
-        targetColumn: analysisResult.targetColumn || null,
-        newColumns: analysisResult.newColumns || [],
-        formulaTemplate: analysisResult.formulaTemplate || null,
-        dropdownOptions: analysisResult.dropdownOptions || null,
       };
 
       let reply = analysisResult.response || "✔ فهمت عليك.\n";
-      reply += `📋 الملخص: ${analysisResult.summary}\n`;
-      reply += `📝 الخطة:\n${
-        analysisResult.plan || "سيتم تنفيذ الطلب حسب تعليماتك وباحترام الملف الحالي."
-      }\n\n`;
-      reply += `❓ هل تريد المتابعة؟ (نعم / عدل على الخطة)`;
+      reply += `📋 الملخص: ${analysisResult.summary || "معالجة الملف المرفق"}\n`;
+      reply += `📝 الخطة:\n${analysisResult.plan || "تنفيذ الطلب حسب تعليماتك."}\n\n`;
+      reply += `❓ هل تريد المتابعة؟ (نعم / لا)`;
 
       return res.json({ reply });
     }
 
     return res.json({ reply: analysisResult.response });
   } catch (error) {
-    return res.status(500).json({ reply: "⚠️ خطأ: " + error.message });
+    return res.status(500).json({ reply: "⚠️ خطأ تقني: " + error.message });
   }
-        }
+}
+
