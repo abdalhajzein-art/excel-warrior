@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+Import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import ExcelJS from "exceljs";
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { executeTool } from "./tools/execute.js";
@@ -151,12 +151,12 @@ export default async function handler(req, res) {
         understood, cleaned, smartColumns, relations, keys, indexes, constraints, defaultValues, autoFilled, smartTables
       );
 
-      // 🧠 التعديل الجذري: حقن أسماء الأوراق والأعمدة مباشرة ليرها النموذج طيرانًا بدون طلب نسخ ولصق
+      // 🧠 التعديل المعماري المطور: استعراض تفصيلي ذكي ومرن للهيكل دون حصر بقالب
       let sheetDetails = sheets.map(s => 
-        `- الورقة: "${s.name}"\n  الأعمدة الأساسية: [${s.header.join(', ')}]\n  عدد الصفوف الكلي: ${s.rows.length}`
+        `- الورقة: "${s.name}"\n  الأعمدة الأساسية: [${s.header.join(', ')}]\n  إجمالي الصفوف: ${s.rows.length}`
       ).join('\n');
 
-      fileSummary = `[ملف مرفق: ${fileName}]\nتفاصيل الملف المستخرجة برمجياً:\n${sheetDetails}\n`;
+      fileSummary = `[ملف مرفق: ${fileName}]\nملخص الهيكل المستخرج برمجياً:\n${sheetDetails}\n`;
       
       session.lastFile = {
         base64: extractedBase64,
@@ -190,13 +190,13 @@ export default async function handler(req, res) {
       ...session.history,
     ];
 
-    // إعداد النموذج مع فرض مخطط JSON صارم (Response Schema)
+    // إعداد النموذج مع رفع حد التوكنز للردود المكتملة
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
       systemInstruction: SYSTEM_PROMPT,
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 1500,
+        maxOutputTokens: 4000, // 🚀 رفع الحد لمنع قطع الردود الطويلة
         responseMimeType: "application/json",
         responseSchema: {
           type: SchemaType.OBJECT,
@@ -228,7 +228,7 @@ export default async function handler(req, res) {
       analysisResult = {
         isClear: true,
         action: "chat",
-        response: analysisText || "أهلاً بك يا عبد، تفضل كيف أساعدك بالملف؟",
+        response: analysisText || "أهلاً بك يا غالي، تفضل كيف أساعدك بالملف؟",
       };
     }
 
@@ -282,3 +282,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ تقني: " + error.message });
   }
 }
+
