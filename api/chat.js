@@ -25,7 +25,6 @@ const toolMap = {
   modify: "excel_modify",
   generate: "excel_generate",
   convert: "file_convert",
-  analyze: "excel_analyze",
 };
 
 async function callFunction(action, parameters) {
@@ -151,7 +150,6 @@ export default async function handler(req, res) {
         understood, cleaned, smartColumns, relations, keys, indexes, constraints, defaultValues, autoFilled, smartTables
       );
 
-      // 🧠 الحقن السيادي للبيانات: تمرير الأعمدة مع عينة واضحة من الصفوف ليمتلك النموذج الرؤية المطلقة
       let sheetDetails = sheets.map(s => {
         let sampleRows = s.rows.slice(0, 15).map(r => `    [${r.join(', ')}]`).join('\n');
         return `- الورقة: "${s.name}"\n  الأعمدة: [${s.header.join(', ')}]\n  إجمالي الصفوف: ${s.rows.length}\n  عينة من البيانات:\n${sampleRows}`;
@@ -191,7 +189,6 @@ export default async function handler(req, res) {
       ...session.history,
     ];
 
-    // إعداد النموذج المعماري بحد أقصى للتوكنز ومخطط صارم
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
       systemInstruction: SYSTEM_PROMPT,
@@ -203,7 +200,7 @@ export default async function handler(req, res) {
           type: SchemaType.OBJECT,
           properties: {
             isClear: { type: SchemaType.BOOLEAN },
-            action: { type: SchemaType.STRING, description: "modify, generate, convert, analyze, or chat" },
+            action: { type: SchemaType.STRING, description: "modify, generate, convert, or chat" },
             summary: { type: SchemaType.STRING },
             plan: { type: SchemaType.STRING },
             questions: { 
@@ -249,12 +246,13 @@ export default async function handler(req, res) {
       return res.json({ reply });
     }
 
-    if (analysisResult.action === "chat") {
+    // إذا كان الإجراء تحليل أو شات، يعيد رد النموذج التحليلي المباشر
+    if (analysisResult.action === "chat" || analysisResult.action === "analyze") {
       return res.json({ reply: analysisResult.response });
     }
 
-    // 🚀 التنفيذ السيادي الفوري للأدوات عند رصد أي عملية تحليل أو تعديل
-    if (["modify", "generate", "convert", "analyze"].includes(analysisResult.action)) {
+    // التنفيذ السيادي الفوري للأدوات الحقيقية (تعديل، توليد، تحويل)
+    if (["modify", "generate", "convert"].includes(analysisResult.action)) {
       try {
         let toolResult = await callFunction(analysisResult.action, {
           instruction: userContent,
@@ -274,10 +272,19 @@ export default async function handler(req, res) {
           finalReply += `📊 **النتيجة:** ${toolResult.message}`;
         }
 
+        // إذا نتج ملف جديد Base64، نمرره للواجهة ليظهر زر التحميل
+        if (toolResult && toolResult.fileBase64) {
+          return res.json({
+            reply: finalReply,
+            fileBase64: toolResult.fileBase64,
+            fileName: toolResult.fileName || fileName,
+            contentType: toolResult.contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          });
+        }
+
         return res.json({ reply: finalReply });
       } catch (toolError) {
         console.error("❌ خطأ في تنفيذ الأداة برمجياً:", toolError);
-        // في حال فشل الأداة البرمجية المباشرة، يعود بالرد التحليلي للنموذج حصرياً
         return res.json({ reply: analysisResult.response });
       }
     }
