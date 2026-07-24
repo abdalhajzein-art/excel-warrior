@@ -2,19 +2,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { extractExcelMetadata } from './metadata.js';
-import { askGeminiStructured } from '../geminiService.js';
 
-/**
- * تعديل ملف Excel بناءً على تعليمات المستخدم وخطة الذكاء الاصطناعي
- * @param {Object} params - معاملات التعديل
- * @param {string} params.base64 - الملف بصيغة base64
- * @param {string} params.instruction - تعليمات المستخدم
- * @param {string} params.targetColumn - العمود المستهدف
- * @param {string[]} params.newColumns - الأعمدة الجديدة
- * @param {string} params.formulaTemplate - صيغة مخصصة
- * @param {string[]} params.dropdownOptions - خيارات القائمة المنسدلة
- * @param {string} params.fileName - اسم الملف الأصلي
- */
 export async function modifyExcelHandler({
   base64,
   instruction,
@@ -24,7 +12,6 @@ export async function modifyExcelHandler({
   dropdownOptions = null,
   fileName = 'modified.xlsx'
 }) {
-  // التحقق من وجود الملف
   if (!base64) {
     return {
       success: false,
@@ -36,7 +23,6 @@ export async function modifyExcelHandler({
   let tempOutputPath = null;
 
   try {
-    // 1️⃣ إنشاء ملف مؤقت للإدخال
     const timestamp = Date.now();
     tempInputPath = path.join('/tmp', `input_${timestamp}.xlsx`);
     tempOutputPath = path.join('/tmp', `output_${timestamp}.xlsx`);
@@ -44,17 +30,15 @@ export async function modifyExcelHandler({
     const buffer = Buffer.from(base64, 'base64');
     fs.writeFileSync(tempInputPath, buffer);
 
-    // 2️⃣ استخراج بيانات الملف (Metadata)
     let metadata = {};
     try {
       const metaResult = await extractExcelMetadata(buffer);
       metadata = metaResult.metadata || {};
     } catch (metaErr) {
-      console.warn("⚠️ تعذر استخراج البيانات الوصفية، نكمل بدونها:", metaErr.message);
+      console.warn("⚠️ تعذر استخراج البيانات الوصفية:", metaErr.message);
     }
 
-    // 3️⃣ تحليل الطلب عبر Groq (إذا لم تكن الخطة محددة مسبقاً)
-    let aiPlan = {
+    const aiPlan = {
       summary: instruction || "تعديل الملف بناءً على تعليمات المستخدم",
       newColumns: newColumns.length > 0 ? newColumns : [],
       targetColumn: targetColumn,
@@ -62,96 +46,48 @@ export async function modifyExcelHandler({
       dropdownOptions: dropdownOptions
     };
 
-    if (!newColumns.length && !targetColumn && !formulaTemplate) {
-      // إذا لم تكن التفاصيل محددة، نسأل Groq
-      const aiResponse = await askGroqStructured(metadata, instruction || "قم بتحليل الملف واقتراح تحسينات");
-      if (aiResponse.success && aiResponse.data) {
-        aiPlan = {
-          summary: aiResponse.data.summary || instruction,
-          newColumns: aiResponse.data.newColumns || [],
-          targetColumn: aiResponse.data.targetColumn || null,
-          formulaTemplate: aiResponse.data.formulaTemplate || null,
-          dropdownOptions: aiResponse.data.dropdownOptions || null,
-          actionType: aiResponse.data.actionType || 'custom'
-        };
-      }
-    }
-
-    // 4️⃣ بناء البيانات المرسلة لمحرك Python
     const payload = JSON.stringify({
       action: 'modify',
       inputPath: tempInputPath,
       outputPath: tempOutputPath,
-      plan: {
-        instruction: aiPlan.summary || instruction,
-        targetColumn: aiPlan.targetColumn || null,
-        newColumns: aiPlan.newColumns || [],
-        formulaTemplate: aiPlan.formulaTemplate || null,
-        dropdownOptions: aiPlan.dropdownOptions || null,
-        actionType: aiPlan.actionType || 'custom'
-      }
+      plan: aiPlan
     });
 
     console.log(`📤 إرسال البيانات لمحرك Python: ${payload}`);
 
-    // 5️⃣ تشغيل محرك Python باستخدام spawn (بديل exec)
     const scriptPath = path.join(process.cwd(), 'api', 'excel', 'engine.py');
-    
     const pythonProcess = spawn('python3', [scriptPath]);
     
     let stdout = '';
     let stderr = '';
 
-    pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
+    pythonProcess.stdout.on('data', (data) => { stdout += data.toString(); });
+    pythonProcess.stderr.on('data', (data) => { stderr += data.toString(); });
 
-    pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    // إرسال البيانات إلى stdin
     pythonProcess.stdin.write(payload);
     pythonProcess.stdin.end();
 
-    // ✅ تعيين مهلة (timeout) لمنع التعليق
-    const timeoutMs = 120000; // دقيقتين
-    const timeoutError = new Error(`انتهت المهلة بعد ${timeoutMs/1000} ثانية`);
-
-    // انتظار انتهاء العملية مع مهلة
+    const timeoutMs = 120000;
     await Promise.race([
       new Promise((resolve, reject) => {
         pythonProcess.on('close', (code) => {
-          if (code === 0) {
-            resolve();
-          } else {
-            reject(new Error(`Python exited with code ${code}\nStderr: ${stderr}`));
-          }
+          if (code === 0) resolve();
+          else reject(new Error(`Python exited with code ${code}\nStderr: ${stderr}`));
         });
-        pythonProcess.on('error', (err) => {
-          reject(err);
-        });
+        pythonProcess.on('error', (err) => reject(err));
       }),
       new Promise((_, reject) => 
         setTimeout(() => {
           pythonProcess.kill('SIGTERM');
-          reject(timeoutError);
+          reject(new Error(`انتهت المهلة بعد ${timeoutMs/1000} ثانية`));
         }, timeoutMs)
       )
     ]);
 
-    console.log(`📥 مخرجات Python: ${stdout}`);
-
-    if (stderr) {
-      console.warn(`⚠️ تحذير من Python: ${stderr}`);
-    }
-
-    // 6️⃣ تحليل نتيجة Python
     let resultObj;
     try {
       resultObj = JSON.parse(stdout.trim());
     } catch (parseErr) {
-      console.error("❌ خطأ في تحليل مخرجات Python:", stdout);
       throw new Error("مخرجات غير صالحة من محرك Python");
     }
 
@@ -159,46 +95,35 @@ export async function modifyExcelHandler({
       throw new Error(resultObj.error || "فشل محرك Python في معالجة الملف");
     }
 
-    // 7️⃣ قراءة الملف المعدل
     let modifiedBuffer;
     if (fs.existsSync(tempOutputPath)) {
       modifiedBuffer = fs.readFileSync(tempOutputPath);
     } else if (fs.existsSync(tempInputPath)) {
-      // إذا لم يتم إنشاء ملف جديد، نستخدم الملف الأصلي (في حالة التعديل البسيط)
       modifiedBuffer = fs.readFileSync(tempInputPath);
     } else {
       throw new Error("لم يتم العثور على الملف المعدل");
     }
 
-    // 8️⃣ تنظيف الملفات المؤقتة
     try {
       if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
       if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
-    } catch (cleanErr) {
-      console.warn("⚠️ فشل تنظيف الملفات المؤقتة:", cleanErr.message);
-    }
+    } catch (cleanErr) {}
 
-    // 9️⃣ إرجاع النتيجة
     return {
       success: true,
-      message: resultObj.message || "✅ تم تعديل الملف بنجاح!",
+      message: resultObj.message || "✅ تم تعديل الملف بنجاح وتجهيز رابط التحميل!",
       fileBase64: modifiedBuffer.toString('base64'),
       fileName: `modified_${fileName}`,
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      summary: aiPlan.summary,
-      details: resultObj.details || {}
+      summary: aiPlan.summary
     };
 
   } catch (error) {
     console.error("❌ خطأ في modifyExcelHandler:", error);
-
-    // تنظيف الملفات المؤقتة في حالة الخطأ
     try {
       if (tempInputPath && fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
       if (tempOutputPath && fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
-    } catch (cleanErr) {
-      // تجاهل
-    }
+    } catch (e) {}
 
     return {
       success: false,
@@ -207,9 +132,6 @@ export async function modifyExcelHandler({
   }
 }
 
-/**
- * دالة المعالج الرئيسية لـ API (للاستخدام مع Express)
- */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -218,8 +140,6 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    
-    // استدعاء الدالة الرئيسية مع المعاملات
     const result = await modifyExcelHandler({
       base64: body.base64,
       instruction: body.instruction,
@@ -231,20 +151,12 @@ export default async function handler(req, res) {
     });
 
     if (result.success && result.fileBase64) {
-      res.setHeader("Content-Type", result.contentType);
-      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(result.fileName)}"`);
-      return res.status(200).send(Buffer.from(result.fileBase64, 'base64'));
+      return res.status(200).json(result);
     }
 
-    return res.status(400).json({ 
-      error: result.error || "فشل معالجة الطلب",
-      details: result.details || {}
-    });
-
+    return res.status(400).json({ error: result.error || "فشل معالجة الطلب" });
   } catch (err) {
-    console.error("❌ خطأ في معالج API:", err);
-    return res.status(500).json({ 
-      error: "خطأ داخلي في الخادم: " + err.message 
-    });
+    return res.status(500).json({ error: "خطأ داخلي في الخادم: " + err.message });
   }
 }
+
