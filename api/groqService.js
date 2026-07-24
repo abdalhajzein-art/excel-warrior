@@ -1,61 +1,64 @@
-import Groq from "groq-sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// تهيئة عميل Groq باستخدام مفتاح البيئة
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-export async function askGroqStructured(metadata, userInstruction) {
-  try {
-    const prompt = `
+export async function askGeminiStructured(metadata, userInstruction) {
+    try {
+        const model = genAI.getGenerativeModel({
+            model: "gemini-3.5-flash", // ✅ النموذج الصحيح
+            generationConfig: {
+                temperature: 0.1,
+                responseMimeType: "application/json"
+            }
+        });
+
+        const prompt = `
 أنت العقل التنفيذي السيادي لمنصة "الأثير / Alatheer AI Suite".
 هيكل الملف الحالي وحجمه (Metadata):
 ${JSON.stringify(metadata, null, 2)}
 
 طلب المستخدم الحالي والسياق السابق: "${userInstruction}"
 
-قواعد التشغيل الحازمة (Strict Agentic Execution Rules):
+قواعد التشغيل الحازمة:
 1. قم بتحليل الطلب بدقة:
-   - إذا كان الطلب مبهمًا بالكامل وينقصه عناصر أساسية مفقودة تماماً، اجعل "isClear" تساوي false، واطرح أسئلة قصيرة ومباشرة، و"action" تساوي "modify".
-   - إذا كان الطلب واضحاً أو اكتملت التفاصيل في الحوار (مثل تحديد اسم العمود، مكانه، أو الخيارات المطلوبة مثل القوائم المنسدلة)، اجعل "isClear" تساوي true، و"questions" مصفوفة فارغة [], و"action" تساوي "modify" أو "generate".
-2. ضع خطة عمل هندسية دقيقة في "plan" وضع تفاصيل التعديل البرمجي بوضوح (مثل اسم العمود الجديد، موقع إضافته، والمعادلات أو القوائم المطلوبة).
-3. أرجع النتيجة حصراً بصيغة JSON نقي بالهيكل التالي وبدون أي نص خارجه:
+   - إذا كان الطلب مبهمًا، اجعل "isClear" false، واطرح أسئلة.
+   - إذا كان الطلب واضحاً، اجعل "isClear" true، و"questions" [].
+2. ضع خطة عمل هندسية دقيقة في "plan".
+3. أرجع النتيجة حصراً بصيغة JSON:
 {
-  "isClear": true أو false,
+  "isClear": true/false,
   "action": "modify" أو "generate",
-  "summary": "ملخص دقيق لما سيتم تنفيذه بالعربية",
-  "plan": "خطوات مفصلة وواضحة لتنفيذها برمجياً",
-  "questions": ["أسئلة قصيرة إن وُجدت وisClear كانت false فقط، وإلا اتركها فارغة []"],
+  "summary": "ملخص الطلب",
+  "plan": "خطة التنفيذ",
+  "questions": [],
   "response": "الرد المباشر للمستخدم",
   "actionType": "add_columns" | "format_headers" | "update_column" | "add_dropdown" | "custom",
-  "targetColumn": "اسم العمود المرجعي للإضافة بعده أو null",
-  "newColumns": ["أسماء الأعمدة الجديدة المراد إضافتها إن وجدت"],
-  "dropdownOptions": ["الخيارات المطلوبة للقائمة المنسدلة إن وجدت أو null"],
+  "targetColumn": "اسم العمود المرجعي أو null",
+  "newColumns": ["أسماء الأعمدة الجديدة"],
+  "dropdownOptions": ["خيارات القائمة المنسدلة"],
   "formulaTemplate": "صيغة مقترحة أو null"
 }
 `;
 
-    const completion = await groq.chat.completions.create({
-      model: "openai/gpt-oss-120b",
-      messages: [
-        { role: "system", content: "أنت مساعد برمجي ذكي وحاسم يرجع بيانات JSON صالحة حصراً بدون أي نصوص إضافية." },
-        { role: "user", content: prompt }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.1,
-    });
+        const result = await model.generateContent(prompt);
+        const response = result.response;
+        const text = response.text();
+        
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error("لم يتم العثور على JSON في الرد");
+        }
+        
+        return {
+            success: true,
+            data: JSON.parse(jsonMatch[0])
+        };
 
-    const responseContent = completion.choices[0]?.message?.content;
-    return {
-      success: true,
-      data: JSON.parse(responseContent)
-    };
-
-  } catch (error) {
-    console.error("❌ Error in Groq Service:", error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
+    } catch (error) {
+        console.error("❌ Error in Gemini Service:", error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
 }
