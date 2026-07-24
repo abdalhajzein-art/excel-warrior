@@ -1,4 +1,4 @@
-Import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import ExcelJS from "exceljs";
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { executeTool } from "./tools/execute.js";
