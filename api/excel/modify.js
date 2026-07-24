@@ -4,7 +4,8 @@ import path from 'path';
 import { extractExcelMetadata } from './metadata.js';
 
 export async function modifyExcelHandler({
-  base64,
+  base64 = null,
+  inputPath = null,
   instruction,
   targetColumn = null,
   newColumns = [],
@@ -12,7 +13,7 @@ export async function modifyExcelHandler({
   dropdownOptions = null,
   fileName = 'modified.xlsx'
 }) {
-  if (!base64) {
+  if (!base64 && !inputPath) {
     return {
       success: false,
       error: "⚠️ لا يوجد ملف مرفق للتعديل. يرجى تحميل ملف Excel أولاً."
@@ -24,15 +25,23 @@ export async function modifyExcelHandler({
 
   try {
     const timestamp = Date.now();
-    tempInputPath = path.join('/tmp', `input_${timestamp}.xlsx`);
     tempOutputPath = path.join('/tmp', `output_${timestamp}.xlsx`);
 
-    const buffer = Buffer.from(base64, 'base64');
-    fs.writeFileSync(tempInputPath, buffer);
+    // ✅ دعم استقبال المسار المباشر أو تحويل base64 إذا أُرسل
+    if (inputPath && fs.existsSync(inputPath)) {
+      tempInputPath = inputPath;
+    } else if (base64) {
+      tempInputPath = path.join('/tmp', `input_${timestamp}.xlsx`);
+      const buffer = Buffer.from(base64, 'base64');
+      fs.writeFileSync(tempInputPath, buffer);
+    } else {
+      throw new Error("⚠️ لم يتم العثور على الملف المحلي أو المرفق.");
+    }
 
     let metadata = {};
     try {
-      const metaResult = await extractExcelMetadata(buffer);
+      const bufferForMeta = fs.readFileSync(tempInputPath);
+      const metaResult = await extractExcelMetadata(bufferForMeta);
       metadata = metaResult.metadata || {};
     } catch (metaErr) {
       console.warn("⚠️ تعذر استخراج البيانات الوصفية:", metaErr.message);
@@ -105,8 +114,13 @@ export async function modifyExcelHandler({
     }
 
     try {
-      if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
-      if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
+      // تنظيف الملف المؤقت فقط إذا كان منشأ من base64 وليس من inputPath الخاص بالجلسة
+      if (base64 && tempInputPath && fs.existsSync(tempInputPath)) {
+        fs.unlinkSync(tempInputPath);
+      }
+      if (tempOutputPath && fs.existsSync(tempOutputPath)) {
+        fs.unlinkSync(tempOutputPath);
+      }
     } catch (cleanErr) {}
 
     return {
@@ -121,7 +135,7 @@ export async function modifyExcelHandler({
   } catch (error) {
     console.error("❌ خطأ في modifyExcelHandler:", error);
     try {
-      if (tempInputPath && fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
+      if (base64 && tempInputPath && fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
       if (tempOutputPath && fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
     } catch (e) {}
 
@@ -141,7 +155,8 @@ export default async function handler(req, res) {
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const result = await modifyExcelHandler({
-      base64: body.base64,
+      base64: body.base64 || null,
+      inputPath: body.inputPath || null,
       instruction: body.instruction,
       targetColumn: body.targetColumn || null,
       newColumns: body.newColumns || [],
