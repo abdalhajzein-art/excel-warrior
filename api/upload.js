@@ -16,8 +16,10 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "لا يوجد بيانات ملف" });
     }
 
+    // تحويل Base64 إلى Buffer
     const buffer = Buffer.from(data, "base64");
 
+    // قراءة الملف عبر ExcelJS
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);
 
@@ -34,23 +36,28 @@ export default async function handler(req, res) {
       sheet.eachRow((row, rowNumber) => {
         const rowValues = row.values.slice(1);
 
+        // صفوف تعليمية
         if (rowValues.some(v => typeof v === "string" && v.includes("حدّث"))) {
           teachingRows.push(rowValues);
           return;
         }
 
-        if (rowNumber === 1 || rowNumber === 2) {
+        // رؤوس الأعمدة
+        if (rowNumber === 1) {
           header.push(...rowValues);
           return;
         }
 
+        // صفوف ملخص
         if (rowValues.some(v => typeof v === "string" && v.includes("إجمالي"))) {
           summaryRows.push(rowValues);
           return;
         }
 
+        // صفوف البيانات
         rows.push(rowValues);
 
+        // اكتشاف أنواع الأعمدة
         rowValues.forEach((cell, idx) => {
           if (!types[idx]) {
             if (typeof cell === "number") types[idx] = "number";
@@ -59,6 +66,7 @@ export default async function handler(req, res) {
           }
         });
 
+        // اكتشاف الصيغ
         row.eachCell((cell, colNumber) => {
           if (cell.formula) {
             formulas[colNumber - 1] = cell.formula;
@@ -66,6 +74,7 @@ export default async function handler(req, res) {
         });
       });
 
+      // اكتشاف الأعمدة الرقمية
       const numericColumns = types
         .map((t, i) => (t === "number" ? i : null))
         .filter(i => i !== null);
@@ -95,11 +104,11 @@ export default async function handler(req, res) {
       });
     });
 
+    // الشكل الجديد المتوافق مع chat.js
     return res.status(200).json([
       {
-        file_id: "latest_uploaded_excel",
-        filename,
-        base64: data,
+        fileBase64: data,
+        fileName: filename,
         sheets: sheetsJSON
       }
     ]);
@@ -109,4 +118,4 @@ export default async function handler(req, res) {
       error: "فشل قراءة الملف: " + err.message
     });
   }
-}
+                                                                                                 }
