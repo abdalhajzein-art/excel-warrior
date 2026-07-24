@@ -1,6 +1,9 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { executeTool } from "./tools/execute.js";
 import { toolsRegistry } from "./tools/index.js";
+import fs from "fs";
+import path from "path";
+import os from "os";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const sessions = {};
@@ -44,6 +47,7 @@ export default async function handler(req, res) {
     let userContent = (message || "").trim();
     let extractedBase64 = null;
     let fileName = null;
+    let tempFilePath = null;
 
     const hasFile = excelJSON && excelJSON[0] && excelJSON[0].fileBase64;
 
@@ -51,23 +55,34 @@ export default async function handler(req, res) {
       const fileObj = excelJSON[0];
       extractedBase64 = fileObj.fileBase64;
       fileName = fileObj.fileName || "ملف.xlsx";
-      session.lastFile = { base64: extractedBase64, name: fileName };
+      
+      // حفظ الملف مؤقتماً على السيرفر لكي يقرأه بايثون مباشرة
+      const buffer = Buffer.from(extractedBase64, 'base64');
+      tempFilePath = path.join(os.tmpdir(), `${Date.now()}_${fileName}`);
+      fs.writeFileSync(tempFilePath, buffer);
+
+      session.lastFile = {
+        path: tempFilePath,
+        name: fileName,
+        base64: extractedBase64
+      };
     } else if (session.lastFile) {
-      extractedBase64 = session.lastFile.base64;
+      tempFilePath = session.lastFile.path;
       fileName = session.lastFile.name;
+      extractedBase64 = session.lastFile.base64;
     }
 
-    // 🧠 الاعتماد الحصري على نموذج gemini-3.5-flash للسرعة وصفر استهلاك للتوكنز
+    // 🧠 عقل التوجيه الخفيف (Gemini 3.5 Flash) لتحديد الإجراء فقط
     const model = genAI.getGenerativeModel({
       model: "gemini-3.5-flash",
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 500,
+        maxOutputTokens: 300,
         responseMimeType: "application/json",
         responseSchema: {
           type: SchemaType.OBJECT,
           properties: {
-            action: { type: SchemaType.STRING, description: "modify أو chat" },
+            action: { type: SchemaType.STRING, description: "modify إذا طلب قراءة أو تعديل، أو chat للدردشة العامة" },
             response: { type: SchemaType.STRING, description: "الرد البشري المناسب" }
           },
           required: ["action", "response"]
@@ -75,9 +90,10 @@ export default async function handler(req, res) {
       }
     });
 
-    const prompt = `أنت المساعد الذكي لمنصة "الأثير". افهم طلب المستخدم:
+    const prompt = `أنت المساعد الذكي لمنصة "الأثير".
 طلب المستخدم: "${userContent}"
-هل يتطلب تعديل ملف إكسل؟ حدد الإجراء بـ modify وإلا اجعله chat.`;
+هل الملف مرفق أو موجود في الجلسة؟ ${tempFilePath ? "نعم" : "لا"}
+حدد الإجراء المناسب (modify إذا كان هناك ملف ويطلب قراءته أو تعديله، وإلا chat).`;
 
     const result = await model.generateContent(prompt);
     let analysisResult;
@@ -85,20 +101,21 @@ export default async function handler(req, res) {
       analysisResult = JSON.parse(result.response.text());
     } catch {
       analysisResult = {
-        action: hasFile ? "modify" : "chat",
-        response: "أهلاً بك يا مهندس، أنا مستعد لتنفيذ طلبك عبر محرك بايثون العام."
+        action: tempFilePath ? "modify" : "chat",
+        response: "أهلاً بك يا مهندس، أنا مستعد لمعالجة الملف برمجياً."
       };
     }
 
-    if (analysisResult.action === "chat" || !hasFile) {
+    if (analysisResult.action === "chat" || !tempFilePath) {
       return res.json({ reply: analysisResult.response });
     }
 
-    if (analysisResult.action === "modify" && extractedBase64) {
+    // التنفيذ الفوري عبر الأداة ومحرك بايثون مع تمرير مسار الملف الحقيقي
+    if (analysisResult.action === "modify" && tempFilePath) {
       try {
         let toolResult = await callFunction("modify", {
           instruction: userContent,
-          base64: extractedBase64,
+          inputPath: tempFilePath,
           fileName,
         });
 
@@ -118,7 +135,7 @@ export default async function handler(req, res) {
 
         return res.json({ reply: finalReply });
       } catch (toolError) {
-        console.error("❌ خطأ في التنفيذ:", toolError);
+        console.error("❌ خطأ في تنفيذ الأداة:", toolError);
         return res.json({ reply: "⚠️ حدث خطأ أثناء المعالجة المحلية: " + toolError.message });
       }
     }
@@ -128,3 +145,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ reply: "⚠️ خطأ تقني: " + error.message });
   }
 }
+
