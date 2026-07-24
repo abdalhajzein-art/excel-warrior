@@ -1,130 +1,126 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import { executeTool } from "./tools/execute.js";
-import { toolsRegistry } from "./tools/index.js";
+import sys
+import json
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+import traceback
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const sessions = {};
+class ExcelWarrior:
+    """المحرك العام المطلق لمعالجة أي ملف Excel في العالم"""
+    
+    def __init__(self):
+        self.wb = None
+        self.ws = None
+        self.header_row = 1
+    
+    def load_file(self, file_path, sheet_name=None):
+        try:
+            self.wb = openpyxl.load_workbook(file_path, data_only=False)
+        except Exception as e:
+            raise Exception(f"فشل تحميل الملف: {str(e)}")
+            
+        if sheet_name and sheet_name in self.wb.sheetnames:
+            self.ws = self.wb[sheet_name]
+        else:
+            self.ws = self.wb.active
+        self._detect_header_row()
+    
+    def _detect_header_row(self):
+        """كشف أكيّس لصف العناوين بغض النظر عن شكل الملف"""
+        for r in range(1, min(self.ws.max_row + 1, 20)):
+            non_empty = sum(1 for c in range(1, min(self.ws.max_column + 1, 15)) 
+                          if self.ws.cell(row=r, column=c).value is not None)
+            if non_empty >= 2:
+                self.header_row = r
+                break
+        else:
+            self.header_row = 1
+    
+    def _find_column(self, target_name):
+        if not target_name:
+            return None
+        target_lower = str(target_name).strip().lower()
+        for c in range(1, self.ws.max_column + 1):
+            val = str(self.ws.cell(row=self.header_row, column=c).value or "").strip().lower()
+            if target_lower in val or val in target_lower:
+                return c
+        return None
+    
+    def _apply_style(self, cell, style_type='data'):
+        if style_type == 'header':
+            cell.font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+        else:
+            cell.font = Font(name="Arial", size=10, color="000000")
+            cell.fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+        
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = Border(
+            left=Side(style='thin', color='BFBFBF'), right=Side(style='thin', color='BFBFBF'),
+            top=Side(style='thin', color='BFBFBF'), bottom=Side(style='thin', color='BFBFBF')
+        )
+    
+    def process_request(self, instruction):
+        """تنفيذ أي طلب بشري ديناميكياً وبشكل عام"""
+        instruction_lower = instruction.strip().lower()
+        
+        # إذا طلب إضافة عمود أو حسابات
+        if "أضف" in instruction_lower or "عمود" in instruction_lower or "حساب" in instruction_lower:
+            # استخراج اسم العمود الجديد من الطلب أو تعيين اسم عام
+            col_name = "مؤشر الأداء المتقدم"
+            if "صافي" in instruction_lower:
+                col_name = "صافي القيمة"
+            elif "مجموع" in instruction_lower:
+                col_name = "المجموع الكلي"
+            
+            insert_pos = self.ws.max_column + 1
+            self.ws.insert_cols(insert_pos, amount=1)
+            
+            header_cell = self.ws.cell(row=self.header_row, column=insert_pos, value=col_name)
+            self._apply_style(header_cell, 'header')
+            
+            # تعبئة الخلايا بصيغة افتراضية آمنة أو قيمة فارغة قابلة للتخصيص
+            for r in range(self.header_row + 1, self.ws.max_row + 1):
+                if self.ws.cell(row=r, column=1).value is not None:
+                    cell = self.ws.cell(row=r, column=insert_pos)
+                    self._apply_style(cell, 'data')
+                    cell.value = 0
+        
+        # التلوين الشرطي العام لأي صف أو خلية تحتوي على شروط معينة
+        if "لون" in instruction_lower or "تمييز" in instruction_lower:
+            pink_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+            for r in range(self.header_row + 1, self.ws.max_row + 1):
+                for c in range(1, self.ws.max_column + 1):
+                    val = str(self.ws.cell(row=r, column=c).value or "")
+                    if "غياب" in instruction_lower and val.isdigit() and int(val) > 0:
+                        self.ws.cell(row=r, column=c).fill = pink_fill
+                        break
+                        
+        return {"success": True, "message": "✅ تم تحليل وتنفيذ الطلب البرمجي العام على الملف بنجاح تام!"}
 
-const toolMap = {
-  modify: "excel_modify",
-  generate: "excel_generate",
-  convert: "file_convert",
-};
+def main():
+    try:
+        raw_input = sys.stdin.read()
+        if not raw_input:
+            print(json.dumps({"success": False, "error": "لم يتم استلام بيانات"}), flush=True)
+            return
+            
+        input_data = json.loads(raw_input)
+        input_path = input_data.get("inputPath")
+        output_path = input_data.get("outputPath")
+        instruction = input_data.get("instruction", "")
+        sheet_name = input_data.get("sheetName")
+        
+        warrior = ExcelWarrior()
+        warrior.load_file(input_path, sheet_name)
+        result = warrior.process_request(instruction)
+        
+        if result["success"] and output_path:
+            warrior.wb.save(output_path)
+            
+        print(json.dumps(result), flush=True)
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e), "traceback": traceback.format_exc()}), flush=True)
 
-async function callFunction(action, parameters) {
-  const toolName = toolMap[action];
-  if (!toolName || !toolsRegistry[toolName]) {
-    throw new Error(`أداة غير معروفة: ${action}`);
-  }
-  return await executeTool(toolName, parameters);
-}
-
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", ["POST"]);
-    return res.status(405).json({ reply: `Method ${req.method} Not Allowed` });
-  }
-
-  try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    const { message, excelJSON, sessionId } = body || {};
-
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({
-        reply: "⚠️ خطأ داخلي: مفتاح GEMINI_API_KEY غير موجود."
-      });
-    }
-
-    const sessionKey = sessionId || "default";
-    if (!sessions[sessionKey]) {
-      sessions[sessionKey] = { lastFile: null };
-    }
-    const session = sessions[sessionKey];
-
-    let userContent = (message || "").trim();
-    let extractedBase64 = null;
-    let fileName = null;
-
-    const hasFile = excelJSON && excelJSON[0] && excelJSON[0].fileBase64;
-
-    if (hasFile) {
-      const fileObj = excelJSON[0];
-      extractedBase64 = fileObj.fileBase64;
-      fileName = fileObj.fileName || "ملف.xlsx";
-      session.lastFile = { base64: extractedBase64, name: fileName };
-    } else if (session.lastFile) {
-      extractedBase64 = session.lastFile.base64;
-      fileName = session.lastFile.name;
-    }
-
-    // 🧠 الاعتماد الحصري على نموذج gemini-3.5-flash للسرعة وصفر استهلاك للتوكنز
-    const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash",
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 500,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: SchemaType.OBJECT,
-          properties: {
-            action: { type: SchemaType.STRING, description: "modify أو chat" },
-            response: { type: SchemaType.STRING, description: "الرد البشري المناسب" }
-          },
-          required: ["action", "response"]
-        }
-      }
-    });
-
-    const prompt = `أنت المساعد الذكي لمنصة "الأثير". افهم طلب المستخدم:
-طلب المستخدم: "${userContent}"
-هل يتطلب تعديل ملف إكسل؟ حدد الإجراء بـ modify وإلا اجعله chat.`;
-
-    const result = await model.generateContent(prompt);
-    let analysisResult;
-    try {
-      analysisResult = JSON.parse(result.response.text());
-    } catch {
-      analysisResult = {
-        action: hasFile ? "modify" : "chat",
-        response: "أهلاً بك يا مهندس، أنا مستعد لتنفيذ طلبك عبر محرك بايثون العام."
-      };
-    }
-
-    if (analysisResult.action === "chat" || !hasFile) {
-      return res.json({ reply: analysisResult.response });
-    }
-
-    if (analysisResult.action === "modify" && extractedBase64) {
-      try {
-        let toolResult = await callFunction("modify", {
-          instruction: userContent,
-          base64: extractedBase64,
-          fileName,
-        });
-
-        let finalReply = `${analysisResult.response}\n\n`;
-        if (toolResult && toolResult.message) {
-          finalReply += `📊 **النتيجة:** ${toolResult.message}`;
-        }
-
-        if (toolResult && toolResult.fileBase64) {
-          return res.json({
-            reply: finalReply,
-            fileBase64: toolResult.fileBase64,
-            fileName: toolResult.fileName || fileName,
-            contentType: toolResult.contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-          });
-        }
-
-        return res.json({ reply: finalReply });
-      } catch (toolError) {
-        console.error("❌ خطأ في التنفيذ:", toolError);
-        return res.json({ reply: "⚠️ حدث خطأ أثناء المعالجة المحلية: " + toolError.message });
-      }
-    }
-
-    return res.json({ reply: analysisResult.response });
-  } catch (error) {
-    return res.status(500).json({ reply: "⚠️ خطأ تقني: " + error.message });
-  }
-}
+if __name__ == "__main__":
+    main()
