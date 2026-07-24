@@ -2,13 +2,12 @@ import Groq from "groq-sdk";
 import { SYSTEM_PROMPT } from "./agent/system.js";
 import { executeTool } from "./tools/execute.js";
 import { toolsRegistry } from "./tools/index.js";
+import { understandExcel } from "./excel/understanding.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// جلسات المستخدمين
 const sessions = {};
 
-// خريطة الأدوات
 const toolMap = {
   modify: "excel_modify",
   generate: "excel_generate",
@@ -16,7 +15,6 @@ const toolMap = {
   analyze: "excel_analyze",
 };
 
-// تنفيذ الأدوات
 async function callFunction(action, parameters) {
   const toolName = toolMap[action];
   if (!toolName || !toolsRegistry[toolName]) {
@@ -41,7 +39,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // إدارة الجلسة
     const sessionKey = sessionId || "default";
     if (!sessions[sessionKey]) {
       sessions[sessionKey] = {
@@ -57,11 +54,11 @@ export default async function handler(req, res) {
     let extractedBase64 = null;
     let fileName = null;
     let sheets = null;
+    let understood = null;
     let fileSummary = "";
 
     const hasFile = excelJSON && excelJSON[0] && excelJSON[0].fileBase64;
 
-    // معالجة الملف الجديد
     if (hasFile) {
       const fileObj = excelJSON[0];
 
@@ -69,37 +66,37 @@ export default async function handler(req, res) {
       fileName = fileObj.fileName || "ملف";
       sheets = fileObj.sheets || [];
 
-      fileSummary = `[ملف مرفق: ${fileName}]\nعدد الأوراق: ${sheets.length}\n`;
+      understood = understandExcel(sheets);
 
-      if (sheets[0]) {
-        fileSummary += `أول ورقة: ${sheets[0].name}\n`;
-        fileSummary += `عدد الصفوف: ${sheets[0].rows.length}\n`;
-        fileSummary += `الأعمدة: ${sheets[0].header.join(", ")}\n`;
-      }
+      fileSummary = `[ملف مرفق: ${fileName}]\n`;
+      fileSummary += `عدد الأوراق: ${sheets.length}\n`;
+      fileSummary += `الجداول المكتشفة: ${understood.tables.length}\n`;
+      fileSummary += `صفوف تعليمية: ${understood.teaching.length}\n`;
+      fileSummary += `صفوف ملخص: ${understood.summary.length}\n`;
+      fileSummary += `Dashboard: ${understood.dashboard.length}\n`;
 
       session.lastFile = {
         base64: extractedBase64,
         name: fileName,
         sheets,
+        understood,
         summary: fileSummary,
       };
     }
 
-    // إذا ما في ملف جديد، استخدم آخر ملف
     else if (session.lastFile) {
       extractedBase64 = session.lastFile.base64;
       fileName = session.lastFile.name;
       sheets = session.lastFile.sheets;
+      understood = session.lastFile.understood;
       fileSummary = session.lastFile.summary;
     }
 
-    // حفظ التاريخ
     session.history.push({
       role: "user",
-      content: userContent + (fileSummary ? `\n\n${fileSummary}` : ""),
+      content: userContent + "\n\n" + fileSummary + "\n\n" + JSON.stringify(understood, null, 2),
     });
 
-    // تقليل التاريخ
     if (session.history.length > 25) {
       const recent = session.history.slice(-10);
       const old = session.history.slice(0, -10);
@@ -122,7 +119,6 @@ export default async function handler(req, res) {
       ];
     }
 
-    // مرحلة التأكيد
     if (session.step === "awaiting_confirmation" && session.pendingAction) {
       const lowerMsg = userContent.toLowerCase();
 
@@ -136,6 +132,7 @@ export default async function handler(req, res) {
             base64: extractedBase64,
             fileName,
             sheets,
+            understood,
             format: action.format || "pdf",
             targetColumn: action.targetColumn || null,
             newColumns: action.newColumns || [],
@@ -151,6 +148,7 @@ export default async function handler(req, res) {
               base64: result.fileBase64,
               name: result.fileName || fileName,
               sheets,
+              understood,
               summary: result.summary || "تم تعديل الملف.",
             };
 
@@ -174,7 +172,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // التحليل الأساسي عبر SYSTEM
     const messagesPayload = [
       { role: "system", content: SYSTEM_PROMPT },
       ...session.history,
@@ -201,7 +198,6 @@ export default async function handler(req, res) {
       };
     }
 
-    // منع توليد ملف جديد إذا في ملف موجود
     if (session.lastFile && analysisResult.action === "generate") {
       analysisResult.action = "modify";
       analysisResult.summary = `تعديل الملف الحالي (${session.lastFile.name})`;
@@ -214,7 +210,6 @@ export default async function handler(req, res) {
       content: analysisResult.response,
     });
 
-    // إذا الطلب غير واضح
     if (!analysisResult.isClear) {
       let reply = analysisResult.response || "🤔 لحتى أفهمك أكثر…";
       if (analysisResult.questions?.length) {
@@ -226,12 +221,10 @@ export default async function handler(req, res) {
       return res.json({ reply });
     }
 
-    // دردشة فقط
     if (analysisResult.action === "chat") {
       return res.json({ reply: analysisResult.response });
     }
 
-    // طلب يتطلب أداة
     if (["modify", "generate", "convert", "analyze"].includes(analysisResult.action)) {
       session.step = "awaiting_confirmation";
       session.pendingAction = {
@@ -240,6 +233,7 @@ export default async function handler(req, res) {
         base64: extractedBase64,
         fileName,
         sheets,
+        understood,
         format: analysisResult.format || "pdf",
         targetColumn: analysisResult.targetColumn || null,
         newColumns: analysisResult.newColumns || [],
