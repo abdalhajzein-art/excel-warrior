@@ -1,3 +1,7 @@
+/**
+ * js/uiController.js – Alatheer UI Controller & Formatter (Final Edition)
+ */
+
 export function initUIController(getGeneratingStatus, onFileSelected) {
     const chatArea = document.getElementById('chatArea');
     
@@ -67,13 +71,12 @@ export function formatReply(text) {
         return `<pre><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>`;
     });
     
-    // 2️⃣ مصحح الأثير الذكي للماركداون (معدل لمنع الأعمدة الوهمية الفارغة جذرياً)
-    formatted = formatted.replace(/\|{2,}/g, '|'); // إزالة الأنابيب المزدوجة
+    // 2️⃣ مصحح الأثير الذكي للماركداون
+    formatted = formatted.replace(/\|{2,}/g, '|');
     
     formatted = formatted.replace(/(?:^|\n)([^\n]*\|[^\n]*)\n([-\s:|]+)\n((?:[^\n]*\|[^\n]*(?:\n|$))*)/g, (match, header, sep, body) => {
         if (!/^[- \t:|]+$/.test(sep) || !sep.includes('-')) return match;
         
-        // تنظيف الهيدر وتصفية أي خلايا فارغة تماماً من الأطراف
         let rawHeaderCells = header.trim().split('|').map(c => c.trim());
         if (rawHeaderCells[0] === '') rawHeaderCells.shift();
         if (rawHeaderCells[rawHeaderCells.length - 1] === '') rawHeaderCells.pop();
@@ -89,7 +92,6 @@ export function formatReply(text) {
             if (rowCells[0] === '') rowCells.shift();
             if (rowCells[rowCells.length - 1] === '') rowCells.pop();
             
-            // مطابقة عدد الخلايا مع الهيدر تماماً لمنع اختلال الجدول
             while (rowCells.length < colCount) rowCells.push('');
             if (rowCells.length > colCount) rowCells = rowCells.slice(0, colCount);
             
@@ -106,7 +108,7 @@ export function formatReply(text) {
 
     formatted = formatted.replace(/\[(.*?)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" style="color: #d4af37; text-decoration: underline; font-weight: bold;">$1</a>');
 
-    // 4️⃣ الاعتماد على marked لمعالجة الـ Markdown
+    // 4️⃣ الاعتماد على marked لتحويل الـ Markdown
     if (typeof marked !== 'undefined') {
         formatted = marked.parse(formatted);
     } else {
@@ -119,17 +121,15 @@ export function formatReply(text) {
         formatted = formatted.replace(/\n/g, '<br>');
     }
 
-    // 5️⃣ الهيكل الهندسي العضوي للجدول (نظيف، بدون ستايلات مضمنة)
+    // 5️⃣ الهيكل الهندسي العضوي للجدول
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = formatted;
 
     const tables = tempDiv.querySelectorAll('table');
     tables.forEach((table) => {
-        // الحاوية الخارجية الشفافة
         const wrapper = document.createElement('div');
         wrapper.className = 'alatheer-table-wrapper';
         
-        // الزر العائم (يتحكم فيه الـ CSS بالكامل)
         const copyBtn = document.createElement('button');
         copyBtn.innerHTML = '📋 نسخ';
         copyBtn.className = 'floating-copy-btn';
@@ -144,7 +144,6 @@ export function formatReply(text) {
             }
             navigator.clipboard.writeText(csvText.join('\n'));
             
-            // تأثير النجاح
             copyBtn.innerHTML = '✓ تم النسخ';
             copyBtn.classList.add('copied');
             setTimeout(() => {
@@ -153,11 +152,9 @@ export function formatReply(text) {
             }, 2000);
         };
 
-        // حاوية السكرول المخفية
         const scrollArea = document.createElement('div');
         scrollArea.className = 'alatheer-table-scroll';
         
-        // تجميع القطع المعمارية
         table.parentNode.insertBefore(wrapper, table);
         scrollArea.appendChild(table);
         wrapper.appendChild(copyBtn);
@@ -243,6 +240,48 @@ export function showTypingIndicator() {
 export function hideTypingIndicator(indicatorId) {
     if (!indicatorId) return;
     const el = document.getElementById(indicatorId);
+    if (el) el.remove();
+}
+
+export function showSearchIndicator() {
+    const chatArea = document.getElementById('chatArea');
+    if (!chatArea) return null;
+    const searchId = 'search_badge_' + Date.now();
+    const div = document.createElement('div');
+    div.id = searchId;
+    div.className = 'message ai search-indicator-badge';
+    div.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        margin-bottom: 12px;
+        background: rgba(212, 175, 55, 0.1);
+        border: 1px solid rgba(212, 175, 55, 0.3);
+        border-radius: 20px;
+        color: #d4af37;
+        font-size: 13px;
+        font-family: 'Cairo', sans-serif;
+        box-shadow: 0 0 15px rgba(212, 175, 55, 0.15);
+    `;
+    div.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 2s linear infinite;">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+        </svg>
+        <span>جاري استقراء شبكة جوجل الحية...</span>
+    `;
+    chatArea.appendChild(div);
+    if (!window._isUserScrolledUp && chatArea) {
+        chatArea.scrollTop = chatArea.scrollHeight;
+    }
+    return searchId;
+}
+
+export function hideSearchIndicator(searchId) {
+    if (!searchId) return;
+    const el = document.getElementById(searchId);
     if (el) el.remove();
 }
 
