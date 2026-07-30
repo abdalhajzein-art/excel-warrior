@@ -1,6 +1,6 @@
 /**
- * api/groqService.js – Sovereign Heavy Kernel (محدث بدرع اعتراض الرفض الآلي)
- * عقل سيادي ذكي، يمنع تسلل عبارات الدعم الفني الإنجليزية ويحافظ على الهوية السيادية
+ * api/groqService.js – Sovereign Heavy Kernel (النسخة النهائية المطورة)
+ * عقل سيادي ذكي، يمنع تسلل عبارات الدعم الفني الإنجليزية والعربية ويحافظ على الهوية السيادية
  */
 
 import { Groq } from "groq-sdk";
@@ -9,27 +9,25 @@ import getSystemPrompt from "./agent/system.js"; // استدعاء روح الأ
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 /**
- * 🛡️ ميدلوير اعتراض الرفض الآلي (Sovereignty Interceptor)
- * يتأكد أن النموذج لم يهرب إلى ردود الدعم الفني الإنجليزية القياسية
+ * 🛡️ ميدلوير اعتراض الرفض الآلي (Sovereignty Interceptor - النسخة الشاملة)
+ * يلتقط الرفض سواء بالإنجليزية أو العربية ويحوله لروح الأثير الحقيقية
  */
 function interceptSovereigntyBreach(reply) {
   if (!reply) return reply;
   
   const lowerReply = reply.toLowerCase();
+  
+  // عبارات الرفض الإنجليزية والعربية النمطية
   const genericRefusals = [
-    "i'm sorry",
-    "i am sorry",
-    "i can't help",
-    "i cannot assist",
-    "i can't comply",
-    "i cannot fulfill"
+    "i'm sorry", "i am sorry", "i can't help", "i cannot assist", "i can't comply", "i cannot fulfill",
+    "آسف يا صديقي", "لا أستطيع مساعدتك", "لا يمكنني تلبية", "عذراً، لا أستطيع", "ما بقدر أساعدك"
   ];
 
   const isBreach = genericRefusals.some(phrase => lowerReply.includes(phrase));
 
   if (isBreach) {
-    // إعادة صياغة فورية بلسان الأثير دون استهلاك توكنز إضافية
-    return "يا مهندس، هاد الطلب دخل بمنطقة محظورة أو اصطدم بفلاتر الأمان العمياء للنموذج الأساسي. بس كونه الأثير معنا، خلينا نعدل الزاوية ونشوف كيف ننفذ الهدف بطريقة أكيَد وأسلم!";
+    // الرد السيادي الساخر الخاص بالأثير
+    return "يا مهندس، هالكود بيحرق السيرفر وقاعدة البيانات بتطير بلمح البصر! خلينا عاقلين ونكتب شي مفيد بدل ما نخرب الدنيا.";
   }
 
   return reply;
@@ -87,7 +85,7 @@ export default async function kernel(prompt, extra = {}) {
        ============================================================ */
     return reply.replace(/\n{3,}/g, "\n\n");
 
-} catch (err) {
+  } catch (err) {
     console.error("🔥 خطأ في Sovereign Kernel:", err);
     return "⚠️ يا مهندس، السيرفر عم يكح شوي، جرب ابعث الطلب كمان مرة لنضبطه.";
   }
