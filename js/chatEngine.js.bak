@@ -1,11 +1,11 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية
+ * js/chatEngine.js – النسخة السيادية الخفيفة النهائية
  * واجهة ترسل الرسالة + الملف للـ backend
  * والـ orchestrator هو الذي يقرر النية وينفّذ
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
-import { getSelectedFile, getAttachedFileName, resetFile } from './fileHandler.js';
+import { getSelectedFile, getAttachedFileName, resetFile, readFileAsBase64 } from './fileHandler.js';
 import { streamTextEffect, showTypingIndicator, hideTypingIndicator, formatReply } from './uiController.js';
 
 let isGenerating = false;
@@ -92,33 +92,19 @@ export async function handleSendMessage(renderCallbacks) {
     if (welcomeScreen) welcomeScreen.style.display = 'none';
 
     let displayMessage = message || "";
-    let processedFileResult = null;
+    let payloadExcel = null;
     let fileDisplayName = null;
 
-    // ============================================================
-    // 🟧 رفع الملف إلى /api/upload ومعالجته عبر external_file_bridge
-    // ============================================================
     if (currentFileToProcess) {
         try {
-            const formData = new FormData();
-            formData.append("file", currentFileToProcess);
-
-            const uploadResponse = await fetch("/api/upload", {
-                method: "POST",
-                body: formData
-            });
-
-            processedFileResult = await uploadResponse.json();
+            payloadExcel = await readFileAsBase64(currentFileToProcess);
             fileDisplayName = currentFileName;
-
         } catch (err) {
-            console.error("❌ Error uploading file:", err);
-            appendMessageToDOM('assistant', '⚠️ تعذر رفع الملف. حاول مرة أخرى.');
+            console.error("❌ Error reading file:", err);
+            appendMessageToDOM('assistant', '⚠️ تعذر قراءة الملف. حاول مرة أخرى.');
             return;
         }
     }
-
-    // ============================================================
 
     isGenerating = true;
     window._isUserScrolledUp = false;
@@ -155,7 +141,7 @@ export async function handleSendMessage(renderCallbacks) {
     const sessionId = getCurrentSessionId();
     saveMessageToCurrentSession('user', displayMessage || (fileDisplayName ? '📎 ملف مرفق' : ''), {
         fileName: fileDisplayName,
-        fileData: processedFileResult
+        fileData: payloadExcel
     });
 
     let sessions = getStoredSessions();
@@ -180,8 +166,8 @@ export async function handleSendMessage(renderCallbacks) {
 
         const formattedHistoryForBackend = conversationHistory.map(msg => {
             let contentText = msg.text || '';
-            if (msg.fileData && msg.fileData.fileName) {
-                contentText += ` (الملف المرفق: ${msg.fileData.fileName})`;
+            if (msg.fileData && msg.fileData.name) {
+                contentText += ` (الملف المرفق: ${msg.fileData.name})`;
             }
             return {
                 role: msg.sender === 'user' ? 'user' : 'assistant',
@@ -190,9 +176,9 @@ export async function handleSendMessage(renderCallbacks) {
         });
 
         const requestPayload = { 
-            message: displayMessage,
-            history: formattedHistoryForBackend,
-            fileResult: processedFileResult,
+            message: displayMessage, 
+            history: formattedHistoryForBackend, 
+            uploadedFile: payloadExcel, 
             sessionId: sessionId
         };
 
@@ -220,9 +206,11 @@ export async function handleSendMessage(renderCallbacks) {
         addCopyButtonToMessage(assistantMsgDiv, cleanedReply);
 
         let savedFileData = null;
+        const fileDownloadUrl = data.fileBase64
+            ? `data:application/octet-stream;base64,${data.fileBase64}`
+            : null;
 
-        if (data.fileBase64) {
-            const fileDownloadUrl = `data:application/octet-stream;base64,${data.fileBase64}`;
+        if (fileDownloadUrl) {
             savedFileData = {
                 downloadUrl: fileDownloadUrl,
                 base64: data.fileBase64,

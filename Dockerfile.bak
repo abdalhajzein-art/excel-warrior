@@ -1,21 +1,19 @@
-FROM node:22
+FROM node:22-slim
 
+# تثبيت Python3 و pip
 RUN apt-get update && apt-get install -y \
-    libreoffice \
-    ghostscript \
-    poppler-utils \
-    imagemagick \
-    tesseract-ocr \
     python3 \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+# تثبيت مكتبات Python الخفيفة
 RUN pip3 install \
     openpyxl \
     pandas \
     python-docx \
     PyPDF2 \
-    pillow
+    pillow \
+    --break-system-packages
 
 WORKDIR /app
 
@@ -24,5 +22,5 @@ RUN npm install
 
 COPY . .
 
-EXPOSE 3000
+EXPOSE 8080
 CMD ["npm", "start"]

@@ -1,83 +1,49 @@
 /**
- * api/chat.js – Sovereign Chat Layer (نسخة سيادية خفيفة + ذاكرة مزدوجة)
+ * api/chat.js – Sovereign Chat Layer (نسخة سيادية كاملة بعد دمج الملفات)
  */
 
-import fs from "fs";
-import path from "path";
-import os from "os";
-
-import memory from "./core/memory.js";
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", ["POST"]);
-    return res.status(405).json({ reply: `Method ${req.method} Not Allowed` });
-  }
-
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const body = typeof req.body === "string"
+      ? JSON.parse(req.body)
+      : (req.body || {});
 
-    const {
-      message,
-      prompt,
-      uploadedFile,
-      sessionId,
-      history
-    } = body;
+    const userContent = (body.message || body.prompt || "").trim();
+    const sessionKey = body.sessionId || "default";
+    const fileResult = body.fileResult || null;   // ← الملف المعالج من /api/upload
+    const history = body.history || [];           // ← تاريخ الجلسة
 
-    const userContent = (message || prompt || "").trim();
-    const sessionKey = sessionId || "default";
-
-    const session = memory.getSession(sessionKey);
-
-    // 🧠 تحديث تاريخ الدردشة فقط (persona)
-    if (Array.isArray(history) && history.length > (session.persona.history?.length || 0)) {
-      history.forEach(entry => {
-        memory.appendPersonaHistory(sessionKey, entry);
+    if (!userContent && !fileResult) {
+      return res.status(400).json({
+        reply: "⚠️ الرجاء إرسال رسالة أو ملف."
       });
     }
 
-    // 🧠 تجهيز الملف إن وجد (Base64 → ملف مؤقت في /tmp)
-    let fileObj = null;
+    // ============================================================
+    // 🧠 استدعاء المنسّق السيادي مع دعم الملفات
+    // ============================================================
 
-    if (uploadedFile && uploadedFile.fileBase64) {
-      const buffer = Buffer.from(uploadedFile.fileBase64, "base64");
-      const fileName = uploadedFile.fileName || "uploaded_file";
-      const tempPath = path.join(os.tmpdir(), `${Date.now()}_${fileName}`);
-
-      fs.writeFileSync(tempPath, buffer);
-
-      fileObj = {
-        path: tempPath,
-        name: fileName
-      };
-
-      // تخزين آخر ملف في الذاكرة السيادية
-      memory.saveFile(sessionKey, fileObj);
-    } else if (session.sovereign.lastFile) {
-      // استخدام آخر ملف معروف في الجلسة إن وجد
-      fileObj = session.sovereign.lastFile;
-    }
-
-    // 🧠 استدعاء المنسّق السيادي
     const output = await conversationOrchestrator(sessionKey, userContent, {
-      file: fileObj
+      fileResult,
+      history
     });
 
-    // 🧠 تطبيع الرد
-    let reply = "";
+    // ============================================================
+    // 🟦 تطبيع الرد
+    // ============================================================
+
+    let reply = "تم إنجاز طلبك بنجاح!";
     let fileBase64 = null;
     let fileName = null;
 
     if (typeof output === "string") {
       reply = output;
     } else if (output && typeof output === "object") {
-      reply = output.reply || "تم إنجاز طلبك بنجاح!";
+      reply = output.reply || reply;
       fileBase64 = output.fileBase64 || null;
       fileName = output.fileName || null;
-    } else {
-      reply = "تم إنجاز طلبك بنجاح!";
     }
 
     return res.status(200).json({
@@ -88,7 +54,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error("❌ خطأ في api/chat.js:", error);
-    return res.status(200).json({
+    return res.status(500).json({
       reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
     });
   }

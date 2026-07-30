@@ -1,37 +1,26 @@
 /**
- * api/upload.js – Sovereign Lite File Loader
- * نسخة خفيفة بدون أي تحليل أو Metadata
+ * api/upload.js – Sovereign File Intake + Heavy Processing Bridge
+ * يستقبل الملف ويمرّره مباشرة إلى الجسر السيادي لمعالجة الملفات.
  */
 
-import fs from "fs";
-import path from "path";
-import os from "os";
+import externalBridge from "./tools/external/external_file_bridge.js";
 
-export default async function parseExcelUpload(filePath) {
+export default async function uploadHandler(req, res) {
   try {
-    // قراءة الملف كـ Buffer
-    const buffer = fs.readFileSync(filePath);
+    // التحقق من وجود ملف
+    if (!req.file) {
+      return res.status(400).json({
+        error: "⚠️ لم يتم رفع أي ملف."
+      });
+    }
 
-    // تحويله إلى Base64
-    const fileBase64 = buffer.toString("base64");
+    // تمرير الطلب بالكامل إلى الجسر السيادي
+    return await externalBridge(req, res);
 
-    // استخراج اسم الملف
-    const fileName = path.basename(filePath);
-
-    // إرجاع بيانات بسيطة فقط
-    return {
-      fileName,
-      fileBase64,
-      path: filePath
-    };
-
-  } catch (err) {
-    console.error("❌ خطأ في parseExcelUpload:", err);
-    return {
-      fileName: null,
-      fileBase64: null,
-      path: null,
-      error: err.message
-    };
+  } catch (error) {
+    console.error("❌ خطأ في api/upload.js:", error);
+    return res.status(500).json({
+      error: `⚠️ خطأ أثناء رفع الملف: ${error.message}`
+    });
   }
 }

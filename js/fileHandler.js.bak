@@ -22,13 +22,15 @@ export function initFileHandler(callbacks) {
         if (!file) return;
 
         isFileLoading = true;
-        callbacks?.onUpdateSendState?.();
+        if (callbacks && typeof callbacks.onUpdateSendState === 'function') {
+            callbacks.onUpdateSendState();
+        }
 
         const fileBubbles = document.getElementById('fileBubbles');
         if (fileBubbles) {
             fileBubbles.innerHTML = `
                 <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: rgba(212, 175, 55, 0.05); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px dashed rgba(212, 175, 55, 0.3); opacity: 0.6; margin-bottom: 6px;">
-                    <span>جاري رفع الملف...</span>
+                    <span>جاري تحميل الملف...</span>
                 </div>
             `;
         }
@@ -36,40 +38,23 @@ export function initFileHandler(callbacks) {
         try {
             selectedFileObject = file;
             attachedFileName = file.name;
-
-            // ============================================================
-            // 🟧 رفع الملف إلى /api/upload (الجسر السيادي)
-            // ============================================================
-            const formData = new FormData();
-            formData.append("file", file);
-
-            const response = await fetch("/api/upload", {
-                method: "POST",
-                body: formData
-            });
-
-            const result = await response.json();
-
-            // يمكنك هنا تمرير النتيجة إلى chatEngine أو أي مكان آخر
-            callbacks?.onFileProcessed?.(result);
-
-            // ============================================================
-
+            await new Promise(resolve => setTimeout(resolve, 300));
             isFileLoading = false;
-            callbacks?.onUpdateSendState?.();
+            if (callbacks && typeof callbacks.onUpdateSendState === 'function') {
+                callbacks.onUpdateSendState();
+            }
             showFileBubbleUI();
-
         } catch (err) {
             console.error("Error processing file upload:", err);
             isFileLoading = false;
             selectedFileObject = null;
             attachedFileName = null;
-
             if (fileBubbles) {
-                fileBubbles.innerHTML = '<span style="color:#ff5555; font-size:12px; padding: 4px;">⚠️ فشل رفع الملف</span>';
+                fileBubbles.innerHTML = '<span style="color:#ff5555; font-size:12px; padding: 4px;">⚠️ فشل تحميل الملف</span>';
             }
-
-            callbacks?.onUpdateSendState?.();
+            if (callbacks && typeof callbacks.onUpdateSendState === 'function') {
+                callbacks.onUpdateSendState();
+            }
         }
     });
 }
@@ -77,7 +62,6 @@ export function initFileHandler(callbacks) {
 export function showFileBubbleUI() {
     const fileBubbles = document.getElementById('fileBubbles');
     if (!fileBubbles || !attachedFileName) return;
-
     fileBubbles.innerHTML = `
         <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; background: rgba(212, 175, 55, 0.15); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(212, 175, 55, 0.4); opacity: 1; margin-bottom: 6px;">
             <span>📎 ${attachedFileName}</span>
@@ -97,10 +81,8 @@ export function resetFile() {
     selectedFileObject = null;
     attachedFileName = null;
     isFileLoading = false;
-
     const fileBubbles = document.getElementById('fileBubbles');
     if (fileBubbles) fileBubbles.innerHTML = '';
-
     fileInput.value = '';
 }
 
@@ -124,7 +106,7 @@ export function readFileAsBase64(file) {
                 type: file.type
             }]);
         };
-        reader.onerror = reject;
+        reader.onerror = (error) => reject(error);
         reader.readAsDataURL(file);
     });
 }
