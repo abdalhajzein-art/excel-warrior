@@ -1,6 +1,6 @@
 /**
  * api/tools/index.js – Sovereign Tools Dispatcher (Final Edition)
- * موزّع سيادي موحّد لكل محركات الملفات بدون أي ذكاء لغوي
+ * موزّع سيادي موحّد لكل محركات الملفات وأدوات البحث الحي
  */
 
 import path from "path";
@@ -13,6 +13,9 @@ import { pptCreate } from "./ppt.js";
 
 // 🔥 المسار الصحيح لمحرك LibreOffice
 import libreConvert from "./external/engines/libre.js";
+
+// 🌐 أداة بحث جوجل السيادية الحية (Google Search Grounding)
+import { searchWithGoogle } from "./geminiSearch.js";
 
 /* ============================================================
    🧠 الموزّع السيادي للقراءة
@@ -36,6 +39,13 @@ export async function autoRead(filePath) {
 }
 
 /* ============================================================
+   🌐 موزع البحث السيادي الحي
+   ============================================================ */
+export async function autoSearch(query) {
+  return await searchWithGoogle(query);
+}
+
+/* ============================================================
    🟦 التصدير السيادي الموحد
    ============================================================ */
 export {
@@ -47,5 +57,7 @@ export {
   wordCreate,
   pptCreate,
   imageConvert,
-  libreConvert
+  libreConvert,
+  searchWithGoogle,
+  autoSearch
 };
