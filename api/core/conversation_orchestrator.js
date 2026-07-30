@@ -107,14 +107,14 @@ export default async function conversationOrchestrator(sessionId, message, extra
     /* ============================================================
        🟦 إذا ما في ملف → دردشة عبر kernel
        ============================================================ */
-    const history = memory.getPersonaHistory(sessionId, 12);
+    const history = memory.getChatHistory(sessionId, 12);
 
-    memory.appendPersonaHistory(sessionId, { role: "user", content: message });
+    memory.appendChatHistory(sessionId, { role: "user", content: message });
 
     const output = await kernel(message, { history });
     const final = typeof output === "string" ? output : JSON.stringify(output);
 
-    memory.appendPersonaHistory(sessionId, { role: "assistant", content: final });
+    memory.appendChatHistory(sessionId, { role: "assistant", content: final });
 
     return {
       ok: true,
@@ -195,4 +195,4 @@ function buildLocalDiscussionResult(file, analysis) {
     fileBase64: null,
     fileName: null
   };
-}
+           }
