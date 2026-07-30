@@ -7,11 +7,8 @@ import path from "path";
 
 import { excelRead, excelModify, excelCreate } from "./excel.js";
 import { pdfRead, pdfCreate } from "./pdf.js";
-import { wordRead, wordCreate } from "./word.js";
+import { wordCreate } from "./word.js";
 import { imageConvert } from "./image.js";
-
-// ❌ حذف pptRead لأنه غير موجود
-// ✔ الإبقاء على pptCreate فقط
 import { pptCreate } from "./ppt.js";
 
 // 🔥 المسار الصحيح لمحرك LibreOffice
@@ -27,9 +24,9 @@ export async function autoRead(filePath) {
 
   if (["xlsx", "xls", "csv"].includes(ext)) return await excelRead(filePath);
   if (ext === "pdf") return await pdfRead(filePath);
-  if (["docx", "doc"].includes(ext)) return await wordRead(filePath);
 
-  // ❌ حذف قراءة PPT لأنها غير مدعومة حالياً
+  // ❌ Word/PPT قراءة غير مدعومة حالياً
+  // if (["docx", "doc"].includes(ext)) return await wordRead(filePath);
   // if (["pptx", "ppt"].includes(ext)) return await pptRead(filePath);
 
   if (["png", "jpg", "jpeg", "webp", "tiff", "avif"].includes(ext))
@@ -47,9 +44,7 @@ export {
   excelCreate,
   pdfRead,
   pdfCreate,
-  wordRead,
   wordCreate,
-  // ❌ حذف pptRead
   pptCreate,
   imageConvert,
   libreConvert
