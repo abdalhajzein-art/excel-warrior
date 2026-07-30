@@ -8,12 +8,16 @@ import path from "path";
 import os from "os";
 
 // المحركات السيادية الجديدة
-import { excelRead, excelModify, excelCreate } from "../tools/excel.js";
-import { pdfRead, pdfConvert, pdfCreate } from "../tools/pdf.js";
-import { wordCreate } from "../tools/word.js";
-import { pptCreate } from "../tools/ppt.js";
-import { imageConvert } from "../tools/image.js";
-import { libreConvert } from "../tools/libre.js";
+// ⚠️ بما أنك داخل api/tools/external/
+// المسار الصحيح هو الخروج خطوة واحدة فقط إلى tools/
+import { excelRead, excelModify, excelCreate } from "../excel.js";
+import { pdfRead, pdfConvert, pdfCreate } from "../pdf.js";
+import { wordCreate } from "../word.js";
+import { pptCreate } from "../ppt.js";
+import { imageConvert } from "../image.js";
+
+// ⚠️ libreConvert موجود داخل engines، وليس داخل tools مباشرة
+import libreConvert from "./engines/libre.js";
 
 export default async function externalBridge(req, res) {
   try {
@@ -97,4 +101,4 @@ export default async function externalBridge(req, res) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-}
+        }
