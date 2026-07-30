@@ -9,7 +9,10 @@ import { excelRead, excelModify, excelCreate } from "./excel.js";
 import { pdfRead, pdfCreate } from "./pdf.js";
 import { wordRead, wordCreate } from "./word.js";
 import { imageConvert } from "./image.js";
-import { pptRead, pptCreate } from "./ppt.js";
+
+// ❌ حذف pptRead لأنه غير موجود
+// ✔ الإبقاء على pptCreate فقط
+import { pptCreate } from "./ppt.js";
 
 // 🔥 المسار الصحيح لمحرك LibreOffice
 import libreConvert from "./external/engines/libre.js";
@@ -25,7 +28,10 @@ export async function autoRead(filePath) {
   if (["xlsx", "xls", "csv"].includes(ext)) return await excelRead(filePath);
   if (ext === "pdf") return await pdfRead(filePath);
   if (["docx", "doc"].includes(ext)) return await wordRead(filePath);
-  if (["pptx", "ppt"].includes(ext)) return await pptRead(filePath);
+
+  // ❌ حذف قراءة PPT لأنها غير مدعومة حالياً
+  // if (["pptx", "ppt"].includes(ext)) return await pptRead(filePath);
+
   if (["png", "jpg", "jpeg", "webp", "tiff", "avif"].includes(ext))
     return "📷 صورة – لا يمكن استخراج نص منها.";
 
@@ -43,7 +49,7 @@ export {
   pdfCreate,
   wordRead,
   wordCreate,
-  pptRead,
+  // ❌ حذف pptRead
   pptCreate,
   imageConvert,
   libreConvert
