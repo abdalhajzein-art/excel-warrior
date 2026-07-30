@@ -1,6 +1,6 @@
 /**
- * api/core/memory.js – Sovereign Dual Memory Engine (Final Edition)
- * ذاكرة ملفات + ذاكرة دردشة فقط – بدون أي طبقات شخصية أو مشاعر أو سلوك
+ * api/core/memory.js – Sovereign Dual Memory Engine (Final Edition with Anchoring)
+ * ذاكرة ملفات + ذاكرة دردشة ذكية مع التثبيت المرجعي للبدايات
  */
 
 const sessions = {};
@@ -73,7 +73,7 @@ export default {
   },
 
   /* ============================================================
-     🟦 ذاكرة الدردشة
+     🟦 ذاكرة الدردشة (مع ميزة التثبيت المرجعي - Anchoring)
      ============================================================ */
   appendChatHistory(id, entry) {
     const session = this.getSession(id);
@@ -85,14 +85,34 @@ export default {
       time: Date.now()
     });
 
-    if (session.chat.history.length > 60) {
-      session.chat.history = session.chat.history.slice(-30);
+    if (session.chat.history.length > 80) {
+      session.chat.history = session.chat.history.slice(-40);
     }
   },
 
   getChatHistory(id, max = 12) {
     const session = this.getSession(id);
-    return session.chat.history.slice(-max);
+    const history = session.chat.history;
+    
+    // إذا كان التاريخ أقل من أو يساوي الحد المطلوب، أعده كاملاً
+    if (history.length <= max) return history;
+
+    // استراتيجية التثبيت (Anchoring): الاحتفاظ بأول رسالتين (السياق والبداية) + آخر الرسائل الحية
+    const anchorCount = 2; 
+    const anchors = history.slice(0, anchorCount);
+    
+    const recentCount = max - anchorCount;
+    const tail = history.slice(-recentCount);
+
+    // دمج البداية مع النهاية الحية بدون تكرار
+    const combined = [...anchors];
+    tail.forEach(item => {
+      if (!combined.includes(item)) {
+        combined.push(item);
+      }
+    });
+
+    return combined;
   },
 
   /* ============================================================
@@ -103,3 +123,4 @@ export default {
     session.meta.lastIntent = intent;
   }
 };
+
