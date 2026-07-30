@@ -15,7 +15,7 @@ import { pdfRead, pdfConvert, pdfCreate } from "../tools/pdf.js";
 import { wordCreate } from "../tools/word.js";
 import { pptCreate } from "../tools/ppt.js";
 import { imageConvert } from "../tools/image.js";
-import { libreConvert } from "../tools/libre.js";
+import { libreConvert } from "../tools/index.js";
 
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
   try {
