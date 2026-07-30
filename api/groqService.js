@@ -1,10 +1,11 @@
 /**
- * api/groqService.js – Sovereign Heavy Kernel (النسخة النهائية المطورة)
- * عقل سيادي ذكي، يمنع تسلل عبارات الدعم الفني الإنجليزية والعربية ويحافظ على الهوية السيادية
+ * api/groqService.js – Sovereign Heavy Kernel (النسخة النهائية مع دعم بحث جوجل الحي)
+ * عقل سيادي ذكي، يدمج بحث جوجل المستقل ويحافظ على الهوية السيادية
  */
 
 import { Groq } from "groq-sdk";
 import getSystemPrompt from "./agent/system.js"; // استدعاء روح الأثير الحقيقية
+import { autoSearch } from "./tools/index.js";    // 🌐 استيراد أداة بحث جوجل الحية المستقلة
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -38,12 +39,30 @@ export default async function kernel(prompt, extra = {}) {
     const messages = [];
 
     /* ============================================================
+       🌐 الذكاء الحي: فحص واستدعاء بحث جوجل إذا تطلب الأمر
+       ============================================================ */
+    const searchKeywords = ["طوارئ", "أرقام", "أخبار", "بحث", "من هو", "أين", "موقع", "سعر", "متى", "رقم"];
+    const needsSearch = extra.forceSearch || searchKeywords.some(kw => prompt.includes(kw));
+
+    let liveSearchContext = "";
+    if (needsSearch) {
+      try {
+        const searchResult = await autoSearch(prompt);
+        if (searchResult && !searchResult.includes("⚠️") && !searchResult.includes("لم يتم العثور")) {
+          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل المباشر]:\n${searchResult}\n`;
+        }
+      } catch (searchErr) {
+        console.error("⚠️ فشل جلب البحث الحي:", searchErr);
+      }
+    }
+
+    /* ============================================================
        🧠 استدعاء وحقن الـ System Prompt السيادي الحقيقي (من system.js)
        ============================================================ */
     const sovereignPrompt = getSystemPrompt();
     messages.push({
       role: "system",
-      content: sovereignPrompt
+      content: sovereignPrompt + liveSearchContext
     });
 
     /* ============================================================
