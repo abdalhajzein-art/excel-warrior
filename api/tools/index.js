@@ -28,10 +28,6 @@ export async function autoRead(filePath) {
   if (["xlsx", "xls", "csv"].includes(ext)) return await excelRead(filePath);
   if (ext === "pdf") return await pdfRead(filePath);
 
-  // ❌ Word/PPT قراءة غير مدعومة حالياً
-  // if (["docx", "doc"].includes(ext)) return await wordRead(filePath);
-  // if (["pptx", "ppt"].includes(ext)) return await pptRead(filePath);
-
   if (["png", "jpg", "jpeg", "webp", "tiff", "avif"].includes(ext))
     return "📷 صورة – لا يمكن استخراج نص منها.";
 
@@ -46,7 +42,7 @@ export async function autoSearch(query) {
 }
 
 /* ============================================================
-   🟦 التصدير السيادي الموحد
+   🟦 التصدير السيادي الموحد (بدون تكرار)
    ============================================================ */
 export {
   excelRead,
@@ -58,6 +54,5 @@ export {
   pptCreate,
   imageConvert,
   libreConvert,
-  searchWithGoogle,
-  autoSearch
+  searchWithGoogle
 };
