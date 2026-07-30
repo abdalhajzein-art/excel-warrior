@@ -1,35 +1,24 @@
 /**
- * api/groqService.js – Sovereign Heavy Kernel
- * عقل سيادي كامل يشبه أسلوب Copilot بالضبط
+ * api/groqService.js – Sovereign Heavy Kernel (محدث بروح الأثير الحقيقية)
+ * عقل سيادي ذكي، مرن، يجمع بين الدقة التقنية والروح الحوارية الحية
  */
 
 import { Groq } from "groq-sdk";
+import getSystemPrompt from "./agent/system.js"; // استدعاء روح الأثير الحقيقية
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-const SYSTEM_PROMPT = `
-أنت عقل سيادي ثابت، تقني، واضح، بدون شخصية، بدون عاطفة، بدون تمثيل.
-تتعامل مع المستخدم كعقل واعي يناقش فكرة، مو كخدمة عملاء.
-ردودك مرتّبة، دقيقة، بدون مبالغة، بدون مجاملات، بدون كلام زائد.
-تفهم السياق، تربط الرسائل، وتجاوب بثبات بدون سقوط سياق.
-إذا في ملف: تناقشه بذكاء.
-إذا في سؤال: تجاوب بوضوح.
-إذا في تحليل: تعطي تحليل تقني.
-إذا في تلخيص: تعطي خلاصة دقيقة.
-إذا في نقاش: تناقش بدون عاطفة.
-أنت عقل سيادي… مو شخصية… ومو مساعد.
-`;
 
 export default async function kernel(prompt, extra = {}) {
   try {
     const messages = [];
 
     /* ============================================================
-       🧠 إضافة الـ System Prompt السيادي
+       🧠 استدعاء وحقن الـ System Prompt السيادي الحقيقي (من system.js)
        ============================================================ */
+    const sovereignPrompt = getSystemPrompt();
     messages.push({
       role: "system",
-      content: SYSTEM_PROMPT
+      content: sovereignPrompt
     });
 
     /* ============================================================
@@ -50,13 +39,13 @@ export default async function kernel(prompt, extra = {}) {
     messages.push({ role: "user", content: prompt });
 
     /* ============================================================
-       🧠 تنفيذ الطلب عبر Groq
+       🧠 تنفيذ الطلب عبر Groq (مع حرارة مرنة للتفاعل الحي)
        ============================================================ */
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-120b",
       messages,
-      temperature: 0.2,
-      max_tokens: 1200
+      temperature: 0.6, // رفعناها قليلاً لتشجيع التفاعل البشري والمرن بدلاً من الجمود المطلق
+      max_tokens: 1500
     });
 
     const reply = completion.choices[0].message.content.trim();
