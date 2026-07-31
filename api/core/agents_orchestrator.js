@@ -1,11 +1,13 @@
-// api/core/agents_orchestrator.js – Sovereign Multi-Agent Engine (Final, متوافق مع المعمارية الجديدة)
+// api/core/agents_orchestrator.js – Sovereign Multi-Agent Engine (Final)
 
 import memory from "./memory.js";
 import detectIntent from "./intent/intent_file.js";
 import conversationOrchestrator from "./conversation_orchestrator.js";
-import toolsIndex from "../tools/index.js";
 
-// ⭐ إضافة وكيل البحث الخارجي
+// ❗ تصحيح الاستدعاء — toolsIndex هو object وليس default export
+import * as toolsIndex from "../tools/index.js";
+
+// ⭐ وكيل البحث الخارجي
 import searchAgent from "./agents/searchAgent.js";
 
 export default async function agentsOrchestrator(sessionId, input, ctx = {}) {
@@ -16,7 +18,7 @@ export default async function agentsOrchestrator(sessionId, input, ctx = {}) {
   const agents = [
     fileAgent,
     toolsAgent,
-    searchAgent,   // ⭐ تمت الإضافة هنا
+    searchAgent,   // ⭐ وكيل البحث
     chatAgent
   ];
 
@@ -42,9 +44,9 @@ export default async function agentsOrchestrator(sessionId, input, ctx = {}) {
   };
 }
 
-// =======================
-// ⭐ File Agent – يوجه نوايا الملفات إلى conversation_orchestrator
-// =======================
+/* ============================================================
+   ⭐ File Agent – يوجه نوايا الملفات إلى conversation_orchestrator
+   ============================================================ */
 const fileAgent = {
   name: "fileAgent",
   run: async (sessionId, intent, input, ctx) => {
@@ -59,9 +61,9 @@ const fileAgent = {
   }
 };
 
-// =======================
-// ⭐ Tools Agent – يوجه الطلبات إلى منظومة الأدوات
-// =======================
+/* ============================================================
+   ⭐ Tools Agent – يوجه الطلبات إلى منظومة الأدوات
+   ============================================================ */
 const toolsAgent = {
   name: "toolsAgent",
   run: async (sessionId, intent, input, ctx) => {
@@ -74,14 +76,25 @@ const toolsAgent = {
 
     if (!isToolIntent) return "تجاوز";
 
-    const result = await toolsIndex(sessionId, input, ctx);
-    return result?.reply ?? "⚠️ لم يتم توليد رد واضح من منظومة الأدوات.";
+    // 📁 إذا في ملف → استخدم autoRead
+    if (ctx.fileResult) {
+      const result = await toolsIndex.autoRead(ctx.fileResult);
+      return result || "⚠️ لم يتم توليد رد واضح من أدوات القراءة.";
+    }
+
+    // 🔍 إذا في نية بحث → استخدم autoSearch
+    if (intent && intent.includes("search")) {
+      const result = await toolsIndex.autoSearch(input);
+      return result || "⚠️ لم يتم توليد رد واضح من أدوات البحث.";
+    }
+
+    return "⚠️ لم يتم التعرف على أداة مناسبة.";
   }
 };
 
-// =======================
-// ⭐ Chat Agent – fallback للدردشة عبر conversation_orchestrator
-// =======================
+/* ============================================================
+   ⭐ Chat Agent – fallback للدردشة عبر conversation_orchestrator
+   ============================================================ */
 const chatAgent = {
   name: "chatAgent",
   run: async (sessionId, intent, input, ctx) => {
