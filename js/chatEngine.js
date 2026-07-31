@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية (محصنة ضد الانهيار الصامت واستدعاءات الجلسات الفارغة)
+ * js/chatEngine.js – النسخة السيادية النهائية (محصنة ونظيفة بدون تضارب أحداث)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -154,7 +154,6 @@ export async function handleSendMessage(renderCallbacks) {
             : displayMessage || (fileDisplayName ? 'ملف مرفق' : 'جلسة جديدة');
         saveSessions(sessions);
         
-        // 🛡️ حماية آمنة كلياً ضد الـ Callback الفارغ لمنع الانهيار الصامت
         try {
             if (typeof renderSessionsList === 'function') {
                 renderSessionsList(renderCallbacks);
@@ -169,7 +168,6 @@ export async function handleSendMessage(renderCallbacks) {
     resetFile();
     updateSendButtonState();
 
-    // 🔍 رصد ما إذا كان الاستعلام يتطلب بحثاً حياً على شبكة الإنترنت
     const isSearchQuery = /(ابحث|ابحثلي|بحث|النت|جوجل|شبكة|عن وصفة|أخبار|مصادر|رابط|روابط)/i.test(displayMessage);
     
     let indicatorId;
@@ -363,40 +361,5 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     }
 
     chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-/* ============================================================
-   🔌 Auto-Initialization & DOM Event Bindings
-   ============================================================ */
-if (typeof document !== 'undefined') {
-    document.addEventListener('DOMContentLoaded', () => {
-        const userInput = document.getElementById('userInput');
-        const sendBtn = document.getElementById('sendBtn');
-
-        if (userInput) {
-            userInput.addEventListener('input', () => {
-                updateSendButtonState();
-                userInput.style.height = 'auto';
-                userInput.style.height = userInput.scrollHeight + 'px';
-            });
-
-            userInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (!isGenerating && (userInput.value.trim().length > 0 || getSelectedFile() !== null)) {
-                        handleMainAction();
-                    }
-                }
-            });
-        }
-
-        if (sendBtn) {
-            sendBtn.addEventListener('click', () => {
-                handleMainAction();
-            });
-        }
-
-        updateSendButtonState();
-    });
 }
 
