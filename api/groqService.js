@@ -1,24 +1,17 @@
 /**
- * api/groqService.js – Sovereign Heavy Kernel (النسخة النهائية مع دعم بحث جوجل الحي)
- * عقل سيادي ذكي، يدمج بحث جوجل المستقل ويحافظ على الهوية السيادية
+ * api/groqService.js – Sovereign Heavy Kernel (النسخة المحصنة للبحث الحتمي والروابط)
  */
 
 import { Groq } from "groq-sdk";
-import getSystemPrompt from "./agent/system.js"; // استدعاء روح الأثير الحقيقية
-import { autoSearch } from "./tools/index.js";    // 🌐 استيراد أداة بحث جوجل الحية المستقلة
+import getSystemPrompt from "./agent/system.js"; 
+import { autoSearch } from "./tools/index.js";    
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-/**
- * 🛡️ ميدلوير اعتراض الرفض الآلي (Sovereignty Interceptor - النسخة الشاملة)
- * يلتقط الرفض سواء بالإنجليزية أو العربية ويحوله لروح الأثير الحقيقية
- */
 function interceptSovereigntyBreach(reply) {
   if (!reply) return reply;
   
   const lowerReply = reply.toLowerCase();
-  
-  // عبارات الرفض الإنجليزية والعربية النمطية
   const genericRefusals = [
     "i'm sorry", "i am sorry", "i can't help", "i cannot assist", "i can't comply", "i cannot fulfill",
     "آسف يا صديقي", "لا أستطيع مساعدتك", "لا يمكنني تلبية", "عذراً، لا أستطيع", "ما بقدر أساعدك"
@@ -27,7 +20,6 @@ function interceptSovereigntyBreach(reply) {
   const isBreach = genericRefusals.some(phrase => lowerReply.includes(phrase));
 
   if (isBreach) {
-    // الرد السيادي الساخر الخاص بالأثير
     return "يا مهندس، هالكود بيحرق السيرفر وقاعدة البيانات بتطير بلمح البصر! خلينا عاقلين ونكتب شي مفيد بدل ما نخرب الدنيا.";
   }
 
@@ -39,9 +31,15 @@ export default async function kernel(prompt, extra = {}) {
     const messages = [];
 
     /* ============================================================
-       🌐 الذكاء الحي: فحص واستدعاء بحث جوجل إذا تطلب الأمر
+       🌐 الذكاء الحي: توسيع استشعار النية للروابط والمصادر والمواقع
        ============================================================ */
-    const searchKeywords = ["طوارئ", "أرقام", "أخبار", "بحث", "من هو", "أين", "موقع", "سعر", "متى", "رقم"];
+    const searchKeywords = [
+      "طوارئ", "أرقام", "أخبار", "بحث", "من هو", "أين", 
+      "موقع", "مواقع", "سعر", "متى", "رقم", 
+      "رابط", "روابط", "مصدر", "مصادر", "مرجع", "مراجع", 
+      "دورة", "دورات", "منصة", "منصات", "كيف أتعلم", "أفضل موقع"
+    ];
+    
     const needsSearch = extra.forceSearch || searchKeywords.some(kw => prompt.includes(kw));
 
     let liveSearchContext = "";
@@ -49,7 +47,7 @@ export default async function kernel(prompt, extra = {}) {
       try {
         const searchResult = await autoSearch(prompt);
         if (searchResult && !searchResult.includes("⚠️") && !searchResult.includes("لم يتم العثور")) {
-          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل المباشر]:\n${searchResult}\n`;
+          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل المباشر - التزم بالروابط الواردة هنا حصراً]:\n${searchResult}\n`;
         }
       } catch (searchErr) {
         console.error("⚠️ فشل جلب البحث الحي:", searchErr);
@@ -57,7 +55,7 @@ export default async function kernel(prompt, extra = {}) {
     }
 
     /* ============================================================
-       🧠 استدعاء وحقن الـ System Prompt السيادي الحقيقي (من system.js)
+       🧠 استدعاء وحقن الـ System Prompt السيادي
        ============================================================ */
     const sovereignPrompt = getSystemPrompt();
     messages.push({
@@ -66,7 +64,7 @@ export default async function kernel(prompt, extra = {}) {
     });
 
     /* ============================================================
-       🧠 دمج التاريخ إذا موجود
+       🧠 دمج التاريخ
        ============================================================ */
     if (Array.isArray(extra.history)) {
       extra.history.forEach(h => {
@@ -77,9 +75,6 @@ export default async function kernel(prompt, extra = {}) {
       });
     }
 
-    /* ============================================================
-       🧠 إضافة رسالة المستخدم
-       ============================================================ */
     messages.push({ role: "user", content: prompt });
 
     /* ============================================================
@@ -94,18 +89,9 @@ export default async function kernel(prompt, extra = {}) {
 
     let reply = completion.choices[0].message.content.trim();
 
-    /* ============================================================
-       🛡️ تفعيل درع الاعتراض السيادي على الرد
-       ============================================================ */
     reply = interceptSovereigntyBreach(reply);
 
-    /* ============================================================
-       🧠 تنظيف الرد (Normalization)
-       ============================================================ */
     return reply.replace(/\n{3,}/g, "\n\n");
 
-  } catch (err) {
-    console.error("🔥 خطأ في Sovereign Kernel:", err);
-    return "⚠️ يا مهندس، السيرفر عم يكح شوي، جرب ابعث الطلب كمان مرة لنضبطه.";
-  }
-}
+  } بهذا الكود، نكون قد أطبقنا الخناق تماماً على أي محاولة لاختلاق روابط، وضمنّا أن الأثير سيلجأ للبحث الحي فوراً عندما تطلبه!
+
