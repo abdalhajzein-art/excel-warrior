@@ -1,40 +1,38 @@
 /**
- * api/tools/geminiSearch.js – Sovereign Web Search Tool
- * محرك البحث السيادي المستقل (بدون مفاتيح، بدون قيود، وبنتائج جوجل الحقيقية)
+ * api/tools/geminiSearch.js – Sovereign Direct Google Search Tool
+ * محرك البحث السيادي المباشر عبر جلب صفحات جوجل التقليدية (بدون مفاتيح، بدون قيود)
  */
 
 export async function searchWithGoogle(query) {
   try {
     if (!query) return "⚠️ عذراً يا مهندس، لم تقم بتحديد استعلام البحث.";
 
-    console.log(`🔍 [Sovereign Search] جاري البحث عن: "${query}"`);
+    console.log(`🔍 [Direct Google Search] جاري البحث المباشر عن: "${query}"`);
 
-    // استخدام محرك بحث مجاني ومستقر برمجياً (مثل DuckDuckGo HTML/API النظيف أو Scraper حر)
-    // أو جلب نتائج بحث خفيفة وسريعة بدون أي مفاتيح API خارجية معقدة.
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    // استهداف صفحة بحث جوجل مباشرة بالطريقة التقليدية
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
     const response = await fetch(searchUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
       }
     });
 
     if (!response.ok) {
-      return "⚠️ حدث خطأ أثناء الاتصال بمحرك البحث الحي.";
+      return "⚠️ حدث خطأ أثناء الاتصال بمحرك بحث جوجل المباشر.";
     }
 
     const htmlText = await response.text();
 
-    // استخراج النتائج (العناوين والروابط والاقتباسات) برمجياً وبشكل نظيف
-    // سنستخدم تحليل بسيط للنصوص المستخرجة من نتائج البحث
-    const results = parseSearchResults(htmlText);
+    // تحليل نتائج صفحة جوجل الحقيقية
+    const results = parseGoogleSearchResults(htmlText);
 
     if (results.length === 0) {
-      return "لم يتم العثور على نتائج واضحة عبر البحث الحي.";
+      return "لم يتم العثور على نتائج واضحة عبر بحث جوجل المباشر.";
     }
 
-    // تنسيق النتائج لإرسالها كمعصارة جاهزة لعقل النظام (Groq)
-    let formattedOutput = `نتائج البحث الحي المباشر عن (${query}):\n\n`;
+    let formattedOutput = `نتائج البحث المباشر من جوجل عن (${query}):\n\n`;
     results.slice(0, 5).forEach((item, index) => {
       formattedOutput += `${index + 1}. **${item.title}**\n   - الرابط: ${item.url}\n   - الوصف: ${item.snippet}\n\n`;
     });
@@ -42,47 +40,54 @@ export async function searchWithGoogle(query) {
     return formattedOutput.trim();
 
   } catch (err) {
-    console.error("🔥 خطأ في أداة البحث السيادي:", err);
-    return "⚠️ حدث خطأ برمجي أثناء تنفيذ البحث.";
+    console.error("🔥 خطأ في محرك البحث المباشر لجوجل:", err);
+    return "⚠️ حدث خطأ برمجي أثناء تنفيذ البحث المباشر.";
   }
 }
 
 /**
- * دالة مساعدة لتحليل الـ HTML واستخراج النتائج بدقة وسرعة بدون تعقيد
+ * دالة تحليل هيكل HTML الخاص بصفحة نتائج جوجل التقليدية
  */
-function parseSearchResults(html) {
+function parseGoogleSearchResults(html) {
   const results = [];
   try {
-    // استخراج الروابط والنصوص باستخدام تعبيرات منتظمة سريعة وخفيفة (Regex) لتجنب ثقل المكتبات
-    const resultBlockRegex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__url"[^>]*>([\s\S]*?)<\/a>/g;
-    
-    // طريقة أبسط وأشمل لاستخراج العناوين والروابط من DuckDuckGo HTML
-    const snippetRegex = /<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
-    const titleRegex = /<a class="result__url"[^>]*>([\s\S]*?)<\/a>/g;
-
-    // استخراج الروابط والنصوص عبر مطابقة بسيطة ونظيفة
-    const matches = html.matchAll(/<div class="result__body">[\s\S]*?<a class="result__url" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g);
+    // تعبير منتظم يلتقط العناوين والروابط من نتائج جوجل الكلاسيكية
+    const matches = html.matchAll(/<div[^>]*class="[^"]*g[^"]*"[^>]*>[\s\S]*?<a[^>]*href="\/url\?q=([^&"]+)[^"]*"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<div[^>]*class="[^"]*(?:VwiC3b|yXK7lf|IsZvec)[^"]*"[^>]*>([\s\S]*?)<\/div>/g);
 
     for (const match of matches) {
       const rawUrl = match[1];
       const rawTitle = match[2].replace(/<[^>]*>?/gm, '').trim();
       const rawSnippet = match[3].replace(/<[^>]*>?/gm, '').trim();
 
-      //فك تشفير روابط التوجيه إن وجدت
       let cleanUrl = rawUrl;
-      if (rawUrl.includes('uddg=')) {
-        const decoded = decodeURIComponent(rawUrl.split('uddg=')[1].split('&')[0]);
-        cleanUrl = decoded;
-      }
+      try {
+        cleanUrl = decodeURIComponent(rawUrl);
+      } catch (e) {}
 
-      results.push({
-        title: rawTitle,
-        url: cleanUrl,
-        snippet: rawSnippet
-      });
+      if (rawTitle && cleanUrl.startsWith('http')) {
+        results.push({
+          title: rawTitle,
+          url: cleanUrl,
+          snippet: rawSnippet || ""
+        });
+      }
+    }
+
+    // مطابقة احتياطية عامة في حال تغير هيكل جوجل قليلاً
+    if (results.length === 0) {
+      const simpleLinks = html.matchAll(/href="https?:\/\/([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+      let count = 0;
+      for (const link of simpleLinks) {
+        const url = `https://${link[1]}`;
+        const title = link[2].replace(/<[^>]*>?/gm, '').trim();
+        if (title.length > 5 && !url.includes('google.com') && count < 5) {
+          results.push({ title, url, snippet: "نتيجة مباشرة من كشاف جوجل" });
+          count++;
+        }
+      }
     }
   } catch (e) {
-    console.error("Parser Error:", e);
+    console.error("Google Parser Error:", e);
   }
   return results;
 }
