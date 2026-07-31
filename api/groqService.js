@@ -1,5 +1,5 @@
 /**
- * api/groqService.js – Sovereign Heavy Kernel (النسخة المحصنة للبحث الحتمي والروابط)
+ * api/groqService.js – Sovereign Heavy Kernel (النسخة المحصنة للبحث الحتمي وحقن السياق الجغرافي)
  */
 
 import { Groq } from "groq-sdk";
@@ -41,6 +41,7 @@ export default async function kernel(prompt, extra = {}) {
     ];
     
     const needsSearch = extra.forceSearch || searchKeywords.some(kw => prompt.includes(kw));
+    const locationContext = extra.locationContext || ""; // ⭐ استقبال السياق الجغرافي
 
     let liveSearchContext = "";
     if (needsSearch) {
@@ -55,12 +56,19 @@ export default async function kernel(prompt, extra = {}) {
     }
 
     /* ============================================================
-       🧠 استدعاء وحقن الـ System Prompt السيادي
+       🧠 استدعاء وحقن الـ System Prompt السيادي + السياق الجغرافي
        ============================================================ */
     const sovereignPrompt = getSystemPrompt();
+    
+    let contextInjection = "";
+    if (liveSearchContext) contextInjection += liveSearchContext;
+    if (locationContext) {
+      contextInjection += `\n\n${locationContext} (ملاحظة سيادية: إذا قام المستخدم بتصحيح مكانه شفهياً أو أشار إلى استخدام VPN، اعتمد حصراً مكانه الحقيقي المصحح وتجاهل الإحداثيات التقنية الافتراضية).\n`;
+    }
+
     messages.push({
       role: "system",
-      content: sovereignPrompt + liveSearchContext
+      content: sovereignPrompt + contextInjection
     });
 
     /* ============================================================
