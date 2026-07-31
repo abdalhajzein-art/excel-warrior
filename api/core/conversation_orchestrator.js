@@ -1,6 +1,6 @@
 /**
  * api/core/conversation_orchestrator.js
- * Sovereign Final Heavy Orchestrator – نسخة سيادية كاملة بعد دمج الملفات
+ * Sovereign Final Heavy Orchestrator – مع محرك البحث الحي السيادي (Zero-Dependency Search)
  */
 
 import memory from "./memory.js";
@@ -8,7 +8,7 @@ import detectIntent from "./intent/intent_file.js";
 import kernel from "../groqService.js";
 
 /* ============================================================
-   🟩 المحركات السيادية الجديدة (بدل القديمة)
+   🟩 المحركات السيادية الجديدة
    ============================================================ */
 import { excelRead, excelModify, excelCreate } from "../tools/excel.js";
 import { pdfRead, pdfConvert, pdfCreate } from "../tools/pdf.js";
@@ -16,6 +16,57 @@ import { wordCreate } from "../tools/word.js";
 import { pptCreate } from "../tools/ppt.js";
 import { imageConvert } from "../tools/image.js";
 import { libreConvert } from "../tools/index.js";
+
+/* ============================================================
+   🔍 محرك البحث الحي السيادي (DuckDuckGo Lite Parser)
+   ============================================================ */
+async function performSovereignSearch(query) {
+  try {
+    const response = await fetch(`https://lite.duckduckgo.com/lite/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AlatheerEngine/2.6'
+      },
+      body: `q=${encodeURIComponent(query)}`
+    });
+
+    const html = await response.text();
+    const results = [];
+
+    // استخراج الروابط والعناوين والمقتطفات بدقة من HTML
+    const linkRegex = /<a class="result-link" href="([^"]+)"[^>]*>(.*?)<\/a>/g;
+    const snippetRegex = /<td class="result-snippet"[^>]*>(.*?)<\/td>/g;
+
+    let match;
+    const links = [];
+    while ((match = linkRegex.exec(html)) !== null) {
+      links.push({
+        url: match[1],
+        title: match[2].replace(/<[^>]*>/g, '').trim()
+      });
+    }
+
+    const snippets = [];
+    while ((match = snippetRegex.exec(html)) !== null) {
+      snippets.push(match[1].replace(/<[^>]*>/g, '').trim());
+    }
+
+    // دمج النتائج الحقيقية (أول 4 نتائج كحد أقصى)
+    for (let i = 0; i < Math.min(links.length, 4); i++) {
+      results.push({
+        title: links[i].title,
+        url: links[i].url,
+        snippet: snippets[i] || 'محتوى بحث متوفر عبر الرابط.'
+      });
+    }
+
+    return results;
+  } catch (err) {
+    console.error("❌ خطأ في محرك البحث الحي:", err);
+    return [];
+  }
+}
 
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
   try {
@@ -35,9 +86,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
       let result = null;
 
-      /* ============================================================
-         🟥 اختيار المحرك حسب الامتداد
-         ============================================================ */
       if (fileName.endsWith(".pdf")) {
         if (intent === "read_file") result = await pdfRead(fileResult.filePath);
         else if (intent === "convert_file") result = await pdfConvert(fileResult.filePath, "pdf");
@@ -48,9 +96,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
           const analysis = await pdfRead(fileResult.filePath);
           result = buildLocalDiscussionResult(fileResult, analysis);
         }
-      }
-
-      else if (fileName.endsWith(".docx")) {
+      } else if (fileName.endsWith(".docx")) {
         if (intent === "convert_file") result = await libreConvert(fileResult.filePath, "pdf");
         else if (intent === "summarize_file") {
           const content = await pdfRead(fileResult.filePath);
@@ -59,9 +105,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
           const analysis = await pdfRead(fileResult.filePath);
           result = buildLocalDiscussionResult(fileResult, analysis);
         }
-      }
-
-      else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+      } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
         if (intent === "read_file") result = await excelRead(fileResult.filePath);
         else if (intent === "modify_file") {
           const fn = (row) => row;
@@ -73,9 +117,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
           const analysis = await excelRead(fileResult.filePath);
           result = buildLocalDiscussionResult(fileResult, analysis);
         }
-      }
-
-      else if (fileName.match(/\.(png|jpg|jpeg|webp|tiff|avif)$/)) {
+      } else if (fileName.match(/\.(png|jpg|jpeg|webp|tiff|avif)$/)) {
         if (intent === "convert_file") {
           result = await imageConvert(fileResult.filePath, "png");
         } else {
@@ -86,16 +128,11 @@ export default async function conversationOrchestrator(sessionId, message, extra
             fileName: null
           };
         }
-      }
-
-      else {
+      } else {
         const analysis = await pdfRead(fileResult.filePath);
         result = buildLocalDiscussionResult(fileResult, analysis);
       }
 
-      /* ============================================================
-         🟦 حفظ الرد في الذاكرة السيادية
-         ============================================================ */
       memory.appendSovereignHistory(sessionId, {
         role: "assistant",
         content: result.reply
@@ -105,13 +142,31 @@ export default async function conversationOrchestrator(sessionId, message, extra
     }
 
     /* ============================================================
-       🟦 إذا ما في ملف → دردشة عبر kernel
+       🟦 إذا ما في ملف → دردشة أو بحث حي عبر kernel
        ============================================================ */
     const history = memory.getChatHistory(sessionId, 12);
 
+    // التحقق مما إذا كان الطلب يتطلب بحثاً حياً على الإنترنت
+    const isSearchRequired = /(ابحث|بحث|مصادر|النت|جوجل|من النت|رابط|روابط|موقع|مواقع|تفسير|معنى|ما هو|أخبار)/i.test(message);
+    
+    let enhancedMessage = message;
+
+    if (isSearchRequired) {
+      console.log(`🔍 [Sovereign Search] جاري البحث الحي عن: "${message}"`);
+      const searchResults = await performSovereignSearch(message);
+      
+      if (searchResults.length > 0) {
+        const searchContextLines = searchResults.map((r, idx) => 
+          `[${idx + 1}] العنوان: ${r.title}\nالرابط الحقيقي: ${r.url}\nالمقتطف: ${r.snippet}`
+        ).join('\n\n');
+
+        enhancedMessage = `[معلومات حقيقية وموثوقة مسترجعة مباشرة من شبكة الإنترنت لعام 2026]:\n${searchContextLines}\n\nطلب المستخدم الأساسي: ${message}\n\nتعليمات صارمة: استخدم حصراً هذه الروابط والمصادر الحقيقية المذكورة أعلاه في إجابتك، ولا تقم باختلاق أي روابط وهمية إطلاقاً.`;
+      }
+    }
+
     memory.appendChatHistory(sessionId, { role: "user", content: message });
 
-    const output = await kernel(message, { history });
+    const output = await kernel(enhancedMessage, { history });
     const final = typeof output === "string" ? output : JSON.stringify(output);
 
     memory.appendChatHistory(sessionId, { role: "assistant", content: final });
@@ -195,4 +250,5 @@ function buildLocalDiscussionResult(file, analysis) {
     fileBase64: null,
     fileName: null
   };
-           }
+}
+
