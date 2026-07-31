@@ -14,8 +14,8 @@ import { pptCreate } from "./ppt.js";
 // 🔥 المسار الصحيح لمحرك LibreOffice
 import libreConvert from "./external/engines/libre.js";
 
-// 🌐 محرك بحث جوجل عبر بوابة GEMINI_API_KEY
-import { googleSearch } from "./googleSearch.js";
+// 🌐 محرك بحث جوجل الحقيقي عبر DuckDuckGo Proxy (!g)
+import { googleReal } from "./googleReal.js";
 
 /* ============================================================
    🧠 الموزّع السيادي للقراءة
@@ -38,7 +38,7 @@ export async function autoRead(filePath) {
    🌐 موزع البحث السيادي الحي
    ============================================================ */
 export async function autoSearch(query) {
-  return await googleSearch(query);
+  return await googleReal(query);
 }
 
 /* ============================================================
@@ -54,5 +54,5 @@ export {
   pptCreate,
   imageConvert,
   libreConvert,
-  googleSearch
+  googleReal
 };
