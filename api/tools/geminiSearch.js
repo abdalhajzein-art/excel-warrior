@@ -1,90 +1,73 @@
 /**
- * api/tools/geminiSearch.js – Sovereign Direct Google Search Tool
- * محرك البحث السيادي المباشر عبر جلب صفحات جوجل التقليدية (بدون مفاتيح، بدون قيود)
+ * api/tools/geminiSearch.js – Alatheer Sovereign Meta-Search Engine
+ * محرك الأثير التجميعي: يبحث في Google و Bing وغيرها ويعيد النتائج بصيغة JSON نظيفة بدون حظر
  */
 
 export async function searchWithGoogle(query) {
   try {
     if (!query) return "⚠️ عذراً يا مهندس، لم تقم بتحديد استعلام البحث.";
 
-    console.log(`🔍 [Direct Google Search] جاري البحث المباشر عن: "${query}"`);
+    console.log(`🔍 [Alatheer Search] جاري البحث الاحترافي عن: "${query}"`);
 
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    // قائمة بسيرفرات SearXNG العامة والمجانية (نظام Fallback لضمان الاستقرار 100%)
+    const searchEngines = [
+      "https://searx.be",
+      "https://searx.ro",
+      "https://paulgo.io",
+      "https://search.mdosch.de"
+    ];
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "ar,en-US;q=0.9,en;q=0.8"
+    let results = [];
+
+    // المحاولة عبر السيرفرات المتاحة حتى ننجح
+    for (const baseUrl of searchEngines) {
+      try {
+        const url = `${baseUrl}/search?q=${encodeURIComponent(query)}&format=json&language=ar`;
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            "User-Agent": "Alatheer-AI-Agent/1.0"
+          },
+          // تحديد وقت أقصى للرد (Timeout) حتى لا يعلق السيرفر
+          signal: AbortSignal.timeout(5000) 
+        });
+
+        if (!response.ok) continue; // إذا كان السيرفر مشغولاً، جرب الذي بعده
+
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+          results = data.results;
+          console.log(`✅ [Alatheer Search] تم جلب النتائج بنجاح من: ${baseUrl}`);
+          break; // نجحنا! نخرج من حلقة المحاولات
+        }
+      } catch (err) {
+        // تجاهل خطأ السيرفر الحالي والانتقال للذي يليه بصمت
+        console.log(`⚠️ [Alatheer Search] تجاوز السيرفر ${baseUrl}`);
       }
-    });
-
-    if (!response.ok) {
-      return "⚠️ حدث خطأ أثناء الاتصال بمحرك بحث جوجل المباشر.";
     }
-
-    const htmlText = await response.text();
-    const results = parseGoogleSearchResults(htmlText);
 
     if (results.length === 0) {
-      return "لم يتم العثور على نتائج واضحة عبر بحث جوجل المباشر.";
+      return "لم يتم العثور على نتائج حديثة أو أن جميع محركات البحث مشغولة حالياً.";
     }
 
-    let formattedOutput = `نتائج البحث المباشر من جوجل عن (${query}):\n\n`;
+    // تنسيق النتائج ليقرأها Groq ويستخرج منها الإجابة بذكاء
+    let formattedOutput = `نتائج البحث المباشرة من الويب عن (${query}):\n\n`;
+    
+    // نأخذ أفضل 5 نتائج فقط لتوفير التوكنز وإعطاء زبدة الموضوع
     results.slice(0, 5).forEach((item, index) => {
-      formattedOutput += `${index + 1}. **${item.title}**\n   - الرابط: ${item.url}\n   - الوصف: ${item.snippet}\n\n`;
+      // تفادي النتائج الفارغة
+      const snippet = item.content || item.snippet || "لا يوجد وصف إضافي";
+      formattedOutput += `${index + 1}. **${item.title}**\n   - المصدر: ${item.url}\n   - التفاصيل: ${snippet}\n\n`;
     });
 
     return formattedOutput.trim();
 
   } catch (err) {
-    console.error("🔥 خطأ في محرك البحث المباشر لجوجل:", err);
-    return "⚠️ حدث خطأ برمجي أثناء تنفيذ البحث المباشر.";
+    console.error("🔥 خطأ في محرك بحث الأثير:", err);
+    return "⚠️ حدث خطأ برمجي أثناء تنفيذ البحث الاحترافي.";
   }
-}
-
-/**
- * دالة تحليل هيكل HTML الخاص بصفحة نتائج جوجل التقليدية
- */
-function parseGoogleSearchResults(html) {
-  const results = [];
-  try {
-    const matches = html.matchAll(/<div[^>]*class="[^"]*g[^"]*"[^>]*>[\s\S]*?<a[^>]*href="\/url\?q=([^&"]+)[^"]*"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<div[^>]*class="[^"]*(?:VwiC3b|yXK7lf|IsZvec)[^"]*"[^>]*>([\s\S]*?)<\/div>/g);
-
-    for (const match of matches) {
-      const rawUrl = match[1];
-      const rawTitle = match[2].replace(/<[^>]*>?/gm, '').trim();
-      const rawSnippet = match[3].replace(/<[^>]*>?/gm, '').trim();
-
-      let cleanUrl = rawUrl;
-      try {
-        cleanUrl = decodeURIComponent(rawUrl);
-      } catch (e) {}
-
-      if (rawTitle && cleanUrl.startsWith('http')) {
-        results.push({
-          title: rawTitle,
-          url: cleanUrl,
-          snippet: rawSnippet || ""
-        });
-      }
-    }
-
-    if (results.length === 0) {
-      const simpleLinks = html.matchAll(/href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g);
-      let count = 0;
-      for (const link of simpleLinks) {
-        const url = link[1];
-        const title = link[2].replace(/<[^>]*>?/gm, '').trim();
-        if (title.length > 5 && !url.includes('google.com') && count < 5) {
-          results.push({ title, url, snippet: "نتيجة مباشرة من كشاف جوجل" });
-          count++;
-        }
-      }
-    }
-  } catch (e) {
-    console.error("Google Parser Error:", e);
-  }
-  return results;
 }
 
 export default {
