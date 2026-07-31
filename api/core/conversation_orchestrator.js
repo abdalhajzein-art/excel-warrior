@@ -1,6 +1,6 @@
 /**
  * api/core/conversation_orchestrator.js
- * Sovereign Final Heavy Orchestrator – (محدث لاستقبال وتمرير السياق الجغرافي)
+ * Sovereign Final Heavy Orchestrator – ملفات + دردشة مع سياق جغرافي
  */
 
 import memory from "./memory.js";
@@ -8,71 +8,14 @@ import detectIntent from "./intent/intent_file.js";
 import kernel from "../groqService.js";
 
 /* ============================================================
-   🟩 المحركات السيادية الجديدة
+   🟩 المحركات السيادية للملفات
    ============================================================ */
-import { excelRead, excelModify, excelCreate } from "../tools/excel.js";
-import { pdfRead, pdfConvert, pdfCreate } from "../tools/pdf.js";
+import { excelRead, excelModify } from "../tools/excel.js";
+import { pdfRead, pdfConvert } from "../tools/pdf.js";
 import { wordCreate } from "../tools/word.js";
 import { pptCreate } from "../tools/ppt.js";
 import { imageConvert } from "../tools/image.js";
 import { libreConvert } from "../tools/index.js";
-
-/* ============================================================
-   🔍 محرك البحث الحي السيادي (مع مهلة أمان 4 ثوانٍ لمنع التعليق)
-   ============================================================ */
-async function performSovereignSearch(query) {
-  try {
-    console.log(`🔍 [Search Start] بدء البحث الحي عن: "${query}"`);
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-    const response = await fetch(`https://lite.duckduckgo.com/lite/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AlatheerEngine/2.6'
-      },
-      body: `q=${encodeURIComponent(query)}`,
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-    const html = await response.text();
-    const results = [];
-
-    const linkRegex = /<a class="result-link" href="([^"]+)"[^>]*>(.*?)<\/a>/g;
-    const snippetRegex = /<td class="result-snippet"[^>]*>(.*?)<\/td>/g;
-
-    let match;
-    const links = [];
-    while ((match = linkRegex.exec(html)) !== null) {
-      links.push({
-        url: match[1],
-        title: match[2].replace(/<[^>]*>/g, '').trim()
-      });
-    }
-
-    const snippets = [];
-    while ((match = snippetRegex.exec(html)) !== null) {
-      snippets.push(match[1].replace(/<[^>]*>/g, '').trim());
-    }
-
-    for (let i = 0; i < Math.min(links.length, 4); i++) {
-      results.push({
-        title: links[i].title,
-        url: links[i].url,
-        snippet: snippets[i] || 'محتوى بحث متوفر عبر الرابط.'
-      });
-    }
-
-    console.log(`✅ [Search Success] تم جلب ${results.length} نتائج بحث بنجاح.`);
-    return results;
-  } catch (err) {
-    console.warn("⚠️ [Search Timeout/Error]: تجاوز وقت البحث أو حدث خطأ، سيتم المتابعة بدون بحث.", err.message);
-    return [];
-  }
-}
 
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
   try {
@@ -80,10 +23,10 @@ export default async function conversationOrchestrator(sessionId, message, extra
     const session = memory.getSession(sessionId);
 
     const fileResult = extraCtx.fileResult || null;
-    const locationContext = extraCtx.locationContext || ""; // ⭐ التقاط السياق الجغرافي القادم من الواجهة
+    const locationContext = extraCtx.locationContext || "";
 
     /* ============================================================
-       🟧 الملف القادم من /api/upload
+       🟧 إذا في ملف → معالجة ملفات فقط
        ============================================================ */
     if (fileResult && fileResult.fileName) {
       console.log(`📁 [File Processing] معالجة ملف: ${fileResult.fileName}`);
@@ -148,34 +91,17 @@ export default async function conversationOrchestrator(sessionId, message, extra
     }
 
     /* ============================================================
-       🟦 إذا ما في ملف → دردشة أو بحث حي عبر kernel
+       🟦 إذا ما في ملف → دردشة فقط عبر kernel
        ============================================================ */
     const history = memory.getChatHistory(sessionId, 12);
-
-    const isSearchRequired = /(ابحث|بحث|مصادر|النت|جوجل|من النت|رابط|روابط|موقع|مواقع|تفسير|معنى|ما هو|أخبار)/i.test(message);
-    
-    let enhancedMessage = message;
-
-    if (isSearchRequired) {
-      const searchResults = await performSovereignSearch(message);
-      
-      if (searchResults.length > 0) {
-        const searchContextLines = searchResults.map((r, idx) => 
-          `[${idx + 1}] العنوان: ${r.title}\nالرابط الحقيقي: ${r.url}\nالمقتطف: ${r.snippet}`
-        ).join('\n\n');
-
-        enhancedMessage = `[معلومات حقيقية وموثوقة مسترجعة مباشرة من شبكة الإنترنت لعام 2026]:\n${searchContextLines}\n\nطلب المستخدم الأساسي: ${message}\n\nتعليمات صارمة: استخدم حصراً هذه الروابط والمصادر الحقيقية المذكورة أعلاه في إجابتك، ولا تقم باختلاق أي روابط وهمية إطلاقاً.`;
-      }
-    }
 
     memory.appendChatHistory(sessionId, { role: "user", content: message });
 
     console.log(`🤖 [Kernel Start] إرسال الطلب لنموذج Groq...`);
 
-    // 🛡️ تمرير السياق الجغرافي (locationContext) إلى دالة النواة
-    const kernelPromise = kernel(enhancedMessage, { history, locationContext });
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Timeout: تجاوز زمن انتظار استجابة نموذج الذكاء الاصطناعي (15s)')), 15000)
+    const kernelPromise = kernel(message, { history, locationContext });
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout: تجاوز زمن انتظار استجابة نموذج الذكاء الاصطناعي (15s)")), 15000)
     );
 
     const output = await Promise.race([kernelPromise, timeoutPromise]);
@@ -263,5 +189,4 @@ function buildLocalDiscussionResult(file, analysis) {
     fileBase64: null,
     fileName: null
   };
-}
-
+        }
