@@ -9,7 +9,6 @@ export async function searchWithGoogle(query) {
 
     console.log(`🔍 [Direct Google Search] جاري البحث المباشر عن: "${query}"`);
 
-    // استهداف صفحة بحث جوجل مباشرة بالطريقة التقليدية
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
     const response = await fetch(searchUrl, {
@@ -24,8 +23,6 @@ export async function searchWithGoogle(query) {
     }
 
     const htmlText = await response.text();
-
-    // تحليل نتائج صفحة جوجل الحقيقية
     const results = parseGoogleSearchResults(htmlText);
 
     if (results.length === 0) {
@@ -51,7 +48,6 @@ export async function searchWithGoogle(query) {
 function parseGoogleSearchResults(html) {
   const results = [];
   try {
-    // تعبير منتظم يلتقط العناوين والروابط من نتائج جوجل الكلاسيكية
     const matches = html.matchAll(/<div[^>]*class="[^"]*g[^"]*"[^>]*>[\s\S]*?<a[^>]*href="\/url\?q=([^&"]+)[^"]*"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<div[^>]*class="[^"]*(?:VwiC3b|yXK7lf|IsZvec)[^"]*"[^>]*>([\s\S]*?)<\/div>/g);
 
     for (const match of matches) {
@@ -73,12 +69,11 @@ function parseGoogleSearchResults(html) {
       }
     }
 
-    // مطابقة احتياطية عامة في حال تغير هيكل جوجل قليلاً
     if (results.length === 0) {
-      const simpleLinks = html.matchAll(/href="https?:\/\/([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+      const simpleLinks = html.matchAll(/href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g);
       let count = 0;
       for (const link of simpleLinks) {
-        const url = `https://${link[1]}`;
+        const url = link[1];
         const title = link[2].replace(/<[^>]*>?/gm, '').trim();
         if (title.length > 5 && !url.includes('google.com') && count < 5) {
           results.push({ title, url, snippet: "نتيجة مباشرة من كشاف جوجل" });
