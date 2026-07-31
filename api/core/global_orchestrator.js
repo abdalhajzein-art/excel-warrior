@@ -1,25 +1,64 @@
 /**
- * api/core/global_orchestrator.js – Sovereign Global Orchestrator (Updated with Groq Kernel Integration)
+ * api/core/global_orchestrator.js – Sovereign Global Orchestrator (AI-Driven Decision)
  */
 
 import memory from "./memory.js";
 import conversationOrchestrator from "./conversation_orchestrator.js";
 import agentsOrchestrator from "./agents_orchestrator.js";
+import searchAgent from "./agents/searchAgent.js";
 
 import systemAgent from "../agent/system.js";
 import uploadHandler from "../upload.js";
 
-// ربط البوابة الذكية المركزية (Groq Kernel)
 import kernel from "../groqService.js";
-
-// ❗ تصحيح الاستدعاء للأدوات
 import * as toolsIndex from "../tools/index.js";
+
+/**
+ * 🧠 دالة اتخاذ القرار بالذكاء الاصطناعي (بدون كلمات مفتاحية)
+ * تحدد إذا كان السؤال يحتاج بحث خارجي أم لا
+ */
+async function detectModeWithAI(input) {
+  try {
+    // ✅ نطلب من Groq تصنيف السؤال بكلمة واحدة فقط (search أو chat)
+    const decisionPrompt = `صنف السؤال التالي إلى أحد هذين النوعين فقط:
+- اكتب "search" إذا كان السؤال يحتاج إلى معلومات حديثة، أخبار، طقس، إحصاءات، أو أي معلومة خارجية غير معروفة مسبقاً.
+- اكتب "chat" إذا كان السؤال عاماً، تحية، أو دردشة عادية.
+
+السؤال: "${input}"
+
+إجابتك (كلمة واحدة فقط):`;
+
+    const reply = await kernel(decisionPrompt, {
+      temperature: 0.1,
+      max_tokens: 10
+    });
+
+    const decision = typeof reply === "string" ? reply.trim().toLowerCase() : "chat";
+
+    if (decision.includes("search")) {
+      console.log(`🧠 [AI Decision] تم تصنيف السؤال كـ "بحث": "${input}"`);
+      return "search";
+    } else {
+      console.log(`🧠 [AI Decision] تم تصنيف السؤال كـ "دردشة": "${input}"`);
+      return "chat";
+    }
+
+  } catch (err) {
+    console.error("🔥 خطأ في AI Decision، التراجع للـ Fallback:", err);
+    // Fallback: إذا فشل Groq، استخدم كلمات مفتاحية بسيطة
+    const text = typeof input === "string" ? input.toLowerCase() : "";
+    if (/طقس|weather|بحث|ابحث|أخبار|news|عدد سكان|إحصاء|من هو|ما هو/.test(text)) {
+      return "search";
+    }
+    return "chat";
+  }
+}
 
 export default async function globalOrchestrator(sessionId, input, ctx = {}) {
   const session = memory.getSession(sessionId);
 
-  // نحدد النمط بناءً على محتوى الرسالة أو السياق بشكل مدمج
-  const mode = ctx.mode || detectMode(input, ctx);
+  // ✅ استخدم الذكاء الاصطناعي لتحديد النية (بدون كلمات مفتاحية)
+  const mode = ctx.mode || await detectModeWithAI(input);
 
   let result;
 
@@ -32,21 +71,23 @@ export default async function globalOrchestrator(sessionId, input, ctx = {}) {
       break;
 
     case "search":
+      try {
+        const searchResult = await searchAgent.run(sessionId, null, input, ctx);
+        result = { ok: true, reply: searchResult };
+      } catch (err) {
+        console.error("🔥 خطأ في searchAgent:", err);
+        result = { ok: false, reply: "⚠️ عذراً، حدث خطأ في جلب نتائج البحث." };
+      }
+      break;
+
     case "chat":
-      // ✨ التعديل الجذري: توجيه كل المحادثات والبحث إلى عقل Groq Kernel المركزي
-      // الـ Kernel يحتوي مسبقاً على الـ Router الذكي والبحث السيادي والتعويذة السحرية!
       try {
         const history = session.history || [];
-        const aiReply = await kernel(input, {
-          history,
-          temperature: 0.6,
-          // إذا كان النمط المكتشف بحثاً، نجبره على تفعيل البحث، وإلا نترك الـ Router الذكي يقرر
-          forceSearch: mode === "search" 
-        });
+        const aiReply = await kernel(input, { history, temperature: 0.6 });
         result = { ok: true, reply: aiReply };
       } catch (err) {
-        console.error("🔥 خطأ في تشغيل الـ Kernel عبر الأوركستريتور:", err);
-        result = { ok: false, reply: "⚠️ عذراً، حدث خطأ في معالجة طلبك عبر العقل المركزي." };
+        console.error("🔥 خطأ في kernel:", err);
+        result = { ok: false, reply: "⚠️ عذراً، حدث خطأ في معالجة طلبك." };
       }
       break;
 
@@ -85,20 +126,4 @@ export default async function globalOrchestrator(sessionId, input, ctx = {}) {
     filePath: result?.filePath ?? null,
     raw: result
   };
-}
-
-function detectMode(input, ctx) {
-  if (ctx.file) return "file";
-  if (ctx.agent) return "agent";
-  if (ctx.system) return "system";
-  if (ctx.upload) return "upload";
-  if (ctx.tools) return "tools";
-
-  const text = typeof input === "string" ? input.toLowerCase() : "";
-
-  if (text.includes("ارفع ملف") || text.includes("upload")) return "upload";
-  if (text.includes("وكيل") || text.includes("agent")) return "agent";
-
-  // دعنا نترك الـ Groq Kernel ومحرك الـ Router الخاص به يتعاملان بذكاء مع الكشف عن الحاجة للبحث
-  return "chat";
-}
+  }
