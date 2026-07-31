@@ -1,84 +1,53 @@
 /**
- * api/core/intent/intent_file.js
- * Sovereign File Intent – نوايا الملفات + الصور
- * بدون أي بحث خارجي أو ذكاء زائد
+ * api/core/intent/intent_router.js
+ * Sovereign Intent Router – يربط نوايا الملفات مع نوايا الأفعال
  */
 
-export default function detectFileIntent(text = "") {
-  if (!text || typeof text !== "string") return "chat_mode";
+import detectFileIntent from "./intent_file.js";
+import detectActionIntent from "./intent_actions.js";
+import detectGeneralIntent from "./intent_general.js";
 
-  const lower = text.toLowerCase().trim();
+export default function routeIntent(message = "") {
+  const text = message.toLowerCase().trim();
 
   /* ============================================================
-     🟩 1) نوايا PDF
+     🟩 1) نية الملفات أولاً
      ============================================================ */
-  if (lower.endsWith(".pdf") || lower.includes("pdf")) {
-    if (lower.includes("اقرأ") || lower.includes("قراءة") || lower.includes("read")) {
-      return "pdf_read";
-    }
-    if (lower.includes("حول") || lower.includes("convert") || lower.includes("تحويل")) {
-      return "pdf_convert";
-    }
-    if (lower.includes("لخص") || lower.includes("ملخص") || lower.includes("summary")) {
-      return "pdf_summary";
-    }
-    return "pdf_file";
+  const fileIntent = detectFileIntent(text);
+  if (fileIntent !== "chat_mode") {
+    return {
+      type: "file",
+      intent: fileIntent
+    };
   }
 
   /* ============================================================
-     🟩 2) نوايا Word (docx)
+     🟧 2) نية الأفعال (قراءة، تعديل، تحليل، تلخيص...)
      ============================================================ */
-  if (lower.endsWith(".docx") || lower.includes("docx") || lower.includes("word")) {
-    if (lower.includes("حول") || lower.includes("convert") || lower.includes("تحويل")) {
-      return "word_convert";
-    }
-    if (lower.includes("لخص") || lower.includes("ملخص") || lower.includes("summary")) {
-      return "word_summary";
-    }
-    return "word_file";
+  const actionIntent = detectActionIntent(text);
+  if (actionIntent !== "chat_mode") {
+    return {
+      type: "action",
+      intent: actionIntent
+    };
   }
 
   /* ============================================================
-     🟩 3) نوايا Excel (xlsx / xls)
+     🟥 3) بحث خارجي صريح فقط
      ============================================================ */
-  if (
-    lower.endsWith(".xlsx") ||
-    lower.endsWith(".xls") ||
-    lower.includes("excel") ||
-    lower.includes("جدول")
-  ) {
-    if (lower.includes("اقرأ") || lower.includes("قراءة") || lower.includes("read")) {
-      return "excel_read";
-    }
-    if (lower.includes("عدل") || lower.includes("تعديل") || lower.includes("modify")) {
-      return "excel_modify";
-    }
-    if (lower.includes("لخص") || lower.includes("summary")) {
-      return "excel_summary";
-    }
-    return "excel_file";
+  const generalIntent = detectGeneralIntent(text);
+  if (generalIntent === "external_search") {
+    return {
+      type: "external_search",
+      intent: "external_search"
+    };
   }
 
   /* ============================================================
-     🟩 4) نوايا الصور (png / jpg / jpeg / webp / tiff / avif)
+     🟦 4) افتراضي → دردشة
      ============================================================ */
-  const imageExt = /\.(png|jpg|jpeg|webp|tiff|avif)$/;
-
-  if (imageExt.test(lower)) {
-    if (lower.includes("حول") || lower.includes("convert") || lower.includes("تحويل")) {
-      return "image_convert";
-    }
-    if (lower.includes("ضغط") || lower.includes("compress")) {
-      return "image_compress";
-    }
-    if (lower.includes("base64")) {
-      return "image_base64";
-    }
-    return "image_file";
-  }
-
-  /* ============================================================
-     🟦 5) إذا ما في أي نية ملف → دردشة
-     ============================================================ */
-  return "chat_mode";
-        }
+  return {
+    type: "chat",
+    intent: "chat"
+  };
+}
