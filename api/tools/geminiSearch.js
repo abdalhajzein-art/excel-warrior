@@ -1,6 +1,6 @@
 /**
- * api/tools/geminiSearch.js – Google Gemini Search Grounding Tool
- * أداة البحث المستقلة عبر Google Gemini API مع تفعيل البحث الحي (Google Search Grounding)
+ * api/tools/geminiSearch.js – Google Gemini Search Grounding Tool (Flash 3.5)
+ * النسخة المتوافقة مع المفتاح المجاني + بحث جوجل الحي
  */
 
 export async function searchWithGoogle(query) {
@@ -12,8 +12,8 @@ export async function searchWithGoogle(query) {
 
     if (!query) return "⚠️ عذراً يا مهندس، لم تقم بتحديد استعلام البحث.";
 
-    // استخدام نموذج Gemini يدعم بحث الويب الحي
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // ⭐ Flash 3.5 – النسخة المجانية التي تدعم Google Search Grounding
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
     const payload = {
       contents: [
@@ -26,9 +26,29 @@ export async function searchWithGoogle(query) {
           ]
         }
       ],
+
+      // ⭐ صيغة الأدوات الجديدة
       tools: [
         {
-          googleSearch: {}
+          googleSearch: {
+            enableSearch: true
+          }
+        }
+      ],
+
+      // ⭐ إعدادات التوليد
+      generationConfig: {
+        temperature: 0.4,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 2048
+      },
+
+      // ⭐ إعدادات الأمان
+      safetySettings: [
+        {
+          category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+          threshold: "BLOCK_NONE"
         }
       ]
     };
@@ -49,23 +69,23 @@ export async function searchWithGoogle(query) {
 
     const data = await response.json();
     const candidate = data.candidates?.[0];
-    
+
     if (!candidate || !candidate.content?.parts?.[0]?.text) {
       return "لم يتم العثور على نتائج واضحة عبر بحث جوجل الحقيقي.";
     }
 
     let reply = candidate.content.parts[0].text;
 
-    // استخراج مصادر الـ Grounding Links وإضافتها للرد
+    // ⭐ مصادر البحث الحي
     const groundingMetadata = candidate.groundingMetadata;
     if (groundingMetadata && groundingMetadata.groundingChunks) {
       const sources = groundingMetadata.groundingChunks
         .filter(chunk => chunk.web && chunk.web.uri)
-        .map(chunk => `- [${chunk.web.title || chunk.web.uri}](${chunk.web.uri})`)
+        .map(chunk => `- ${chunk.web.title || chunk.web.uri}: ${chunk.web.uri}`)
         .slice(0, 3);
 
       if (sources.length > 0) {
-        reply += `\n\n**المصادر:**\n` + sources.join("\n");
+        reply += `\n\nالمصادر:\n` + sources.join("\n");
       }
     }
 
