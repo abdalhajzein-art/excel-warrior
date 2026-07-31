@@ -1,5 +1,5 @@
 /**
- * api/core/global_orchestrator.js – Sovereign Global Orchestrator (AI-Driven Decision)
+ * api/core/global_orchestrator.js – Sovereign Global Orchestrator (AI-Driven Decision with Fallback)
  */
 
 import memory from "./memory.js";
@@ -14,17 +14,34 @@ import kernel from "../groqService.js";
 import * as toolsIndex from "../tools/index.js";
 
 /**
- * 🧠 دالة اتخاذ القرار بالذكاء الاصطناعي (بدون كلمات مفتاحية)
+ * 🧠 دالة اتخاذ القرار بالذكاء الاصطناعي (مع كشف الزمن)
  * تحدد إذا كان السؤال يحتاج بحث خارجي أم لا
  */
 async function detectModeWithAI(input) {
   try {
-    // ✅ نطلب من Groq تصنيف السؤال بكلمة واحدة فقط (search أو chat)
-    const decisionPrompt = `صنف السؤال التالي إلى أحد هذين النوعين فقط:
-- اكتب "search" إذا كان السؤال يحتاج إلى معلومات حديثة، أخبار، طقس، إحصاءات، أو أي معلومة خارجية غير معروفة مسبقاً.
-- اكتب "chat" إذا كان السؤال عاماً، تحية، أو دردشة عادية.
+    // ✅ كشف الزمن (أساسي)
+    const timeIndicators = [
+      "اليوم", "أمس", "غداً", "هذا الأسبوع", "الشهر الماضي", "السنة الحالية",
+      "آخر", "أحدث", "جديد", "تحديث", "مستجد", "الحالي", "الآن",
+      "2026", "2025", "هذا العام", "هذا الشهر", "هذه السنة"
+    ];
+    const hasTimeIndicator = timeIndicators.some(word => input.includes(word));
 
-السؤال: "${input}"
+    // ✅ نطلب من Groq تصنيف السؤال
+    const decisionPrompt = `أنت خبير تصنيف. السؤال: "${input}"
+
+🔹 اكتب "search" إذا كان السؤال:
+- يحتوي على إشارة زمنية (اليوم، أمس، آخر، جديد، تحديث، 2026، إلخ).
+- يستفسر عن معلومات حديثة (أخبار، طقس، إصدارات، إحصاءات).
+- يطلب تعريفاً أو شرحاً لمفهوم غير معروف بشكل عام.
+- يحتوي على كلمات مثل: ما هو، من هو، أين، متى، كم، كيف، لماذا.
+
+🔹 اكتب "chat" إذا كان السؤال:
+- مجرد تحية (مرحبا، كيفك).
+- سؤال عام عن الرأي (ما رأيك بـ...).
+- طلب مساعدة تقنية (كيف أعدل ملف؟).
+
+⚠️ **ملاحظة مهمة:** إذا كان السؤال يحتوي على إشارة زمنية، صنفه تلقائياً كـ "search".
 
 إجابتك (كلمة واحدة فقط):`;
 
@@ -34,6 +51,12 @@ async function detectModeWithAI(input) {
     });
 
     const decision = typeof reply === "string" ? reply.trim().toLowerCase() : "chat";
+
+    // ✅ إذا كان هناك إشارة زمنية، نرجح كفة "search"
+    if (hasTimeIndicator && decision.includes("chat")) {
+      console.log(`🧠 [AI Decision] تم تصنيف السؤال كـ "search" بسبب إشارة زمنية: "${input}"`);
+      return "search";
+    }
 
     if (decision.includes("search")) {
       console.log(`🧠 [AI Decision] تم تصنيف السؤال كـ "بحث": "${input}"`);
@@ -45,9 +68,10 @@ async function detectModeWithAI(input) {
 
   } catch (err) {
     console.error("🔥 خطأ في AI Decision، التراجع للـ Fallback:", err);
-    // Fallback: إذا فشل Groq، استخدم كلمات مفتاحية بسيطة
+    // Fallback: كلمات مفتاحية بسيطة
     const text = typeof input === "string" ? input.toLowerCase() : "";
-    if (/طقس|weather|بحث|ابحث|أخبار|news|عدد سكان|إحصاء|من هو|ما هو/.test(text)) {
+    if (/طقس|weather|بحث|ابحث|أخبار|news|عدد سكان|إحصاء|من هو|ما هو|آخر إصدار|إصدارات|ميزات جديدة|تحديث|2026|اليوم|أمس|غداً|جديد|أحدث/.test(text)) {
+      console.log(`🔄 [Fallback] تم تصنيف السؤال كـ "بحث" عبر الكلمات المفتاحية.`);
       return "search";
     }
     return "chat";
@@ -57,7 +81,7 @@ async function detectModeWithAI(input) {
 export default async function globalOrchestrator(sessionId, input, ctx = {}) {
   const session = memory.getSession(sessionId);
 
-  // ✅ استخدم الذكاء الاصطناعي لتحديد النية (بدون كلمات مفتاحية)
+  // ✅ استخدم الذكاء الاصطناعي لتحديد النية (مع كشف الزمن)
   const mode = ctx.mode || await detectModeWithAI(input);
 
   let result;
@@ -126,4 +150,4 @@ export default async function globalOrchestrator(sessionId, input, ctx = {}) {
     filePath: result?.filePath ?? null,
     raw: result
   };
-  }
+      }
