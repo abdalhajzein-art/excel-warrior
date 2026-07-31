@@ -1,4 +1,6 @@
-// api/core/kernel.js – Sovereign Kernel (نسخة مستقرة مع دمج الهوية والسيادة)
+/**
+ * api/core/kernel.js – Sovereign Kernel (النسخة المتوافقة مع groqService الجديد)
+ */
 
 import groqService from "../groqService.js";
 import memory from "./memory.js";
@@ -12,16 +14,10 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
   const session = memory.getSession(sessionId);
 
-  // التاريخ + السياق الجغرافي
+  // التاريخ
   let history = ctx.history || session.history || [];
-  const locationContext = ctx.locationContext || "";
-
-  // حماية من تضخم التاريخ
-  if (Array.isArray(history)) {
-    history = history.slice(-50);
-  } else {
-    history = [];
-  }
+  if (!Array.isArray(history)) history = [];
+  history = history.slice(-20);
 
   // دمج الذاكرة السيادية
   const fusedMemory = fusionMemory.apply(sessionId);
@@ -29,34 +25,37 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   // استخراج النية
   const intent = routeIntent(message);
 
-  // قفل الأدوات داخل النموذج (سيادة الروابط والأدوات)
-  const SYSTEM_LOCK = `
-أنت ممنوع تماماً من استخدام أي أدوات داخلية مثل browser.search أو أي tool.
-لا تستخدم أي وظيفة بحث أو استدعاء أدوات.
-إذا احتجت معلومات خارجية، سيتم تزويدك بها حصراً من طبقة البحث السيادية (searchAgent).
-ممنوع توليد أو تخمين روابط من عندك.
-استخدم فقط المعلومات التي يقدمها لك النظام.
-`;
-
-  // بناء system prompt النهائي (هوية الأثير + القفل السيادي)
-  const FINAL_SYSTEM_PROMPT = `
-${SYSTEM_LOCK}
-
+  // بناء الـ prompt النهائي
+  const prompt = `
 ${systemPrompt()}
+
+الرسالة:
+"${message}"
+
+النية:
+${JSON.stringify(intent, null, 2)}
+
+السياق:
+${JSON.stringify(fusedMemory, null, 2)}
+
+التاريخ:
+${history.map(h => `${h.role}: ${h.content}`).join("\n")}
+
+مهمتك:
+- الرد دائماً برد لغوي واضح
+- ممنوع ترجع نص فاضي
+- ممنوع تتجاهل
+- ممنوع تسكت
+- إذا الرسالة قصيرة → رد طبيعي
+- إذا الرسالة سؤال → جاوب
+- إذا الرسالة نقاش → ناقش
+- اذا ما انطلب منك تفاصيل اكتفي باختصار وشرح وافي بنفس الوقت
 `.trim();
 
   // إرسال الطلب للنموذج
-  const reply = await groqService(
-    `${FINAL_SYSTEM_PROMPT}\n\n${message}`,
-    {
-      history,
-      locationContext,
-      intent,
-      fusedMemory
-    }
-  );
+  const reply = await groqService(prompt);
 
-  // حفظ التاريخ بصيغة موحّدة
+  // حفظ التاريخ
   memory.appendChatHistory(sessionId, { role: "user", content: message });
   memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
