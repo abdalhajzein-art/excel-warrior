@@ -1,103 +1,84 @@
 /**
- * api/core/intent/intent_router.js
- * Sovereign Intent Router – يربط نوايا الملفات مع النوايا العامة
+ * api/core/intent/intent_file.js
+ * Sovereign File Intent – نوايا الملفات + الصور
+ * بدون أي بحث خارجي أو ذكاء زائد
  */
 
-import detectFileIntent from "./intent_file.js";
-import detectGeneralIntent from "./intent_general.js";
+export default function detectFileIntent(text = "") {
+  if (!text || typeof text !== "string") return "chat_mode";
 
-export default function routeIntent(message = "") {
-  const text = message.toLowerCase().trim();
+  const lower = text.toLowerCase().trim();
 
-  // نية الملفات أولاً (إذا كانت الرسالة تتعلق بملف)
-  const fileIntent = detectFileIntent(text);
-
-  // إذا كانت نية ملف → نرجّعها مباشرة
-  if (fileIntent !== "chat_mode") {
-    return {
-      type: "file",
-      intent: fileIntent
-    };
+  /* ============================================================
+     🟩 1) نوايا PDF
+     ============================================================ */
+  if (lower.endsWith(".pdf") || lower.includes("pdf")) {
+    if (lower.includes("اقرأ") || lower.includes("قراءة") || lower.includes("read")) {
+      return "pdf_read";
+    }
+    if (lower.includes("حول") || lower.includes("convert") || lower.includes("تحويل")) {
+      return "pdf_convert";
+    }
+    if (lower.includes("لخص") || lower.includes("ملخص") || lower.includes("summary")) {
+      return "pdf_summary";
+    }
+    return "pdf_file";
   }
 
-  // نية عامة (ذكاء عام)
-  const generalIntent = detectGeneralIntent(text);
-
-  // إذا كانت نية بحث خارجي
-  if (generalIntent === "general_search") {
-    return {
-      type: "search",
-      intent: "general_search"
-    };
+  /* ============================================================
+     🟩 2) نوايا Word (docx)
+     ============================================================ */
+  if (lower.endsWith(".docx") || lower.includes("docx") || lower.includes("word")) {
+    if (lower.includes("حول") || lower.includes("convert") || lower.includes("تحويل")) {
+      return "word_convert";
+    }
+    if (lower.includes("لخص") || lower.includes("ملخص") || lower.includes("summary")) {
+      return "word_summary";
+    }
+    return "word_file";
   }
 
-  // إذا كانت نية طقس
-  if (generalIntent === "weather_query") {
-    return {
-      type: "search",
-      intent: "weather_query"
-    };
+  /* ============================================================
+     🟩 3) نوايا Excel (xlsx / xls)
+     ============================================================ */
+  if (
+    lower.endsWith(".xlsx") ||
+    lower.endsWith(".xls") ||
+    lower.includes("excel") ||
+    lower.includes("جدول")
+  ) {
+    if (lower.includes("اقرأ") || lower.includes("قراءة") || lower.includes("read")) {
+      return "excel_read";
+    }
+    if (lower.includes("عدل") || lower.includes("تعديل") || lower.includes("modify")) {
+      return "excel_modify";
+    }
+    if (lower.includes("لخص") || lower.includes("summary")) {
+      return "excel_summary";
+    }
+    return "excel_file";
   }
 
-  // إذا كانت نية شخصية
-  if (generalIntent === "person_query") {
-    return {
-      type: "search",
-      intent: "person_query"
-    };
+  /* ============================================================
+     🟩 4) نوايا الصور (png / jpg / jpeg / webp / tiff / avif)
+     ============================================================ */
+  const imageExt = /\.(png|jpg|jpeg|webp|tiff|avif)$/;
+
+  if (imageExt.test(lower)) {
+    if (lower.includes("حول") || lower.includes("convert") || lower.includes("تحويل")) {
+      return "image_convert";
+    }
+    if (lower.includes("ضغط") || lower.includes("compress")) {
+      return "image_compress";
+    }
+    if (lower.includes("base64")) {
+      return "image_base64";
+    }
+    return "image_file";
   }
 
-  // إذا كانت نية مكان
-  if (generalIntent === "location_query") {
-    return {
-      type: "search",
-      intent: "location_query"
-    };
-  }
-
-  // إذا كانت نية تعريف
-  if (generalIntent === "definition_query") {
-    return {
-      type: "search",
-      intent: "definition_query"
-    };
-  }
-
-  // إذا كانت نية أخبار
-  if (generalIntent === "news_query") {
-    return {
-      type: "search",
-      intent: "news_query"
-    };
-  }
-
-  // إذا كانت نية مقارنة
-  if (generalIntent === "compare_query") {
-    return {
-      type: "search",
-      intent: "compare_query"
-    };
-  }
-
-  // إذا كانت نية توصيات
-  if (generalIntent === "recommendation_query") {
-    return {
-      type: "search",
-      intent: "recommendation_query"
-    };
-  }
-
-  // إذا كانت نية عامة غير بحث
-  if (generalIntent !== "chat") {
-    return {
-      type: "general",
-      intent: generalIntent
-    };
-  }
-
-  // إذا ما في أي نية واضحة → دردشة
-  return {
-    type: "chat",
-    intent: "chat"
-  };
-}
+  /* ============================================================
+     🟦 5) إذا ما في أي نية ملف → دردشة
+     ============================================================ */
+  return "chat_mode";
+        }
