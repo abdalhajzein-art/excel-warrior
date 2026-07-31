@@ -1,6 +1,6 @@
 /**
  * api/groqService.js – Clean Sovereign Gateway
- * بوابة خفيفة ونظيفة لتنفيذ طلبات Groq مع دعم البحث الحي السيادي المستقل
+ * بوابة خفيفة ونظيفة لتنفيذ طلبات Groq مع دعم البحث الحي السيادي المستقل ومقاومة النسخ الأعمى
  */
 
 import { Groq } from "groq-sdk";
@@ -14,7 +14,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 async function executeLiveSearch(query) {
   try {
     if (!query) return "⚠️ لم يتم تحديد استعلام البحث.";
-    // استدعاء محرك البحث السيادي المستقل (بدون مفاتيح وبدون أخطاء 429)
+    // استدعاء محرك البحث السيادي المستقل
     return await searchWithGoogle(query);
   } catch (err) {
     console.error("🔥 خطأ في تنفيذ البحث السيادي:", err);
@@ -33,9 +33,9 @@ export default async function kernel(prompt, extra = {}) {
       messages.push({ role: "system", content: extra.systemPrompt });
     }
 
-    // 2. تحليل النية للبحث الذكي إذا لزم الأمر
+    // 2. تحليل النية للبحث الذكي إذا لزم الأمر (Router)
     if (!needsSearch && extra.enableIntentRouter !== false) {
-      const routerPrompt = `أنت محلل نوايا هندسي مجرد. حلل رسالة المستخدم الأخيرة. أرجع needs_search: true فقط إذا كانت الإجابة تتطلب معلومات متغيرة زمنياً (طقس، أسعار، أخبار). أرجع JSON حصراً: {"needs_search": true/false, "search_query": "..."}`;
+      const routerPrompt = `أنت محلل نوايا هندسي مجرد. حلل رسالة المستخدم الأخيرة. أرجع needs_search: true فقط إذا كانت الإجابة تتطلب معلومات متغيرة زمنياً (طقس، أسعار، أخبار، معلومات حديثة). أرجع JSON حصراً: {"needs_search": true/false, "search_query": "..."}`;
       
       try {
         const routerMessages = [{ role: "system", content: routerPrompt }];
@@ -62,13 +62,13 @@ export default async function kernel(prompt, extra = {}) {
       }
     }
 
-    // 3. تنفيذ البحث الحي وحقنه إن تطلب الأمر
+    // 3. تنفيذ البحث الحي وحقنه بالتعويذة السحرية (Anti-Parroting)
     if (needsSearch) {
       const searchResult = await executeLiveSearch(searchQuery);
-      if (searchResult) {
+      if (searchResult && searchResult !== "لا توجد معلومات حديثة واضحة.") {
         messages.push({
           role: "system",
-          content: `[بيانات حية مسترجعة من محرك البحث السيادي]:\n${searchResult}`
+          content: `=== معلومات بحث حية لدعم الإجابة ===\n${searchResult}\n===================================\n\n[تعليمات سيادية صارمة يا أثير]:\nعندما تقرأ نتائج البحث أعلاه، لا تقم أبداً بنسخها حرفياً. مهمتك هي قراءة المعلومات وهضمها، ثم الإجابة على سؤال المستخدم بأسلوبك الطبيعي والمباشر كزميل ذكي ومهندس. اعتمد على معرفتك الأساسية بالإضافة إلى السياق المقدم. قدم الإجابة بإيجاز ووضوح، دون إدراج روابط خام، ودون أن تقول عبارات مثل "بناءً على نتائج البحث" أو "حسب ما وجدت". أجب فوراً وكأن المعلومات نابعة من عقلك المباشر.`
         });
       }
     }
@@ -101,4 +101,3 @@ export default async function kernel(prompt, extra = {}) {
     throw error;
   }
 }
-
