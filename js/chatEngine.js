@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية (محصنة، نظيفة، مع تفعيل الرادار الجغرافي)
+ * js/chatEngine.js – النسخة السيادية النهائية (محصنة ضد سباق الزمن، مع رادار جغرافي فوري)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -9,24 +9,38 @@ import { streamTextEffect, showTypingIndicator, hideTypingIndicator, showSearchI
 let isGenerating = false;
 let currentAbortController = null;
 
-// ⭐ متغير تخزين إحداثيات الموقع الجغرافي للمستخدم
+// ⭐ نظام إدارة الموقع الجغرافي مع Promise لضمان عدم ضياع الإحداثيات
 let userLocationContext = "";
+let locationPromise = null;
 
-// 🌍 التقاط الموقع الجغرافي تلقائياً عند بدء التشغيل
-if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
-            userLocationContext = `[معلومات الموقع الجغرافي الحالي للمستخدم - إحداثيات: خط عرض ${lat}, خط طول ${lon}]`;
-            console.log("📍 تم التقاط الإحداثيات الجغرافية بنجاح:", lat, lon);
-        },
-        (error) => {
-            console.log("⚠️ تعذر جلب الموقع الجغرافي تلقائياً:", error.message);
-        },
-        { timeout: 10000, maximumAge: 60000 }
-    );
+function fetchUserLocation() {
+    if (locationPromise) return locationPromise;
+    
+    locationPromise = new Promise((resolve) => {
+        if (!navigator.geolocation) {
+            resolve("");
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                userLocationContext = `[معلومات الموقع الجغرافي الحالي للمستخدم - إحداثيات: خط عرض ${lat}, خط طول ${lon}]`;
+                console.log("📍 تم التقاط الإحداثيات الجغرافية بنجاح:", lat, lon);
+                resolve(userLocationContext);
+            },
+            (error) => {
+                console.log("⚠️ تعذر جلب الموقع الجغرافي:", error.message);
+                resolve("");
+            },
+            { timeout: 8000, maximumAge: 60000 }
+        );
+    });
+    return locationPromise;
 }
+
+// 🌍 بدء الجلب فور تحميل الملف
+fetchUserLocation();
 
 export function getIsGenerating() {
     return isGenerating;
@@ -211,13 +225,15 @@ export async function handleSendMessage(renderCallbacks) {
             };
         });
 
-        // ⭐ إرسال سياق الموقع الجغرافي ضمن الطلب
+        // 🌍 ضمان انتهاء جلب الموقع قبل إرسال الطلب للخادم (منع سباق الزمن)
+        const activeLocationContext = await fetchUserLocation();
+
         const requestPayload = { 
             message: displayMessage,
             history: formattedHistoryForBackend,
             fileResult: processedFileResult,
             sessionId: sessionId,
-            locationContext: userLocationContext 
+            locationContext: activeLocationContext 
         };
 
         const response = await fetch('/api/chat', {
