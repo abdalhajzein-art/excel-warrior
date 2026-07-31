@@ -1,6 +1,6 @@
 /**
  * api/core/conversation_orchestrator.js
- * Sovereign Final Heavy Orchestrator – النسخة المحصنة ضد التعليق والصمت اللانهائي
+ * Sovereign Final Heavy Orchestrator – (محدث لاستقبال وتمرير السياق الجغرافي)
  */
 
 import memory from "./memory.js";
@@ -80,6 +80,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
     const session = memory.getSession(sessionId);
 
     const fileResult = extraCtx.fileResult || null;
+    const locationContext = extraCtx.locationContext || ""; // ⭐ التقاط السياق الجغرافي القادم من الواجهة
 
     /* ============================================================
        🟧 الملف القادم من /api/upload
@@ -171,8 +172,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
     console.log(`🤖 [Kernel Start] إرسال الطلب لنموذج Groq...`);
 
-    // 🛡️ حماية أمان قسرية ضد تعليق نموذج الذكاء الاصطناعي (أقصى انتظار 15 ثانية)
-    const kernelPromise = kernel(enhancedMessage, { history });
+    // 🛡️ تمرير السياق الجغرافي (locationContext) إلى دالة النواة
+    const kernelPromise = kernel(enhancedMessage, { history, locationContext });
     const timeoutPromise = new Promise((_, reject) => 
       setTimeout(() => reject(new Error('Timeout: تجاوز زمن انتظار استجابة نموذج الذكاء الاصطناعي (15s)')), 15000)
     );
