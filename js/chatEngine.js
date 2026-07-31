@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية (محصنة ونظيفة بدون تضارب أحداث)
+ * js/chatEngine.js – النسخة السيادية النهائية (محصنة، نظيفة، مع تفعيل الرادار الجغرافي)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -8,6 +8,25 @@ import { streamTextEffect, showTypingIndicator, hideTypingIndicator, showSearchI
 
 let isGenerating = false;
 let currentAbortController = null;
+
+// ⭐ متغير تخزين إحداثيات الموقع الجغرافي للمستخدم
+let userLocationContext = "";
+
+// 🌍 التقاط الموقع الجغرافي تلقائياً عند بدء التشغيل
+if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            userLocationContext = `[معلومات الموقع الجغرافي الحالي للمستخدم - إحداثيات: خط عرض ${lat}, خط طول ${lon}]`;
+            console.log("📍 تم التقاط الإحداثيات الجغرافية بنجاح:", lat, lon);
+        },
+        (error) => {
+            console.log("⚠️ تعذر جلب الموقع الجغرافي تلقائياً:", error.message);
+        },
+        { timeout: 10000, maximumAge: 60000 }
+    );
+}
 
 export function getIsGenerating() {
     return isGenerating;
@@ -192,11 +211,13 @@ export async function handleSendMessage(renderCallbacks) {
             };
         });
 
+        // ⭐ إرسال سياق الموقع الجغرافي ضمن الطلب
         const requestPayload = { 
             message: displayMessage,
             history: formattedHistoryForBackend,
             fileResult: processedFileResult,
-            sessionId: sessionId
+            sessionId: sessionId,
+            locationContext: userLocationContext 
         };
 
         const response = await fetch('/api/chat', {
