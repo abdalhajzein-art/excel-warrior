@@ -1,15 +1,15 @@
 /**
  * api/tools/geminiSearch.js – Alatheer Sovereign Meta-Search Engine
- * محرك الأثير التجميعي: يبحث في Google و Bing وغيرها ويعيد النتائج بصيغة JSON نظيفة بدون حظر
+ * تحديث: معالجة الـ URL Encoding الاحترافي + توجيه النموذج للصياغة الطبيعية
  */
 
 export async function searchWithGoogle(query) {
   try {
-    if (!query) return "⚠️ عذراً يا مهندس، لم تقم بتحديد استعلام البحث.";
+    if (!query) return "⚠️ عذراً، لم يتم تحديد استعلام.";
 
-    console.log(`🔍 [Alatheer Search] جاري البحث الاحترافي عن: "${query}"`);
+    const cleanQuery = query.trim();
+    console.log(`🔍 [Alatheer Search] جاري البحث عن: "${cleanQuery}"`);
 
-    // قائمة بسيرفرات SearXNG العامة والمجانية (نظام Fallback لضمان الاستقرار 100%)
     const searchEngines = [
       "https://searx.be",
       "https://searx.ro",
@@ -19,54 +19,58 @@ export async function searchWithGoogle(query) {
 
     let results = [];
 
-    // المحاولة عبر السيرفرات المتاحة حتى ننجح
+    // الطريقة المعيارية الآمنة لمنع قص الجمل عند المسافات
+    const params = new URLSearchParams({
+      q: cleanQuery,
+      format: 'json',
+      language: 'ar'
+    });
+
     for (const baseUrl of searchEngines) {
       try {
-        const url = `${baseUrl}/search?q=${encodeURIComponent(query)}&format=json&language=ar`;
+        const url = `${baseUrl}/search?${params.toString()}`;
         
         const response = await fetch(url, {
           method: 'GET',
           headers: {
             "User-Agent": "Alatheer-AI-Agent/1.0"
           },
-          // تحديد وقت أقصى للرد (Timeout) حتى لا يعلق السيرفر
           signal: AbortSignal.timeout(5000) 
         });
 
-        if (!response.ok) continue; // إذا كان السيرفر مشغولاً، جرب الذي بعده
+        if (!response.ok) continue;
 
         const data = await response.json();
         
         if (data.results && data.results.length > 0) {
           results = data.results;
-          console.log(`✅ [Alatheer Search] تم جلب النتائج بنجاح من: ${baseUrl}`);
-          break; // نجحنا! نخرج من حلقة المحاولات
+          console.log(`✅ [Alatheer Search] نجح الجلب من: ${baseUrl}`);
+          break;
         }
       } catch (err) {
-        // تجاهل خطأ السيرفر الحالي والانتقال للذي يليه بصمت
-        console.log(`⚠️ [Alatheer Search] تجاوز السيرفر ${baseUrl}`);
+        console.log(`⚠️ [Alatheer Search] تجاوز السيرفر: ${baseUrl}`);
       }
     }
 
     if (results.length === 0) {
-      return "لم يتم العثور على نتائج حديثة أو أن جميع محركات البحث مشغولة حالياً.";
+      return "لم يتم العثور على نتائج حديثة، جرب صياغة سؤالك بطريقة أخرى.";
     }
 
-    // تنسيق النتائج ليقرأها Groq ويستخرج منها الإجابة بذكاء
-    let formattedOutput = `نتائج البحث المباشرة من الويب عن (${query}):\n\n`;
+    let formattedOutput = `نتائج البحث عن (${cleanQuery}):\n\n`;
     
-    // نأخذ أفضل 5 نتائج فقط لتوفير التوكنز وإعطاء زبدة الموضوع
     results.slice(0, 5).forEach((item, index) => {
-      // تفادي النتائج الفارغة
-      const snippet = item.content || item.snippet || "لا يوجد وصف إضافي";
-      formattedOutput += `${index + 1}. **${item.title}**\n   - المصدر: ${item.url}\n   - التفاصيل: ${snippet}\n\n`;
+      const snippet = item.content || item.snippet || "لا توجد تفاصيل";
+      formattedOutput += `${index + 1}. **${item.title}**\n   - التفاصيل: ${snippet}\n\n`;
     });
+
+    // ✨ التوجيه السحري: نجبر الـ Agent على تحليل البيانات وعدم نسخها كما هي
+    formattedOutput += `\n\n[System Directive to LLM: DO NOT output these raw search results to the user. Read them, extract the relevant information, and write a natural, conversational response addressing the user's query directly.]`;
 
     return formattedOutput.trim();
 
   } catch (err) {
     console.error("🔥 خطأ في محرك بحث الأثير:", err);
-    return "⚠️ حدث خطأ برمجي أثناء تنفيذ البحث الاحترافي.";
+    return "⚠️ حدث خطأ برمجي أثناء البحث.";
   }
 }
 
