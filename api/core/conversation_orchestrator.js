@@ -1,14 +1,16 @@
 /**
  * api/core/conversation_orchestrator.js
- * Sovereign Final Heavy Orchestrator – ملفات + دردشة مع سياق جغرافي
+ * Sovereign Orchestrator – ملفات + دردشة + نوايا + ذاكرة + سياق
  */
 
 import memory from "./memory.js";
-import detectIntent from "./intent/intent_file.js";
-import kernel from "../groqService.js";
+import detectFileIntent from "./intent/intent_file.js";
+import routeIntent from "./intent/intent_router.js";
+import kernel from "./kernel.js"; // ← الكيرنل الحقيقي
+import fusionMemory from "./fusion_memory.js";
 
 /* ============================================================
-   🟩 المحركات السيادية للملفات
+   🟩 محركات الملفات
    ============================================================ */
 import { excelRead, excelModify } from "../tools/excel.js";
 import { pdfRead, pdfConvert } from "../tools/pdf.js";
@@ -19,9 +21,9 @@ import { libreConvert } from "../tools/index.js";
 
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
   try {
-    console.log(`📥 [Orchestrator] استلام رسالة للجلسة [${sessionId}]: "${message}"`);
-    const session = memory.getSession(sessionId);
+    console.log(`📥 [Orchestrator] جلسة ${sessionId}: "${message}"`);
 
+    const session = memory.getSession(sessionId);
     const fileResult = extraCtx.fileResult || null;
     const locationContext = extraCtx.locationContext || "";
 
@@ -29,9 +31,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
        🟧 إذا في ملف → معالجة ملفات فقط
        ============================================================ */
     if (fileResult && fileResult.fileName) {
-      console.log(`📁 [File Processing] معالجة ملف: ${fileResult.fileName}`);
       const fileName = fileResult.fileName.toLowerCase();
-      const intent = detectIntent(message);
+      const intent = detectFileIntent(message);
 
       let result = null;
 
@@ -45,7 +46,9 @@ export default async function conversationOrchestrator(sessionId, message, extra
           const analysis = await pdfRead(fileResult.filePath);
           result = buildLocalDiscussionResult(fileResult, analysis);
         }
-      } else if (fileName.endsWith(".docx")) {
+      }
+
+      else if (fileName.endsWith(".docx")) {
         if (intent === "convert_file") result = await libreConvert(fileResult.filePath, "pdf");
         else if (intent === "summarize_file") {
           const content = await pdfRead(fileResult.filePath);
@@ -54,7 +57,9 @@ export default async function conversationOrchestrator(sessionId, message, extra
           const analysis = await pdfRead(fileResult.filePath);
           result = buildLocalDiscussionResult(fileResult, analysis);
         }
-      } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+      }
+
+      else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
         if (intent === "read_file") result = await excelRead(fileResult.filePath);
         else if (intent === "modify_file") {
           const fn = (row) => row;
@@ -66,7 +71,9 @@ export default async function conversationOrchestrator(sessionId, message, extra
           const analysis = await excelRead(fileResult.filePath);
           result = buildLocalDiscussionResult(fileResult, analysis);
         }
-      } else if (fileName.match(/\.(png|jpg|jpeg|webp|tiff|avif)$/)) {
+      }
+
+      else if (fileName.match(/\.(png|jpg|jpeg|webp|tiff|avif)$/)) {
         if (intent === "convert_file") {
           result = await imageConvert(fileResult.filePath, "png");
         } else {
@@ -77,9 +84,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
             fileName: null
           };
         }
-      } else {
-        const analysis = await pdfRead(fileResult.filePath);
-        result = buildLocalDiscussionResult(fileResult, analysis);
       }
 
       memory.appendSovereignHistory(sessionId, {
@@ -91,40 +95,36 @@ export default async function conversationOrchestrator(sessionId, message, extra
     }
 
     /* ============================================================
-       🟦 إذا ما في ملف → دردشة فقط عبر kernel
+       🟦 إذا ما في ملف → دردشة عبر الكيرنل السيادي
        ============================================================ */
     const history = memory.getChatHistory(sessionId, 12);
+    const fusedMemory = fusionMemory.apply(sessionId);
+    const intent = routeIntent(message);
 
     memory.appendChatHistory(sessionId, { role: "user", content: message });
 
-    console.log(`🤖 [Kernel Start] إرسال الطلب لنموذج Groq...`);
+    const reply = await kernel(sessionId, message, {
+      history,
+      locationContext,
+      intent,
+      fusedMemory
+    });
 
-    const kernelPromise = kernel(message, { history, locationContext });
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout: تجاوز زمن انتظار استجابة نموذج الذكاء الاصطناعي (15s)")), 15000)
-    );
-
-    const output = await Promise.race([kernelPromise, timeoutPromise]);
-    const final = typeof output === "string" ? output : JSON.stringify(output);
-
-    console.log(`✅ [Kernel Success] تم استلام رد النموذج بنجاح.`);
-    memory.appendChatHistory(sessionId, { role: "assistant", content: final });
+    memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
     return {
       ok: true,
-      reply: final,
+      reply,
       fileBase64: null,
       fileName: null
     };
 
   } catch (err) {
-    console.error("🔥 [Orchestrator Fatal Error]:", err);
+    console.error("🔥 [Orchestrator Error]:", err);
     return {
       ok: false,
-      reply: `⚠️ حدث خطأ أثناء المعالجة: ${err.message}`,
-      error: err.message,
-      fileBase64: null,
-      fileName: null
+      reply: `⚠️ خطأ أثناء المعالجة: ${err.message}`,
+      error: err.message
     };
   }
 }
@@ -141,26 +141,20 @@ function buildLocalSummaryResult(content) {
     const preview = text.slice(0, 500);
     return {
       ok: true,
-      reply: `ملخص محلي:\n\n${preview}${text.length > 500 ? "..." : ""}`,
-      fileBase64: null,
-      fileName: null
+      reply: `ملخص محلي:\n\n${preview}${text.length > 500 ? "..." : ""}`
     };
   }
 
   if (data && Array.isArray(data.preview)) {
     return {
       ok: true,
-      reply: `ملخص جدول Excel:\n- صفوف: ${data.rows}\n- ورقة: ${data.sheetName}`,
-      fileBase64: null,
-      fileName: null
+      reply: `ملخص جدول Excel:\n- صفوف: ${data.rows}\n- ورقة: ${data.sheetName}`
     };
   }
 
   return {
     ok: true,
-    reply: reply || "لا يوجد محتوى قابل للتلخيص.",
-    fileBase64: null,
-    fileName: null
+    reply: reply || "لا يوجد محتوى قابل للتلخيص."
   };
 }
 
@@ -181,12 +175,10 @@ function buildLocalDiscussionResult(file, analysis) {
   if (data.hasImages !== undefined) parts.push(`- يحتوي صور: ${data.hasImages ? "نعم" : "لا"}`);
   if (data.hasTables !== undefined) parts.push(`- يحتوي جداول: ${data.hasTables ? "نعم" : "لا"}`);
 
-  parts.push("\nهذا النقاش محلي بالكامل بدون ذكاء لغوي.");
+  parts.push("\nهذا نقاش محلي بدون ذكاء لغوي.");
 
   return {
     ok: true,
-    reply: parts.join("\n"),
-    fileBase64: null,
-    fileName: null
+    reply: parts.join("\n")
   };
-        }
+            }
