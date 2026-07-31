@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية مع دعم البحث الحي والربط التلقائي للأحداث
+ * js/chatEngine.js – النسخة السيادية النهائية (محصنة ضد الانهيار الصامت واستدعاءات الجلسات الفارغة)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -153,7 +153,15 @@ export async function handleSendMessage(renderCallbacks) {
             ? displayMessage.substring(0, 20) + '...'
             : displayMessage || (fileDisplayName ? 'ملف مرفق' : 'جلسة جديدة');
         saveSessions(sessions);
-        renderSessionsList(renderCallbacks);
+        
+        // 🛡️ حماية آمنة كلياً ضد الـ Callback الفارغ لمنع الانهيار الصامت
+        try {
+            if (typeof renderSessionsList === 'function') {
+                renderSessionsList(renderCallbacks);
+            }
+        } catch (err) {
+            console.warn("⚠️ Non-critical: renderSessionsList skipped or failed:", err);
+        }
     }
 
     userInput.value = '';
