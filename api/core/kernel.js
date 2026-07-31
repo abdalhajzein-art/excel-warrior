@@ -1,5 +1,4 @@
-// api/core/kernel.js – Sovereign Kernel (Final Minimal Edition)
-// العقل السيادي للدردشة فقط – بدون أي طبقات قديمة
+// api/core/kernel.js – Sovereign Kernel (محدث لتمرير السياق الجغرافي)
 
 import groqService from "../groqService.js";
 import memory from "./memory.js";
@@ -7,18 +6,19 @@ import memory from "./memory.js";
 export default async function kernel(sessionId, message, ctx = {}) {
   const session = memory.getSession(sessionId);
 
-  // حماية الرسالة
   if (!message || typeof message !== "string" || !message.trim()) {
     return "ما استلمت رسالة مفهومة.";
   }
 
-  // التاريخ
   const history = ctx.history || session.history || [];
+  const locationContext = ctx.locationContext || ""; // ⭐ التقاط السياق الجغرافي القادم
 
-  // استدعاء الذكاء اللغوي فقط للدردشة
-  const reply = await groqService(message, { history });
+  // ⭐ تمرير locationContext إلى groqService
+  const reply = await groqService(message, { 
+    history, 
+    locationContext 
+  });
 
-  // تحديث الذاكرة
   memory.appendHistory(sessionId, { sender: "user", text: message });
   memory.appendHistory(sessionId, { sender: "ai", text: reply });
 
