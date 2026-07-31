@@ -94,17 +94,14 @@ export default {
     const session = this.getSession(id);
     const history = session.chat.history;
     
-    // إذا كان التاريخ أقل من أو يساوي الحد المطلوب، أعده كاملاً
     if (history.length <= max) return history;
 
-    // استراتيجية التثبيت (Anchoring): الاحتفاظ بأول رسالتين (السياق والبداية) + آخر الرسائل الحية
     const anchorCount = 2; 
     const anchors = history.slice(0, anchorCount);
     
     const recentCount = max - anchorCount;
     const tail = history.slice(-recentCount);
 
-    // دمج البداية مع النهاية الحية بدون تكرار
     const combined = [...anchors];
     tail.forEach(item => {
       if (!combined.includes(item)) {
@@ -116,6 +113,26 @@ export default {
   },
 
   /* ============================================================
+     🟪 ذاكرة موحّدة – appendHistory (لـ decision_kernel)
+     ============================================================ */
+  appendHistory(id, entry) {
+    const session = this.getSession(id);
+
+    const content = entry.content || entry.text || entry.message || "";
+    const role = entry.sender || entry.role || "user";
+
+    session.chat.history.push({
+      role,
+      content: typeof content === "string" ? content : JSON.stringify(content),
+      time: Date.now()
+    });
+
+    if (session.chat.history.length > 80) {
+      session.chat.history = session.chat.history.slice(-40);
+    }
+  },
+
+  /* ============================================================
      🟧 تحديث النية
      ============================================================ */
   updateIntent(id, intent) {
@@ -123,4 +140,3 @@ export default {
     session.meta.lastIntent = intent;
   }
 };
-
