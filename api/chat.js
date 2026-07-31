@@ -1,5 +1,5 @@
 /**
- * api/chat.js – Sovereign Chat Layer (نسخة سيادية كاملة بعد دمج الملفات)
+ * api/chat.js – Sovereign Chat Layer
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -12,8 +12,8 @@ export default async function handler(req, res) {
 
     const userContent = (body.message || body.prompt || "").trim();
     const sessionKey = body.sessionId || "default";
-    const fileResult = body.fileResult || null;   // ← الملف المعالج من /api/upload
-    const history = body.history || [];           // ← تاريخ الجلسة
+    const fileResult = body.fileResult || null;
+    const history = body.history || [];
 
     if (!userContent && !fileResult) {
       return res.status(400).json({
@@ -21,18 +21,10 @@ export default async function handler(req, res) {
       });
     }
 
-    // ============================================================
-    // 🧠 استدعاء المنسّق السيادي مع دعم الملفات
-    // ============================================================
-
     const output = await conversationOrchestrator(sessionKey, userContent, {
       fileResult,
       history
     });
-
-    // ============================================================
-    // 🟦 تطبيع الرد
-    // ============================================================
 
     let reply = "تم إنجاز طلبك بنجاح!";
     let fileBase64 = null;
