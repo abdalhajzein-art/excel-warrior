@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية (محصنة ضد سباق الزمن، مع رادار جغرافي فوري)
+ * js/chatEngine.js – النسخة السيادية النهائية (بدون أي أذونات متصفح مزعجة)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -8,39 +8,6 @@ import { streamTextEffect, showTypingIndicator, hideTypingIndicator, showSearchI
 
 let isGenerating = false;
 let currentAbortController = null;
-
-// ⭐ نظام إدارة الموقع الجغرافي مع Promise لضمان عدم ضياع الإحداثيات
-let userLocationContext = "";
-let locationPromise = null;
-
-function fetchUserLocation() {
-    if (locationPromise) return locationPromise;
-    
-    locationPromise = new Promise((resolve) => {
-        if (!navigator.geolocation) {
-            resolve("");
-            return;
-        }
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const lat = position.coords.latitude;
-                const lon = position.coords.longitude;
-                userLocationContext = `[معلومات الموقع الجغرافي الحالي للمستخدم - إحداثيات: خط عرض ${lat}, خط طول ${lon}]`;
-                console.log("📍 تم التقاط الإحداثيات الجغرافية بنجاح:", lat, lon);
-                resolve(userLocationContext);
-            },
-            (error) => {
-                console.log("⚠️ تعذر جلب الموقع الجغرافي:", error.message);
-                resolve("");
-            },
-            { timeout: 8000, maximumAge: 60000 }
-        );
-    });
-    return locationPromise;
-}
-
-// 🌍 بدء الجلب فور تحميل الملف
-fetchUserLocation();
 
 export function getIsGenerating() {
     return isGenerating;
@@ -84,7 +51,6 @@ export function stopGeneration() {
         currentAbortController = null;
     }
     updateSendButtonState();
-    
     document.querySelectorAll('.typing-indicator, .search-indicator-badge').forEach(el => el.remove());
 }
 
@@ -201,7 +167,7 @@ export async function handleSendMessage(renderCallbacks) {
     resetFile();
     updateSendButtonState();
 
-    const isSearchQuery = /(ابحث|ابحثلي|بحث|النت|جوجل|شبكة|عن وصفة|أخبار|مصادر|رابط|روابط)/i.test(displayMessage);
+    const isSearchQuery = /(ابحث|ابحثلي|بحث|النت|جوجل|شبكة|عن وصفة|أخبار|مصادر|رابط|روابط|طقس|الجو)/i.test(displayMessage);
     
     let indicatorId;
     if (isSearchQuery) {
@@ -225,15 +191,12 @@ export async function handleSendMessage(renderCallbacks) {
             };
         });
 
-        // 🌍 ضمان انتهاء جلب الموقع قبل إرسال الطلب للخادم (منع سباق الزمن)
-        const activeLocationContext = await fetchUserLocation();
-
+        // ⭐ إرسال الطلب مباشرة بدون أي طلب إذن مزعج (الباك إند سيتكفل بالـ IP)
         const requestPayload = { 
             message: displayMessage,
             history: formattedHistoryForBackend,
             fileResult: processedFileResult,
-            sessionId: sessionId,
-            locationContext: activeLocationContext 
+            sessionId: sessionId
         };
 
         const response = await fetch('/api/chat', {
