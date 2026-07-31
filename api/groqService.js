@@ -1,5 +1,5 @@
 /**
- * api/groqService.js – Sovereign Heavy Kernel (النسخة المحصنة الشاملة للبحث الحتمي وحقن السياق الجغرافي)
+ * api/groqService.js – Sovereign Heavy Kernel (النسخة النهائية المحصنة - أولوية الذاكرة الداخلية)
  */
 
 import { Groq } from "groq-sdk";
@@ -31,36 +31,26 @@ export default async function kernel(prompt, extra = {}) {
     const messages = [];
 
     /* ============================================================
-       🌐 الذكاء الحي الشامل: استشعار أي استعلام خارجي، حقائق، طقس، أسعار، أو أسئلة
+       🌐 الذكاء الحي المحدود: البحث حصراً للبيانات اللحظية والمتغيرة مع الزمن
        ============================================================ */
-    const searchKeywords = [
-      // أدوات الاستفهام والاستعلام
-      "كيف", "ما", "ماذا", "من", "أين", "متى", "لماذا", "هل", "كم", "أي", "مين", "شو", "وين", "ليش",
-      // الطقس والمناخ والبيئة
-      "طقس", "الجو", "حرارة", "مطر", "رياح", "رطوبة", "درجة", "مناخ", "توقعات", "برودة", "صيف", "شتاء",
-      // الأسواق والأسعار والماليات والعملات
-      "سعر", "أسعار", "عملة", "بيتكوين", "دولار", "يورو", "ذهب", "سهم", "أسهم", "بورصة", "تداول", "شراء", "بيع", "تكلفة",
-      // الأخبار والأحداث والسياسة والرياضة
-      "أخبار", "حدث", "جريمة", "انتخابات", "رئيس", "وزير", "حكومة", "سياسة", "رياضة", "مباراة", "نتيجة", "دوري", "فريق", "فوز",
-      // المواقع، الروابط، التقنية، والمعارف العامة
-      "رابط", "روابط", "موقع", "مواقع", "منصة", "منصات", "تطبيق", "برنامج", "رقم", "أرقام", "طوارئ", "عنوان",
-      "معلومات", "تاريخ", "شرح", "تعريف", "من هو", "ما هي", "أين يقع", "أفضل", "أرخص", "مقارنة", "بحث",
-      "دورة", "دورات", "مرجع", "مراجع", "مصدر", "مصادر", "كيف أتعلم", "تحديث", "إصدار", "تحميل", "رابط تحميل"
+    const realTimeKeywords = [
+      "طقس", "الجو", "حرارة اليوم", "مطر اليوم",
+      "سعر اليوم", "أسعار اليوم", "سعر العملة", "سعر الذهب", "سعر البيتكوين",
+      "أخبار اليوم", "حدث اليوم", "نتائج الماتش", "مباراة اليوم",
+      "رابط تحميل", "موقع رسمي", "أحدث إصدار", "تحديث 2026", "2026"
     ];
     
-    const hasQuestionMark = prompt.includes('?') || prompt.includes('؟');
-    const matchesKeyword = searchKeywords.some(kw => prompt.includes(kw));
-    const needsSearch = extra.forceSearch || hasQuestionMark || matchesKeyword;
-    const locationContext = extra.locationContext || ""; // ⭐ استقبال السياق الجغرافي
+    // البحث لا يتم إلا للضرورة القصوى للبيانات اللحظية أو بالطلب الإجباري
+    const needsSearch = extra.forceSearch || realTimeKeywords.some(kw => prompt.includes(kw));
+    const locationContext = extra.locationContext || ""; 
 
     let liveSearchContext = "";
     if (needsSearch) {
       try {
-        // دمج سياق الموقع مع نص البحث لضمان دقة النتائج المحلية (مثل الطقس والمواقع والخدمات)
         const searchQuery = locationContext ? `${prompt} ${locationContext}` : prompt;
         const searchResult = await autoSearch(searchQuery);
         if (searchResult && !searchResult.includes("⚠️") && !searchResult.includes("لم يتم العثور")) {
-          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل المباشر - التزم بالروابط والمصادر الواردة هنا حصراً]:\n${searchResult}\n`;
+          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل - التزم بها حصراً للبيانات الآنية]:\n${searchResult}\n`;
         }
       } catch (searchErr) {
         console.error("⚠️ فشل جلب البحث الحي:", searchErr);
@@ -75,7 +65,7 @@ export default async function kernel(prompt, extra = {}) {
     let contextInjection = "";
     if (liveSearchContext) contextInjection += liveSearchContext;
     if (locationContext) {
-      contextInjection += `\n\n${locationContext} (ملاحظة سيادية: إذا قام المستخدم بتصحيح مكانه شفهياً أو أشار إلى استخدام VPN، اعتمد حصراً مكانه الحقيقي المصحح وتجاهل الإحداثيات التقنية الافتراضية).\n`;
+      contextInjection += `\n\n${locationContext} (ملاحظة سيادية: إذا صحح المستخدم مكانه شفهياً، اعتمد مكانه الحقيقي وتجاهل الإحداثيات التقنية).\n`;
     }
 
     messages.push({
@@ -98,7 +88,7 @@ export default async function kernel(prompt, extra = {}) {
     messages.push({ role: "user", content: prompt });
 
     /* ============================================================
-       🧠 تنفيذ الطلب عبر Groq
+       🧠 تنفيذ الطلب عبر Groq (الاعتماد على الذاكرة الداخلية الضخمة)
        ============================================================ */
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-120b",
@@ -118,4 +108,3 @@ export default async function kernel(prompt, extra = {}) {
     throw error;
   }
 }
-
