@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية مع دعم البحث الحي
+ * js/chatEngine.js – النسخة السيادية النهائية مع دعم البحث الحي والربط التلقائي للأحداث
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -67,7 +67,6 @@ function cleanArtifacts(text) {
     return text
         .replace(/\$\d+/g, "")
         .replace(/<(unk|pad|mask)>/gi, "")
-        .replace(//g, "")
         .replace(/#{2,}/g, "")
         .replace(/\s{3,}/g, " ")
         .replace(/[^\x00-\x7F]+(?=[^\x00-\x7F]*$)/g, "");
@@ -160,9 +159,10 @@ export async function handleSendMessage(renderCallbacks) {
     userInput.value = '';
     userInput.style.height = 'auto';
     resetFile();
+    updateSendButtonState();
 
     // 🔍 رصد ما إذا كان الاستعلام يتطلب بحثاً حياً على شبكة الإنترنت
-    const isSearchQuery = /(ابحث|ابحثلي|بحث|النت|جوجل|شبكة|عن وصفة|أخبار|مصادر)/i.test(displayMessage);
+    const isSearchQuery = /(ابحث|ابحثلي|بحث|النت|جوجل|شبكة|عن وصفة|أخبار|مصادر|رابط|روابط)/i.test(displayMessage);
     
     let indicatorId;
     if (isSearchQuery) {
@@ -355,5 +355,40 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     }
 
     chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+/* ============================================================
+   🔌 Auto-Initialization & DOM Event Bindings
+   ============================================================ */
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const userInput = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        if (userInput) {
+            userInput.addEventListener('input', () => {
+                updateSendButtonState();
+                userInput.style.height = 'auto';
+                userInput.style.height = userInput.scrollHeight + 'px';
+            });
+
+            userInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!isGenerating && (userInput.value.trim().length > 0 || getSelectedFile() !== null)) {
+                        handleMainAction();
+                    }
+                }
+            });
+        }
+
+        if (sendBtn) {
+            sendBtn.addEventListener('click', () => {
+                handleMainAction();
+            });
+        }
+
+        updateSendButtonState();
+    });
 }
 
