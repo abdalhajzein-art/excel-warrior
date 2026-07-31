@@ -5,6 +5,9 @@ import detectIntent from "./intent/intent_file.js";
 import conversationOrchestrator from "./conversation_orchestrator.js";
 import toolsIndex from "../tools/index.js";
 
+// ⭐ إضافة وكيل البحث الخارجي
+import searchAgent from "./agents/searchAgent.js";
+
 export default async function agentsOrchestrator(sessionId, input, ctx = {}) {
   const session = memory.getSession(sessionId);
   const text = typeof input === "string" ? input : ctx.message || "";
@@ -13,6 +16,7 @@ export default async function agentsOrchestrator(sessionId, input, ctx = {}) {
   const agents = [
     fileAgent,
     toolsAgent,
+    searchAgent,   // ⭐ تمت الإضافة هنا
     chatAgent
   ];
 
@@ -81,7 +85,6 @@ const toolsAgent = {
 const chatAgent = {
   name: "chatAgent",
   run: async (sessionId, intent, input, ctx) => {
-    // إذا لم يلتقط أي Agent آخر الطلب، اعتبره دردشة
     const result = await conversationOrchestrator(sessionId, input, ctx);
     return result.reply ?? "⚠️ لم يتم توليد رد واضح من عقل الدردشة.";
   }
