@@ -1,5 +1,5 @@
 /**
- * api/core/intent/intent_file.js
+ * api/core/intent/intent_actions.js
  * Sovereign Heavy Intent Engine – فهم النية الحقيقية بدقة عالية
  */
 
