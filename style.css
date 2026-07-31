@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Cairo:wght@300;400;600;700;900&display=swap');
+
 :root {
   --bg-deep: #07080a;
   --bg-surface: #0e1116;
@@ -19,7 +21,7 @@
 }
 
 body {
-  font-family: 'Cairo', sans-serif;
+  font-family: 'IBM Plex Sans Arabic', 'Cairo', sans-serif;
   background-color: var(--bg-deep);
   color: var(--text-primary);
   height: 100dvh;
@@ -90,7 +92,7 @@ body {
   padding: 12px 16px;
   border-radius: 10px;
   font-weight: 700;
-  font-family: 'Cairo', sans-serif;
+  font-family: 'IBM Plex Sans Arabic', 'Cairo', sans-serif;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -361,11 +363,12 @@ body {
   border-radius: 4px;
 }
 
-/* Base Message Styling */
+/* Base Message Styling - خط مريح وعالي الوضوح */
 .message {
   position: relative;
-  font-size: 15.5px;
-  line-height: 1.85;
+  font-family: 'IBM Plex Sans Arabic', 'Cairo', sans-serif;
+  font-size: 15px;
+  line-height: 1.9;
   word-break: break-word;
   animation: fadeInMsg 0.3s ease;
   transition: all 0.2s ease;
@@ -376,7 +379,7 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 👤 1. رسالة المستخدم: مثبتة على اليمين (في اتجاه RTL الـ flex-start يمثل اليمين) */
+/* 👤 1. رسالة المستخدم: مثبتة على اليمين */
 .message.user {
   align-self: flex-start;
   margin-left: auto;
@@ -389,7 +392,7 @@ body {
   color: var(--text-primary);
 }
 
-/* 🤖 2. رد الأثير: لوحة حرة (Frameless Canvas) مثبتة على اليسار (الـ flex-end يمثل اليسار) */
+/* 🤖 2. رد الأثير: لوحة حرة مثبتة على اليسار */
 .message.ai {
   align-self: flex-end;
   margin-right: auto;
@@ -490,7 +493,7 @@ body {
   border-radius: 8px;
   padding: 6px 12px;
   font-size: 12px;
-  font-family: 'Cairo', sans-serif;
+  font-family: 'IBM Plex Sans Arabic', 'Cairo', sans-serif;
   cursor: pointer;
   z-index: 10;
   
@@ -560,13 +563,13 @@ body {
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-family: 'Cairo', sans-serif;
-  font-size: 15.5px;
+  font-family: 'IBM Plex Sans Arabic', 'Cairo', sans-serif;
+  font-size: 15px;
   resize: none;
   max-height: 120px;
   padding: 8px 4px;
   outline: none;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 #userInput::placeholder {
@@ -835,3 +838,4 @@ body {
     100% { transform: translateX(100%); }
   }
 }
+
