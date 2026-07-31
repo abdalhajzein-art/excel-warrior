@@ -1,6 +1,6 @@
 /**
  * api/tools/index.js – Sovereign Tools Dispatcher (Final Edition)
- * موزّع سيادي موحّد لكل محركات الملفات وأدوات البحث الحي
+ * موزّع سيادي موحّد لكل محركات الملفات وأدوات البحث الحي عبر Google Gemini Grounding
  */
 
 import path from "path";
@@ -14,8 +14,8 @@ import { pptCreate } from "./ppt.js";
 // 🔥 المسار الصحيح لمحرك LibreOffice
 import libreConvert from "./external/engines/libre.js";
 
-// 🌐 محرك بحث جوجل الحقيقي عبر DuckDuckGo Proxy (!g)
-import { googleReal } from "./googleReal.js";
+// 🌐 محرك بحث جوجل الحقيقي عبر Gemini Search Grounding
+import { searchWithGoogle } from "./geminiSearch.js";
 
 /* ============================================================
    🧠 الموزّع السيادي للقراءة
@@ -29,16 +29,16 @@ export async function autoRead(filePath) {
   if (ext === "pdf") return await pdfRead(filePath);
 
   if (["png", "jpg", "jpeg", "webp", "tiff", "avif"].includes(ext))
-    return "📷 صورة – لا يمكن استخراج نص منها.";
+    return "📷 صورة – لا يمكن استخراج نص منها مباشرة.";
 
   return "⚠️ صيغة غير مدعومة.";
 }
 
 /* ============================================================
-   🌐 موزع البحث السيادي الحي
+   🌐 موزع البحث السيادي الحي (يعتمد الآن حصراً على Gemini Grounding)
    ============================================================ */
 export async function autoSearch(query) {
-  return await googleReal(query);
+  return await searchWithGoogle(query);
 }
 
 /* ============================================================
@@ -54,5 +54,5 @@ export {
   pptCreate,
   imageConvert,
   libreConvert,
-  googleReal
+  searchWithGoogle
 };
