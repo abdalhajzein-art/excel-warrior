@@ -1,5 +1,5 @@
 /**
- * api/chat.js – Sovereign Chat Layer
+ * api/chat.js – Sovereign Chat Layer (محدث لالتقاط وتمرير السياق الجغرافي)
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -14,6 +14,7 @@ export default async function handler(req, res) {
     const sessionKey = body.sessionId || "default";
     const fileResult = body.fileResult || null;
     const history = body.history || [];
+    const locationContext = body.locationContext || ""; // ⭐ التقاط سياق الموقع الجغرافي القادم من الواجهة
 
     if (!userContent && !fileResult) {
       return res.status(400).json({
@@ -23,7 +24,8 @@ export default async function handler(req, res) {
 
     const output = await conversationOrchestrator(sessionKey, userContent, {
       fileResult,
-      history
+      history,
+      locationContext // ⭐ تمرير السياق الجغرافي إلى العقل المدبر
     });
 
     let reply = "تم إنجاز طلبك بنجاح!";
