@@ -1,37 +1,29 @@
 /**
  * api/core/agents/searchAgent.js
- * Sovereign Search Agent – وكيل البحث الخارجي الحقيقي
+ * Sovereign Search Agent – البحث الخارجي متوقف بالكامل
+ * لا يتم تنفيذ أي بحث خارجي إلا إذا طلب المستخدم صراحة "بحث خارجي".
  */
-
-import routeIntent from "../intent/intent_router.js";
-import { autoSearch } from "../../tools/index.js";
 
 export default {
   name: "searchAgent",
 
   async run(sessionId, intent, input, ctx = {}) {
-    try {
-      const text = typeof input === "string" ? input : ctx.message || "";
-      const routed = routeIntent(text);
+    const text = typeof input === "string" ? input.trim().toLowerCase() : "";
 
-      // إذا لم تكن النية بحث → تجاوز
-      if (routed.type !== "search") return "تجاوز";
+    // 🔥 فقط إذا طلب المستخدم "بحث خارجي" صراحة
+    const explicitExternalSearch =
+      text.includes("بحث خارجي") ||
+      text.includes("ابحث عالنت") ||
+      text.includes("من الانترنت") ||
+      text.includes("من الويب") ||
+      text.includes("مصادر خارجية");
 
-      const query = text.trim();
-      if (!query) return "⚠️ لم يتم تحديد استعلام بحث واضح.";
-
-      // تنفيذ البحث الخارجي الحقيقي
-      const result = await autoSearch(query);
-
-      if (!result || typeof result !== "string") {
-        return "⚠️ لم يتم العثور على نتائج بحث واضحة.";
-      }
-
-      return result;
-
-    } catch (err) {
-      console.error("🔥 خطأ في searchAgent:", err);
-      return "⚠️ حدث خطأ أثناء تنفيذ وكيل البحث الخارجي.";
+    if (!explicitExternalSearch) {
+      // لا بحث خارجي → تجاوز كامل
+      return "تجاوز";
     }
+
+    // 🔥 رد سيادي رسمي
+    return "🔍 ميزة البحث الخارجي لسا ما اكتملت… عبد عم يشتغل عليها، رح تنزل قريباً.";
   }
 };
