@@ -1,6 +1,6 @@
 /**
  * api/core/conversation_orchestrator.js
- * Sovereign Final Heavy Orchestrator – مع محرك البحث الحي السيادي (Zero-Dependency Search)
+ * Sovereign Final Heavy Orchestrator – النسخة المحصنة ضد التعليق والصمت اللانهائي
  */
 
 import memory from "./memory.js";
@@ -18,23 +18,29 @@ import { imageConvert } from "../tools/image.js";
 import { libreConvert } from "../tools/index.js";
 
 /* ============================================================
-   🔍 محرك البحث الحي السيادي (DuckDuckGo Lite Parser)
+   🔍 محرك البحث الحي السيادي (مع مهلة أمان 4 ثوانٍ لمنع التعليق)
    ============================================================ */
 async function performSovereignSearch(query) {
   try {
+    console.log(`🔍 [Search Start] بدء البحث الحي عن: "${query}"`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
     const response = await fetch(`https://lite.duckduckgo.com/lite/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AlatheerEngine/2.6'
       },
-      body: `q=${encodeURIComponent(query)}`
+      body: `q=${encodeURIComponent(query)}`,
+      signal: controller.signal
     });
 
+    clearTimeout(timeoutId);
     const html = await response.text();
     const results = [];
 
-    // استخراج الروابط والعناوين والمقتطفات بدقة من HTML
     const linkRegex = /<a class="result-link" href="([^"]+)"[^>]*>(.*?)<\/a>/g;
     const snippetRegex = /<td class="result-snippet"[^>]*>(.*?)<\/td>/g;
 
@@ -52,7 +58,6 @@ async function performSovereignSearch(query) {
       snippets.push(match[1].replace(/<[^>]*>/g, '').trim());
     }
 
-    // دمج النتائج الحقيقية (أول 4 نتائج كحد أقصى)
     for (let i = 0; i < Math.min(links.length, 4); i++) {
       results.push({
         title: links[i].title,
@@ -61,26 +66,26 @@ async function performSovereignSearch(query) {
       });
     }
 
+    console.log(`✅ [Search Success] تم جلب ${results.length} نتائج بحث بنجاح.`);
     return results;
   } catch (err) {
-    console.error("❌ خطأ في محرك البحث الحي:", err);
+    console.warn("⚠️ [Search Timeout/Error]: تجاوز وقت البحث أو حدث خطأ، سيتم المتابعة بدون بحث.", err.message);
     return [];
   }
 }
 
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
   try {
+    console.log(`📥 [Orchestrator] استلام رسالة للجلسة [${sessionId}]: "${message}"`);
     const session = memory.getSession(sessionId);
+
+    const fileResult = extraCtx.fileResult || null;
 
     /* ============================================================
        🟧 الملف القادم من /api/upload
        ============================================================ */
-    const fileResult = extraCtx.fileResult || null;
-
-    /* ============================================================
-       🟦 إذا في ملف → نية الملف فقط (بدون kernel)
-       ============================================================ */
     if (fileResult && fileResult.fileName) {
+      console.log(`📁 [File Processing] معالجة ملف: ${fileResult.fileName}`);
       const fileName = fileResult.fileName.toLowerCase();
       const intent = detectIntent(message);
 
@@ -146,13 +151,11 @@ export default async function conversationOrchestrator(sessionId, message, extra
        ============================================================ */
     const history = memory.getChatHistory(sessionId, 12);
 
-    // التحقق مما إذا كان الطلب يتطلب بحثاً حياً على الإنترنت
     const isSearchRequired = /(ابحث|بحث|مصادر|النت|جوجل|من النت|رابط|روابط|موقع|مواقع|تفسير|معنى|ما هو|أخبار)/i.test(message);
     
     let enhancedMessage = message;
 
     if (isSearchRequired) {
-      console.log(`🔍 [Sovereign Search] جاري البحث الحي عن: "${message}"`);
       const searchResults = await performSovereignSearch(message);
       
       if (searchResults.length > 0) {
@@ -166,9 +169,18 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
     memory.appendChatHistory(sessionId, { role: "user", content: message });
 
-    const output = await kernel(enhancedMessage, { history });
+    console.log(`🤖 [Kernel Start] إرسال الطلب لنموذج Groq...`);
+
+    // 🛡️ حماية أمان قسرية ضد تعليق نموذج الذكاء الاصطناعي (أقصى انتظار 15 ثانية)
+    const kernelPromise = kernel(enhancedMessage, { history });
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout: تجاوز زمن انتظار استجابة نموذج الذكاء الاصطناعي (15s)')), 15000)
+    );
+
+    const output = await Promise.race([kernelPromise, timeoutPromise]);
     const final = typeof output === "string" ? output : JSON.stringify(output);
 
+    console.log(`✅ [Kernel Success] تم استلام رد النموذج بنجاح.`);
     memory.appendChatHistory(sessionId, { role: "assistant", content: final });
 
     return {
@@ -179,10 +191,10 @@ export default async function conversationOrchestrator(sessionId, message, extra
     };
 
   } catch (err) {
-    console.error("🔥 خطأ في Sovereign Final Orchestrator:", err);
+    console.error("🔥 [Orchestrator Fatal Error]:", err);
     return {
       ok: false,
-      reply: "⚠️ حدث خطأ أثناء التنفيذ.",
+      reply: `⚠️ حدث خطأ أثناء المعالجة: ${err.message}`,
       error: err.message,
       fileBase64: null,
       fileName: null
