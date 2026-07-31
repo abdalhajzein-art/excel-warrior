@@ -1,12 +1,10 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية
- * واجهة ترسل الرسالة + الملف للـ backend
- * والـ orchestrator هو الذي يقرر النية وينفّذ
+ * js/chatEngine.js – النسخة السيادية النهائية مع دعم البحث الحي
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
 import { getSelectedFile, getAttachedFileName, resetFile } from './fileHandler.js';
-import { streamTextEffect, showTypingIndicator, hideTypingIndicator, formatReply } from './uiController.js';
+import { streamTextEffect, showTypingIndicator, hideTypingIndicator, showSearchIndicator, hideSearchIndicator, formatReply } from './uiController.js';
 
 let isGenerating = false;
 let currentAbortController = null;
@@ -54,8 +52,7 @@ export function stopGeneration() {
     }
     updateSendButtonState();
     
-    const indicators = document.querySelectorAll('.typing-indicator');
-    indicators.forEach(el => el.remove());
+    document.querySelectorAll('.typing-indicator, .search-indicator-badge').forEach(el => el.remove());
 }
 
 export function handleMainAction(renderCallbacks) {
@@ -66,12 +63,11 @@ export function handleMainAction(renderCallbacks) {
     }
 }
 
-// تنظيف artifacts
 function cleanArtifacts(text) {
     return text
         .replace(/\$\d+/g, "")
         .replace(/<(unk|pad|mask)>/gi, "")
-        .replace(/�/g, "")
+        .replace(//g, "")
         .replace(/#{2,}/g, "")
         .replace(/\s{3,}/g, " ")
         .replace(/[^\x00-\x7F]+(?=[^\x00-\x7F]*$)/g, "");
@@ -95,9 +91,6 @@ export async function handleSendMessage(renderCallbacks) {
     let processedFileResult = null;
     let fileDisplayName = null;
 
-    // ============================================================
-    // 🟧 رفع الملف إلى /api/upload ومعالجته عبر external_file_bridge
-    // ============================================================
     if (currentFileToProcess) {
         try {
             const formData = new FormData();
@@ -118,14 +111,11 @@ export async function handleSendMessage(renderCallbacks) {
         }
     }
 
-    // ============================================================
-
     isGenerating = true;
     window._isUserScrolledUp = false;
     updateSendButtonState();
     currentAbortController = new AbortController();
 
-    // عرض رسالة المستخدم
     const userMessageDiv = document.createElement('div');
     userMessageDiv.className = 'message user';
     
@@ -171,8 +161,15 @@ export async function handleSendMessage(renderCallbacks) {
     userInput.style.height = 'auto';
     resetFile();
 
-    // مؤشر الكتابة
-    const typingId = showTypingIndicator();
+    // 🔍 رصد ما إذا كان الاستعلام يتطلب بحثاً حياً على شبكة الإنترنت
+    const isSearchQuery = /(ابحث|ابحثلي|بحث|النت|جوجل|شبكة|عن وصفة|أخبار|مصادر)/i.test(displayMessage);
+    
+    let indicatorId;
+    if (isSearchQuery) {
+        indicatorId = showSearchIndicator();
+    } else {
+        indicatorId = showTypingIndicator();
+    }
 
     try {
         const currentSessionData = sessions[sessionId];
@@ -204,7 +201,12 @@ export async function handleSendMessage(renderCallbacks) {
         });
 
         const data = await response.json();
-        hideTypingIndicator(typingId);
+        
+        if (isSearchQuery) {
+            hideSearchIndicator(indicatorId);
+        } else {
+            hideTypingIndicator(indicatorId);
+        }
 
         if (!isGenerating) return;
 
@@ -248,7 +250,8 @@ export async function handleSendMessage(renderCallbacks) {
             console.log('🛑 Request aborted by user.');
         } else {
             console.error('❌ Fetch Error:', error);
-            hideTypingIndicator(typingId);
+            if (isSearchQuery) hideSearchIndicator(indicatorId);
+            else hideTypingIndicator(indicatorId);
 
             const errorDiv = document.createElement('div');
             errorDiv.className = 'message ai';
@@ -266,7 +269,6 @@ export async function handleSendMessage(renderCallbacks) {
     }
 }
 
-// زر النسخ
 function addCopyButtonToMessage(messageDiv, textToCopy) {
     messageDiv.style.position = 'relative';
     messageDiv.style.paddingTop = '36px';
@@ -354,3 +356,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
 
     chatArea.scrollTop = chatArea.scrollHeight;
 }
+
