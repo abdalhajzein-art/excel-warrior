@@ -1,5 +1,5 @@
 /**
- * api/groqService.js – Sovereign Heavy Kernel (النسخة المحصنة للبحث الحتمي وحقن السياق الجغرافي)
+ * api/groqService.js – Sovereign Heavy Kernel (النسخة المحصنة الشاملة للبحث الحتمي وحقن السياق الجغرافي)
  */
 
 import { Groq } from "groq-sdk";
@@ -31,24 +31,36 @@ export default async function kernel(prompt, extra = {}) {
     const messages = [];
 
     /* ============================================================
-       🌐 الذكاء الحي: توسيع استشعار النية للروابط والمصادر والمواقع
+       🌐 الذكاء الحي الشامل: استشعار أي استعلام خارجي، حقائق، طقس، أسعار، أو أسئلة
        ============================================================ */
     const searchKeywords = [
-      "طوارئ", "أرقام", "أخبار", "بحث", "من هو", "أين", 
-      "موقع", "مواقع", "سعر", "متى", "رقم", 
-      "رابط", "روابط", "مصدر", "مصادر", "مرجع", "مراجع", 
-      "دورة", "دورات", "منصة", "منصات", "كيف أتعلم", "أفضل موقع"
+      // أدوات الاستفهام والاستعلام
+      "كيف", "ما", "ماذا", "من", "أين", "متى", "لماذا", "هل", "كم", "أي", "مين", "شو", "وين", "ليش",
+      // الطقس والمناخ والبيئة
+      "طقس", "الجو", "حرارة", "مطر", "رياح", "رطوبة", "درجة", "مناخ", "توقعات", "برودة", "صيف", "شتاء",
+      // الأسواق والأسعار والماليات والعملات
+      "سعر", "أسعار", "عملة", "بيتكوين", "دولار", "يورو", "ذهب", "سهم", "أسهم", "بورصة", "تداول", "شراء", "بيع", "تكلفة",
+      // الأخبار والأحداث والسياسة والرياضة
+      "أخبار", "حدث", "جريمة", "انتخابات", "رئيس", "وزير", "حكومة", "سياسة", "رياضة", "مباراة", "نتيجة", "دوري", "فريق", "فوز",
+      // المواقع، الروابط، التقنية، والمعارف العامة
+      "رابط", "روابط", "موقع", "مواقع", "منصة", "منصات", "تطبيق", "برنامج", "رقم", "أرقام", "طوارئ", "عنوان",
+      "معلومات", "تاريخ", "شرح", "تعريف", "من هو", "ما هي", "أين يقع", "أفضل", "أرخص", "مقارنة", "بحث",
+      "دورة", "دورات", "مرجع", "مراجع", "مصدر", "مصادر", "كيف أتعلم", "تحديث", "إصدار", "تحميل", "رابط تحميل"
     ];
     
-    const needsSearch = extra.forceSearch || searchKeywords.some(kw => prompt.includes(kw));
+    const hasQuestionMark = prompt.includes('?') || prompt.includes('؟');
+    const matchesKeyword = searchKeywords.some(kw => prompt.includes(kw));
+    const needsSearch = extra.forceSearch || hasQuestionMark || matchesKeyword;
     const locationContext = extra.locationContext || ""; // ⭐ استقبال السياق الجغرافي
 
     let liveSearchContext = "";
     if (needsSearch) {
       try {
-        const searchResult = await autoSearch(prompt);
+        // دمج سياق الموقع مع نص البحث لضمان دقة النتائج المحلية (مثل الطقس والمواقع والخدمات)
+        const searchQuery = locationContext ? `${prompt} ${locationContext}` : prompt;
+        const searchResult = await autoSearch(searchQuery);
         if (searchResult && !searchResult.includes("⚠️") && !searchResult.includes("لم يتم العثور")) {
-          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل المباشر - التزم بالروابط الواردة هنا حصراً]:\n${searchResult}\n`;
+          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل المباشر - التزم بالروابط والمصادر الواردة هنا حصراً]:\n${searchResult}\n`;
         }
       } catch (searchErr) {
         console.error("⚠️ فشل جلب البحث الحي:", searchErr);
@@ -106,3 +118,4 @@ export default async function kernel(prompt, extra = {}) {
     throw error;
   }
 }
+
