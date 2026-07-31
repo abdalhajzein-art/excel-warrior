@@ -1,24 +1,24 @@
-// api/core/agents_orchestrator.js – Sovereign Multi-Agent Engine (Final)
+/**
+ * api/core/agents_orchestrator.js – Sovereign Multi-Agent Engine (Stable, No External Search)
+ * بعد إيقاف البحث الخارجي، يتم تبسيط النظام ليعمل فقط على:
+ * - ملفات
+ * - أدوات
+ * - دردشة
+ */
 
 import memory from "./memory.js";
-import detectIntent from "./intent/intent_file.js";
+import detectFileIntent from "./intent/intent_file.js";
 import conversationOrchestrator from "./conversation_orchestrator.js";
-
-// ❗ تصحيح الاستدعاء — toolsIndex هو object وليس default export
 import * as toolsIndex from "../tools/index.js";
-
-// ⭐ وكيل البحث الخارجي
-import searchAgent from "./agents/searchAgent.js";
 
 export default async function agentsOrchestrator(sessionId, input, ctx = {}) {
   const session = memory.getSession(sessionId);
   const text = typeof input === "string" ? input : ctx.message || "";
-  const intent = detectIntent(text);
+  const intent = detectFileIntent(text);
 
   const agents = [
     fileAgent,
     toolsAgent,
-    searchAgent,   // ⭐ وكيل البحث
     chatAgent
   ];
 
@@ -76,16 +76,9 @@ const toolsAgent = {
 
     if (!isToolIntent) return "تجاوز";
 
-    // 📁 إذا في ملف → استخدم autoRead
     if (ctx.fileResult) {
       const result = await toolsIndex.autoRead(ctx.fileResult);
       return result || "⚠️ لم يتم توليد رد واضح من أدوات القراءة.";
-    }
-
-    // 🔍 إذا في نية بحث → استخدم autoSearch
-    if (intent && intent.includes("search")) {
-      const result = await toolsIndex.autoSearch(input);
-      return result || "⚠️ لم يتم توليد رد واضح من أدوات البحث.";
     }
 
     return "⚠️ لم يتم التعرف على أداة مناسبة.";
