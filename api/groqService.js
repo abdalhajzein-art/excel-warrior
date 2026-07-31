@@ -93,5 +93,8 @@ export default async function kernel(prompt, extra = {}) {
 
     return reply.replace(/\n{3,}/g, "\n\n");
 
-  } بهذا الكود، نكون قد أطبقنا الخناق تماماً على أي محاولة لاختلاق روابط، وضمنّا أن الأثير سيلجأ للبحث الحي فوراً عندما تطلبه!
-
+  } catch (error) {
+    console.error("❌ Groq Kernel Execution Error:", error);
+    throw error;
+  }
+}
