@@ -1,5 +1,5 @@
 /**
- * api/groqService.js – Sovereign Heavy Kernel (النسخة النهائية المحصنة - أولوية الذاكرة الداخلية)
+ * api/groqService.js – Sovereign Heavy Kernel (النسخة المدعومة بالوعي السياقي المستمر)
  */
 
 import { Groq } from "groq-sdk";
@@ -31,7 +31,7 @@ export default async function kernel(prompt, extra = {}) {
     const messages = [];
 
     /* ============================================================
-       🌐 الذكاء الحي المحدود: البحث حصراً للبيانات اللحظية والمتغيرة مع الزمن
+       🌐 الذكاء الحي المحدود + الوعي السياقي المستمر (Contextual Intent)
        ============================================================ */
     const realTimeKeywords = [
       "طقس", "الجو", "حرارة اليوم", "مطر اليوم",
@@ -40,17 +40,49 @@ export default async function kernel(prompt, extra = {}) {
       "رابط تحميل", "موقع رسمي", "أحدث إصدار", "تحديث 2026", "2026"
     ];
     
-    // البحث لا يتم إلا للضرورة القصوى للبيانات اللحظية أو بالطلب الإجباري
-    const needsSearch = extra.forceSearch || realTimeKeywords.some(kw => prompt.includes(kw));
+    let needsSearch = extra.forceSearch || realTimeKeywords.some(kw => prompt.includes(kw));
+
+    // 🧠 رصد السياق المستمر: هل آخر سؤال سأله المستخدم كان استعلاماً حياً (مثل الطقس)، والآن يصحح مكانه؟
+    let lastUserMessage = "";
+    let wasLastQueryRealTime = false;
+
+    if (!needsSearch && Array.isArray(extra.history) && extra.history.length > 0) {
+      const userMsgs = extra.history.filter(h => h.role === "user");
+      if (userMsgs.length > 0) {
+        lastUserMessage = userMsgs[userMsgs.length - 1].content;
+        wasLastQueryRealTime = realTimeKeywords.some(kw => lastUserMessage.includes(kw));
+        
+        if (wasLastQueryRealTime) {
+          // تفعيل البحث تلقائياً لأن المستخدم يوضح أو يصحح معطى لسؤال سابق يتطلب بيانات حية
+          needsSearch = true;
+        }
+      }
+    }
+
     const locationContext = extra.locationContext || ""; 
 
     let liveSearchContext = "";
     if (needsSearch) {
       try {
-        const searchQuery = locationContext ? `${prompt} ${locationContext}` : prompt;
+        let searchQuery = prompt;
+
+        // ذكاء صياغة الاستعلام بناءً على السياق المستمر
+        const isWeatherRelated = prompt.includes("طقس") || prompt.includes("الجو") || (wasLastQueryRealTime && lastUserMessage.match(/(طقس|الجو)/));
+
+        if (isWeatherRelated) {
+          if (!prompt.includes("طقس") && !prompt.includes("الجو")) {
+            // إذا كانت الرسالة الحالية عبارة عن مكان فقط (مثل: "انا بدمشق")
+            searchQuery = `حالة الطقس في ${prompt}`;
+          } else {
+            searchQuery = prompt;
+          }
+        } else if (locationContext) {
+          searchQuery = `${prompt} ${locationContext}`;
+        }
+
         const searchResult = await autoSearch(searchQuery);
         if (searchResult && !searchResult.includes("⚠️") && !searchResult.includes("لم يتم العثور")) {
-          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل - التزم بها حصراً للبيانات الآنية]:\n${searchResult}\n`;
+          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل بناءً على التصحيح السياقي - التزم بها حصراً]:\n${searchResult}\n`;
         }
       } catch (searchErr) {
         console.error("⚠️ فشل جلب البحث الحي:", searchErr);
@@ -65,7 +97,7 @@ export default async function kernel(prompt, extra = {}) {
     let contextInjection = "";
     if (liveSearchContext) contextInjection += liveSearchContext;
     if (locationContext) {
-      contextInjection += `\n\n${locationContext} (ملاحظة سيادية: إذا صحح المستخدم مكانه شفهياً، اعتمد مكانه الحقيقي وتجاهل الإحداثيات التقنية).\n`;
+      contextInjection += `\n\n${locationContext} (ملاحظة سيادية: اعتمد مكان المستخدم الحقيقي الذي يذكره شفهياً وتجاهل إحداثيات الـ VPN أو الشبكة).\n`;
     }
 
     messages.push({
@@ -108,3 +140,4 @@ export default async function kernel(prompt, extra = {}) {
     throw error;
   }
 }
+
