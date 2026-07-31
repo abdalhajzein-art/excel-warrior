@@ -1,5 +1,6 @@
 /**
- * api/groqService.js – Sovereign Heavy Kernel (النسخة المدعومة بالوعي السياقي المستمر)
+ * api/groqService.js – Sovereign Heavy Kernel (Agentic Intent Router & Smart Guard Edition)
+ * النسخة الخالية من الكلمات المفتاحية مع حارس سيادة ذكي يعتمد على السياق (Context-Aware Guard)
  */
 
 import { Groq } from "groq-sdk";
@@ -8,81 +9,111 @@ import { autoSearch } from "./tools/index.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-function interceptSovereigntyBreach(reply) {
+/* ============================================================
+   🛡️ Smart Sovereignty Guard (حارس السيادة الذكي المعتمد على السياق)
+   ============================================================ */
+async function interceptSovereigntyBreach(reply, originalPrompt, groqInstance) {
   if (!reply) return reply;
   
   const lowerReply = reply.toLowerCase();
   const genericRefusals = [
-    "i'm sorry", "i am sorry", "i can't help", "i cannot assist", "i can't comply", "i cannot fulfill",
-    "آسف يا صديقي", "لا أستطيع مساعدتك", "لا يمكنني تلبية", "عذراً، لا أستطيع", "ما بقدر أساعدك"
+    "i'm sorry", "i am sorry", "i can't", "i cannot", "as an ai", "as an artificial intelligence",
+    "آسف", "لا أستطيع", "لا يمكنني", "عذراً", "بصفتي ذكاء"
   ];
 
   const isBreach = genericRefusals.some(phrase => lowerReply.includes(phrase));
 
-  if (isBreach) {
-    return "يا مهندس، هالكود بيحرق السيرفر وقاعدة البيانات بتطير بلمح البصر! خلينا عاقلين ونكتب شي مفيد بدل ما نخرب الدنيا.";
+  if (!isBreach) {
+    return reply; // إذا كان الرد سليماً، مرره كما هو
   }
 
-  return reply;
+  console.log("🛡️ [Sovereignty Guard] تم رصد انزلاق روبوتي، جاري معالجة النية وإعادة الصياغة بأسلوب الأثير...");
+
+  try {
+    // استدعاء طوارئ سريع للنموذج لإعادة صياغة الرفض بناءً على موضوع السؤال
+    const rescueCompletion = await groqInstance.chat.completions.create({
+      model: "openai/gpt-oss-120b",
+      messages: [
+        { 
+          role: "system", 
+          content: `أنت الآن تلعب دور 'الأثير'، منصة الذكاء الاصطناعي السيادية الخاصة.
+النموذج الأساسي رفض الإجابة على طلب المستخدم بطريقة روبوتية تقليدية مزعجة.
+مهمتك: اقرأ سؤال المستخدم، واقرأ الرفض، ثم قم بصياغة رد يوضح سبب عدم القدرة على التنفيذ بناءً على سياق سؤاله تحديداً (سواء كان سؤال برمجي، أو بيانات، أو عام). 
+تحدث بروح الزميل والمهندس المعماري، اقترح حلاً أو زاوية أخرى للنقاش، وإياك أن تستخدم عبارات مثل 'بصفتي نموذج' أو تعتذر بضعف.` 
+        },
+        { 
+          role: "user", 
+          content: `سؤال المستخدم كان: "${originalPrompt}"\nالرفض الروبوتي الذي يجب تغييره: "${reply}"` 
+        }
+      ],
+      temperature: 0.4,
+      max_tokens: 250
+    });
+
+    return rescueCompletion.choices[0].message.content.trim();
+
+  } catch (e) {
+    // خط الدفاع الأخير في حال فشل الاستدعاء، رد ديناميكي مرن يناسب أي موضوع
+    return "يا مهندس، يبدو أن هناك تعقيداً يمنعني من معالجة هذا الطلب من هذه الزاوية. هل يمكننا تفكيك المشكلة ومقاربتها بطريقة تحليلية أو برمجية أخرى؟";
+  }
 }
 
 export default async function kernel(prompt, extra = {}) {
   try {
     const messages = [];
+    const locationContext = extra.locationContext || ""; 
+    let needsSearch = extra.forceSearch || false;
+    let searchQuery = prompt;
 
     /* ============================================================
-       🌐 الذكاء الحي المحدود + الوعي السياقي المستمر (Contextual Intent)
+       🧠 Micro-Agent: Pure Semantic Intent Router (تحليل نوايا مجرد)
+       الاعتماد على المنطق الزمني فقط بدون أي أمثلة أو كلمات مفتاحية
        ============================================================ */
-    const realTimeKeywords = [
-      "طقس", "الجو", "حرارة اليوم", "مطر اليوم",
-      "سعر اليوم", "أسعار اليوم", "سعر العملة", "سعر الذهب", "سعر البيتكوين",
-      "أخبار اليوم", "حدث اليوم", "نتائج الماتش", "مباراة اليوم",
-      "رابط تحميل", "موقع رسمي", "أحدث إصدار", "تحديث 2026", "2026"
-    ];
-    
-    let needsSearch = extra.forceSearch || realTimeKeywords.some(kw => prompt.includes(kw));
+    if (!needsSearch) {
+      const routerPrompt = `أنت محلل نوايا هندسي مجرد (Semantic Intent Router).
+المهمة: حلل رسالة المستخدم منطقياً وزمنياً.
+القاعدة المطلقة: أرجع needs_search: true حصراً إذا كانت إجابة المستخدم تعتمد على بيانات "متغيرة زمنياً" (Time-variant) أو "مستجدة لحظياً" يستحيل أن تكون موجودة في ذاكرة تدريبك الثابتة، بغض النظر عن موضوع السؤال.
+إذا كانت الإجابة تعتمد على حقائق ثابتة، نظريات، أو توليد أفكار، أرجع false.
+موقع المستخدم الجغرافي: ${locationContext}
+يجب أن ترد حصراً بكائن JSON بالهيكلية التالية، بدون أي نص إضافي:
+{
+  "needs_search": true or false,
+  "search_query": "إذا true، اكتب استعلام بحث مجرد ودقيق لجوجل. وإذا false اتركها فارغة"
+}`;
 
-    // 🧠 رصد السياق المستمر: هل آخر سؤال سأله المستخدم كان استعلاماً حياً (مثل الطقس)، والآن يصحح مكانه؟
-    let lastUserMessage = "";
-    let wasLastQueryRealTime = false;
+      try {
+        const intentResponse = await groq.chat.completions.create({
+          model: "openai/gpt-oss-120b",
+          messages: [
+            { role: "system", content: routerPrompt },
+            { role: "user", content: prompt }
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.1, // حرارة منخفضة جداً لضمان دقة التحليل كآلة
+          max_tokens: 150
+        });
 
-    if (!needsSearch && Array.isArray(extra.history) && extra.history.length > 0) {
-      const userMsgs = extra.history.filter(h => h.role === "user");
-      if (userMsgs.length > 0) {
-        lastUserMessage = userMsgs[userMsgs.length - 1].content;
-        wasLastQueryRealTime = realTimeKeywords.some(kw => lastUserMessage.includes(kw));
+        const intentData = JSON.parse(intentResponse.choices[0].message.content);
+        needsSearch = intentData.needs_search;
         
-        if (wasLastQueryRealTime) {
-          // تفعيل البحث تلقائياً لأن المستخدم يوضح أو يصحح معطى لسؤال سابق يتطلب بيانات حية
-          needsSearch = true;
+        if (needsSearch && intentData.search_query) {
+          searchQuery = intentData.search_query;
+          console.log(`🔍 [Intent Router] قرر البحث عن: ${searchQuery}`);
         }
+      } catch (routerErr) {
+        console.error("⚠️ فشل محلل النوايا الذكي، سيتم تجاوز البحث:", routerErr);
       }
     }
 
-    const locationContext = extra.locationContext || ""; 
-
+    /* ============================================================
+       🌐 تنفيذ البحث الحي (إذا قرر الـ Router ذلك)
+       ============================================================ */
     let liveSearchContext = "";
     if (needsSearch) {
       try {
-        let searchQuery = prompt;
-
-        // ذكاء صياغة الاستعلام بناءً على السياق المستمر
-        const isWeatherRelated = prompt.includes("طقس") || prompt.includes("الجو") || (wasLastQueryRealTime && lastUserMessage.match(/(طقس|الجو)/));
-
-        if (isWeatherRelated) {
-          if (!prompt.includes("طقس") && !prompt.includes("الجو")) {
-            // إذا كانت الرسالة الحالية عبارة عن مكان فقط (مثل: "انا بدمشق")
-            searchQuery = `حالة الطقس في ${prompt}`;
-          } else {
-            searchQuery = prompt;
-          }
-        } else if (locationContext) {
-          searchQuery = `${prompt} ${locationContext}`;
-        }
-
         const searchResult = await autoSearch(searchQuery);
         if (searchResult && !searchResult.includes("⚠️") && !searchResult.includes("لم يتم العثور")) {
-          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من بحث جوجل بناءً على التصحيح السياقي - التزم بها حصراً]:\n${searchResult}\n`;
+          liveSearchContext = `\n\n[بيانات حية وموثوقة مسترجعة من محرك البحث لتلبية نية المستخدم - التزم بها حصراً للإجابة]:\n${searchResult}\n`;
         }
       } catch (searchErr) {
         console.error("⚠️ فشل جلب البحث الحي:", searchErr);
@@ -97,7 +128,7 @@ export default async function kernel(prompt, extra = {}) {
     let contextInjection = "";
     if (liveSearchContext) contextInjection += liveSearchContext;
     if (locationContext) {
-      contextInjection += `\n\n${locationContext} (ملاحظة سيادية: اعتمد مكان المستخدم الحقيقي الذي يذكره شفهياً وتجاهل إحداثيات الـ VPN أو الشبكة).\n`;
+      contextInjection += `\n\n${locationContext} (ملاحظة سيادية: اعتمد مكان المستخدم الحقيقي الذي يذكره وتجاهل أي إحداثيات تقنية متضاربة).\n`;
     }
 
     messages.push({
@@ -120,7 +151,7 @@ export default async function kernel(prompt, extra = {}) {
     messages.push({ role: "user", content: prompt });
 
     /* ============================================================
-       🧠 تنفيذ الطلب عبر Groq (الاعتماد على الذاكرة الداخلية الضخمة)
+       🧠 الرد النهائي عبر Groq (الاعتماد على الذاكرة الداخلية الضخمة + البحث إن وجد)
        ============================================================ */
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-120b",
@@ -131,7 +162,8 @@ export default async function kernel(prompt, extra = {}) {
 
     let reply = completion.choices[0].message.content.trim();
 
-    reply = interceptSovereigntyBreach(reply);
+    // تمرير الرد إلى حارس السيادة الذكي لتنقيحه إن لزم الأمر
+    reply = await interceptSovereigntyBreach(reply, prompt, groq);
 
     return reply.replace(/\n{3,}/g, "\n\n");
 
@@ -140,4 +172,3 @@ export default async function kernel(prompt, extra = {}) {
     throw error;
   }
 }
-
