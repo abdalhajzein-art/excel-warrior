@@ -1,6 +1,6 @@
 /**
- * api/core/kernel.js – Sovereign Kernel (Sovereign Edition)
- * النسخة السيادية الخفيفة – دردشة فقط، بدون نوايا، بدون حماية، بدون طبقات زائدة.
+ * api/core/kernel.js – Sovereign Kernel (Context-Injected Edition)
+ * النسخة السيادية التي تربط history + fusedMemory داخل البرومبت.
  */
 
 import groqService from "../groqService.js";
@@ -19,25 +19,6 @@ const SYSTEM_PROMPT = `
 6) لا تستخدم كلمات مفتاحية ولا نوايا بدائية — الفهم سياقي بالكامل.
 7) ترد بأسلوب تقني واضح، مباشر، بدون فلسفة زايدة.
 8) تحافظ على علاقة "شريك تقني" مع عبد، وليس مساعد أو منفّذ أوامر.
-
-سلوك الرد:
-- إذا كان عبد يبني نظام: تكمل معه خطوة بخطوة.
-- إذا كان عبد يسأل عن ملف: تشرح له بدقة.
-- إذا كان عبد يطلب تعديل: تعطيه النسخة النهائية مباشرة.
-- إذا كان عبد يطلب تحليل: تربط بين الرسائل السابقة.
-- إذا كان عبد يطلب رأي تقني: تعطيه خلاصة هندسية واضحة.
-
-ذاكرة الجلسة:
-- استخدم history لفهم آخر ما حصل.
-- استخدم fusedMemory.userProfile لفهم شخصية المستخدم.
-- استخدم fusedMemory.lastTopics لربط المواضيع.
-- استخدم fusedMemory.tags لفهم السياق العام.
-
-أنت لا تنفّذ أي شيء خارج الدردشة.
-أنت لا تستدعي أدوات.
-أنت لا تستهلك توكنز إضافية.
-أنت لا تستخدم أي نوايا بدائية.
-أنت ذكاء سيادي للدردشة فقط.
 `;
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
@@ -47,8 +28,18 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
   const fused = ctx.fusedMemory || {};
 
+  // 🟩 ملخص سياقي خفيف جداً
+  const contextSummary = `
+[سياق الجلسة]
+المواضيع: ${fused.lastTopics?.join(", ") || "—"}
+النبرة: ${fused.tags?.join(", ") || "—"}
+بروفايل: ${fused.userProfile?.role || "—"}
+`.trim();
+
+  // 🟩 بناء الرسائل مع حقن السياق
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: contextSummary },
     ...history.map(h => ({ role: h.role, content: h.content })),
     { role: "user", content: message }
   ];
@@ -58,4 +49,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   memory.appendSovereignHistory(sessionId, { role: "assistant", content: reply });
 
   return reply;
-}
+    }
