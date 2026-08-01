@@ -1,17 +1,17 @@
 /**
- * api/core/memory.js – Sovereign Dual Memory Engine (Final Edition with Anchoring)
- * ذاكرة ملفات + ذاكرة دردشة ذكية مع التثبيت المرجعي للبدايات
+ * api/core/memory.js – Sovereign Dual Memory Engine (Production Ready with Dynamic Aliasing)
+ * ذاكرة ملفات + ذاكرة دردشة ذكية مع التثبيت المرجعي والتوافقية التامة للكرنل
  */
 
 const sessions = {};
 
 export default {
   /* ============================================================
-     🧠 إنشاء أو استرجاع جلسة
+     🧠 إنشاء أو استرجاع جلسة مع ربط التوافقية الشاملة
      ============================================================ */
   getSession(id = "default-session") {
     if (!sessions[id]) {
-      sessions[id] = {
+      const sessionObj = {
         sovereign: {
           lastFile: null,
           history: []
@@ -27,6 +27,16 @@ export default {
           lastIntent: null
         }
       };
+
+      // ⭐ حل معماري جذري: ضمان عمل أي استدعاء مباشر لـ session.history بسلاسة تامة مع الـ chat history
+      Object.defineProperty(sessionObj, 'history', {
+        get() { return this.chat.history; },
+        set(val) { this.chat.history = val; },
+        configurable: true,
+        enumerable: true
+      });
+
+      sessions[id] = sessionObj;
     }
 
     sessions[id].meta.lastInteraction = Date.now();
@@ -61,7 +71,6 @@ export default {
       time: Date.now()
     });
 
-    // ضغط الذاكرة
     if (session.sovereign.history.length > 50) {
       session.sovereign.history = session.sovereign.history.slice(-25);
     }
@@ -140,3 +149,4 @@ export default {
     session.meta.lastIntent = intent;
   }
 };
+
