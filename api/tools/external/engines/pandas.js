@@ -1,5 +1,5 @@
 /**
- * engines/pandas.js – Sovereign Python/Pandas Data Engine (True Edition)
+ * engines/pandas.js – Sovereign Python/Pandas Data Engine (Armored Edition)
  * محرك سيادي حقيقي يستغل قوة Python و Pandas و Openpyxl الموجودة في الـ Docker
  */
 
@@ -32,11 +32,10 @@ export default async function pandasEngine(filePath, action, params = {}) {
 }
 
 /* ============================================================
-   🐍 تنفيذ محرك Python/Pandas الداخلي
+   🐍 تنفيذ محرك Python/Pandas الداخلي (محصّن ضد الجداول العشوائية وغياب الترويسة)
    ============================================================ */
 function runPythonPandas(filePath, mode) {
   try {
-فتمكنا من كتابة كود بايثون صغير وخفيف يُنفذ طيرانًا عبر `python3 -c` لمعالجة الملف مهما كان نوعه (Excel أو CSV) بغض النظر عن الترويسة:
     const pythonScript = `
 import pandas as pd
 import json
@@ -44,39 +43,51 @@ import sys
 
 try:
     file_path = sys.argv[1]
+    df = None
+    
     if file_path.endswith(('.xlsx', '.xls')):
-        df = pd.read_excel(file_path, sheet_name=0)
+        try:
+            df = pd.read_excel(file_path, sheet_name=0)
+            if df.empty or all(str(c).startswith('Unnamed') for c in df.columns):
+                raise ValueError("No valid headers")
+        except:
+            df = pd.read_excel(file_path, sheet_name=0, header=None)
     else:
         df = pd.read_csv(file_path)
 
-df = df.dropna(how='all').dropna(how='all', axis=1)
+    df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
     
-    # تنظيف الأعمدة وتحويلها لنصوص
-    df.columns = [str(c) for c in df.columns]
-    
-    preview = df.head(20).fillna("").to_dict(orient="records")
-    result = {
-        "ok": True,
-        "reply": "تمت القراءة والمعالجة عبر Pandas بنجاح.",
-        "data": {
-            "rows": len(df),
-            "columns": list(df.columns),
-            "preview": preview
+    if df.empty:
+        result = {
+            "ok": True,
+            "reply": "الملف فارغ تماماً أو لا يحتوي على بيانات مقروءة.",
+            "data": {"rows": 0, "columns": [], "preview": []}
         }
-    }
+    else:
+        df.columns = [str(c) for c in df.columns]
+        preview = df.head(25).fillna("").to_dict(orient="records")
+        
+        result = {
+            "ok": True,
+            "reply": "تمت قراءة ومعالجة الملف بنجاح عبر محرك Pandas السيادي.",
+            "data": {
+                "rows": len(df),
+                "columns": list(df.columns),
+                "preview": preview
+            }
+        }
+        
     print(json.dumps(result, ensure_ascii=False))
 except Exception as e:
     error_res = {"ok": False, "reply": "فشل تحليل البيانات عبر بايثون.", "error": str(e)}
     print(json.dumps(error_res, ensure_ascii=False))
 `;
 
-    // كتابة السكريبت مؤقتاً لتنفيذه بأمان تام
     const scriptPath = path.join(path.dirname(filePath), `script_${Date.now()}.py`);
     fs.writeFileSync(scriptPath, pythonScript, "utf8");
 
     const output = execSync(`python3 "${scriptPath}" "${filePath}"`, { encoding: "utf-8" });
     
-    // تنظيف الملف المؤقت فوراً
     if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
     const parsed = JSON.parse(output.trim());
@@ -151,7 +162,6 @@ if file_path.endswith(('.xlsx', '.xls')):
 else:
     df = pd.read_csv(file_path)
 
-# إضافة صف تجريبي كمثال للتعديل السيادي
 new_row = {col: "تم التعديل" for col in df.columns}
 df.loc[len(df)] = new_row
 
@@ -175,7 +185,7 @@ print("SUCCESS")
 }
 
 /* ============================================================
-   🟫 طبقة توحيد الردود (نفس المعمارية)
+   🟫 طبقة توحيد الردود
    ============================================================ */
 function normalizedReply(reply, data = {}) {
   return { ok: true, reply, data, fileBase64: null, fileName: null, filePath: null };
@@ -188,4 +198,3 @@ function normalizedFile(reply, filePath, fileName, base64) {
 function normalizedError(reply, err = null) {
   return { ok: false, reply, error: err ? err.message : reply, data: null, fileBase64: null, fileName: null, filePath: null };
 }
-
