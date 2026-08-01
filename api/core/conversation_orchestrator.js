@@ -6,7 +6,7 @@
 
 import memory from "./memory.js";
 import contextProtection from "./context_protection.js";
-import routeIntent from "./intent/intent_router.js"; // الراوتر الذكي الجديد
+import routeIntent from "./intent/intent_router.js";
 import kernel from "./kernel.js";
 import fusionMemory from "./fusion_memory.js";
 
@@ -27,42 +27,38 @@ export default async function conversationOrchestrator(sessionId, message, extra
     const session = memory.getSession(sessionId);
     const fileResult = extraCtx.fileResult || null;
     const locationContext = extraCtx.locationContext || "";
-    
-    // 1. هل يوجد ملف مرفق؟
+
     const hasFile = !!(fileResult && fileResult.fileName);
 
-    // 2. 🧠 التوجيه الدلالي بالذكاء الاصطناعي (Semantic Routing)
-    // ننتظر الـ JSON المهيكل القادم من الراوتر الذكي
+    // 🧠 التوجيه الدلالي
     const intentObj = await routeIntent(message, hasFile);
     console.log(`🧠 [Semantic Router] النية المكتشفة:`, intentObj);
 
-    // 3. 🛡️ تفعيل جدار الحماية (Context Shield)
-    // نمرر النية المستخرجة (intentObj.intent) بدلاً من الكائن كاملاً
+    // 🛡️ جدار الحماية
     const shieldResult = contextProtection.check(sessionId, intentObj.intent, message);
-    
+
     if (!shieldResult.ok && shieldResult.state === "noise_detected") {
       console.warn(`🛡️ [Shield] تم صد هجوم تشويش أو إدخال غير منطقي في الجلسة ${sessionId}`);
       return {
         ok: false,
-        reply: "عذراً يا زميلي، المدخلات غير واضحة أو تحتوي على تشويش. هل يمكنك إعادة صياغة طلبك؟ 🛑",
+        reply: "عذراً يا زميلي، المدخلات غير واضحة أو فيها تشويش. جرب تعيد صياغة طلبك. 🛑",
         fileBase64: null,
         fileName: null
       };
     }
 
-    // 4. إضافة رسالة المستخدم للذاكرة *قبل* استخراج الذاكرة المدمجة ليراها الكرنل
+    // إضافة رسالة المستخدم للذاكرة
     memory.appendChatHistory(sessionId, { role: "user", content: message });
-    
-    // 5. استخراج الذاكرة المدمجة (Fusion Memory) المعالجة بذكاء وتثبيت مرجعي
+
+    // استخراج الذاكرة المدمجة
     const fusedMemory = fusionMemory.apply(sessionId);
 
     /* ============================================================
-       🟧 مسار معالجة الملفات (إذا كان هناك ملف مرفق)
+       🟧 مسار الملفات
        ============================================================ */
     if (hasFile) {
       const fileName = fileResult.fileName.toLowerCase();
-      // نعتمد الآن على النية التي حللها الذكاء الاصطناعي (modify_file, read_file, summarize_file...)
-      const fileIntent = intentObj.intent; 
+      const fileIntent = intentObj.intent;
       let result = null;
 
       if (fileName.endsWith(".pdf")) {
@@ -105,19 +101,17 @@ export default async function conversationOrchestrator(sessionId, message, extra
         } else {
           result = {
             ok: true,
-            reply: "📷 هذا ملف صورة — لا يمكن استخراج نص منه حالياً.",
+            reply: "📷 هذا ملف صورة — حالياً ما في استخراج نص منه.",
             fileBase64: null,
             fileName: null
           };
         }
       }
 
-      // إذا لم يتعرف النظام على الأداة المطلوبة بدقة، نقوم بنقاش افتراضي
       if (!result) {
-         result = { ok: true, reply: `تم استلام الملف: ${fileResult.fileName}. ماذا تريد أن نفعل به؟` };
+        result = { ok: true, reply: `تم استلام الملف: ${fileResult.fileName}. شو حابب نعمل فيه؟` };
       }
 
-      // تسجيل الرد في ذاكرة الملفات والدردشة معاً ليظل السياق مترابطاً
       if (result && result.reply) {
         memory.appendSovereignHistory(sessionId, { role: "assistant", content: result.reply });
         memory.appendChatHistory(sessionId, { role: "assistant", content: result.reply });
@@ -127,21 +121,24 @@ export default async function conversationOrchestrator(sessionId, message, extra
     }
 
     /* ============================================================
-       🟦 مسار الدردشة الصافية (عبر الكيرنل السيادي - الذكاء الاصطناعي)
+       🟦 مسار الدردشة (الكرنل)
        ============================================================ */
-    
-    // تمرير النية الكاملة (بما فيها القيود Entities و Constraints) إلى الكرنل ليتعامل معها!
+
+    // نمرر للكرنل نسخة خفيفة من النية والذاكرة
     const kernelContext = {
-      history: fusedMemory.history,
+      history: fusedMemory.history,          // الكيرنل نفسه يعمل snapshot
       locationContext,
-      intent: intentObj, // 👈 هنا السر المعماري! نمرر كائن الـ JSON بالكامل
-      fusedMemory,
+      intent: { type: intentObj.intent },    // مو JSON كامل
+      fusedMemory: {
+        userProfile: fusedMemory.userProfile || null,
+        lastTopics: fusedMemory.lastTopics || [],
+        tags: fusedMemory.tags || []
+      },
       shieldWarning: shieldResult.note || null
     };
 
     const reply = await kernel(sessionId, message, kernelContext);
 
-    // إضافة رد الأثير للذاكرة (يتم هنا حصراً، وتم إزالته من الكرنل لمنع الازدواجية)
     memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
     return {
@@ -155,14 +152,14 @@ export default async function conversationOrchestrator(sessionId, message, extra
     console.error("🔥 [Orchestrator Error]:", err);
     return {
       ok: false,
-      reply: `⚠️ حدث خطأ في النظام أثناء المعالجة: ${err.message}`,
+      reply: `⚠️ صار خطأ بالنظام أثناء المعالجة: ${err.message}`,
       error: err.message
     };
   }
 }
 
 /* ============================================================
-   🧠 دوال التلخيص والنقاش المحلي (Local Fallbacks)
+   🧠 دوال التلخيص والنقاش المحلي
    ============================================================ */
 
 function buildLocalSummaryResult(content) {
@@ -187,7 +184,7 @@ function buildLocalSummaryResult(content) {
 
   return {
     ok: true,
-    reply: reply || "لا يوجد محتوى قابل للتلخيص."
+    reply: reply || "ما في محتوى واضح قابل للتلخيص."
   };
 }
 
@@ -205,11 +202,10 @@ function buildLocalDiscussionResult(file, analysis) {
   if (data.hasImages !== undefined) parts.push(`- يحتوي صور: ${data.hasImages ? "نعم" : "لا"}`);
   if (data.hasTables !== undefined) parts.push(`- يحتوي جداول: ${data.hasTables ? "نعم" : "لا"}`);
 
-  parts.push("\nهذا نقاش محلي. إذا أردت تحليلاً أعمق، اطلب مني ذلك بوضوح.");
+  parts.push("\nهذا نقاش محلي. إذا بدك تحليل أعمق، قوللي بوضوح شو بدك بالضبط.");
 
   return {
     ok: true,
     reply: parts.join("\n")
   };
-}
-
+      }
