@@ -1,11 +1,9 @@
 /**
- * api/core/agents_orchestrator.js – Sovereign Multi-Agent Engine
- * تم الترقية للعمل مع الراوتر الدلالي (Semantic Router) المعتمد على gpt-oss-120b
- * وتجاوز التعبيرات النمطية (Regex) لضمان الدقة والسرعة في توجيه المهام.
+ * api/core/agents_orchestrator.js – Sovereign Multi-Agent Engine (Final Edition)
  */
 
 import memory from "./memory.js";
-import routeIntent from "./intent/intent_router.js"; // 🧠 استدعاء العقل الدلالي الجديد بدلاً من الملف المحذوف
+import routeIntent from "./intent/intent_router.js";
 import conversationOrchestrator from "./conversation_orchestrator.js";
 import * as toolsIndex from "../tools/index.js";
 
@@ -14,7 +12,7 @@ export default async function agentsOrchestrator(sessionId, input, ctx = {}) {
   const text = typeof input === "string" ? input : ctx.message || "";
   const hasFile = !!ctx.file || !!session?.sovereign?.lastFile;
 
-  // 🔍 تحليل النية عبر الذكاء الاصطناعي بدلاً من دوال البحث النصي القديمة
+  // 🧠 تحليل النية عبر الراوتر الدلالي
   const intentObj = await routeIntent(text, hasFile);
 
   const agents = [
@@ -42,65 +40,65 @@ export default async function agentsOrchestrator(sessionId, input, ctx = {}) {
 
   return {
     ok: true,
-    intent: intentObj, // إضافة النية للرد لمتابعتها في الـ Logs وتحليل الأداء
+    intent: intentObj.intent,   // فقط النية الأساسية، بدون JSON كامل
     agents: outputs
   };
 }
 
 /* ============================================================
-   ⭐ File Agent – يوجه نوايا الملفات إلى conversation_orchestrator
+   ⭐ File Agent – مسار الملفات
    ============================================================ */
 const fileAgent = {
   name: "fileAgent",
   run: async (sessionId, intentObj, input, ctx) => {
-    // نعتمد هنا على تصنيف الراوتر الدلالي بدلاً من البحث في الكلمات
-    const isFileIntent = intentObj.category === "data_analysis" || 
-                         intentObj.category === "file_generation" ||
-                         String(intentObj.category).includes("file");
+    const category = intentObj.category || "";
+    const isFileIntent =
+      category.includes("file") ||
+      category === "data_analysis" ||
+      category === "file_generation";
 
     if (!isFileIntent) return "تجاوز";
 
     const result = await conversationOrchestrator(sessionId, input, {
       ...ctx,
-      intent: intentObj,
+      intent: { type: intentObj.intent },   // نمرّر فقط النية الأساسية
       file: ctx.file || memory.getSession(sessionId)?.sovereign?.lastFile || null
     });
 
-    return result.reply ?? "⚠️ لم يتم توليد رد واضح من عقل الملفات.";
+    return result.reply ?? "⚠️ ما طلع رد واضح من مسار الملفات.";
   }
 };
 
 /* ============================================================
-   ⭐ Tools Agent – يوجه الطلبات إلى منظومة الأدوات
+   ⭐ Tools Agent – مسار الأدوات
    ============================================================ */
 const toolsAgent = {
   name: "toolsAgent",
   run: async (sessionId, intentObj, input, ctx) => {
-    // التخلص من البحث العشوائي عن كلمة "أداة" والاعتماد على الـ Context والـ Router
     const isToolIntent = ctx.tools || intentObj.category === "tool_usage";
 
     if (!isToolIntent) return "تجاوز";
 
     if (ctx.fileResult) {
       const result = await toolsIndex.autoRead(ctx.fileResult);
-      return result || "⚠️ لم يتم توليد رد واضح من أدوات القراءة.";
+      return result || "⚠️ ما طلع رد واضح من أدوات القراءة.";
     }
 
-    return "⚠️ لم يتم التعرف على أداة مناسبة في السياق الحالي.";
+    return "⚠️ ما في أداة مناسبة للسياق الحالي.";
   }
 };
 
 /* ============================================================
-   ⭐ Chat Agent – fallback للدردشة عبر conversation_orchestrator
+   ⭐ Chat Agent – fallback للدردشة
    ============================================================ */
 const chatAgent = {
   name: "chatAgent",
   run: async (sessionId, intentObj, input, ctx) => {
-    // تمرير النية الجديدة للمايسترو ليولد رداً متوافقاً تماماً مع سياق الحديث
-    const result = await conversationOrchestrator(sessionId, input, { 
-      ...ctx, 
-      intent: intentObj 
+    const result = await conversationOrchestrator(sessionId, input, {
+      ...ctx,
+      intent: { type: intentObj.intent }   // فقط النية الأساسية
     });
-    return result.reply ?? "⚠️ لم يتم توليد رد واضح من عقل الدردشة.";
+
+    return result.reply ?? "⚠️ ما طلع رد واضح من مسار الدردشة.";
   }
 };
