@@ -1,6 +1,6 @@
 /**
- * engines/excel.js – Sovereign Unified Excel Engine (Heavy Edition)
- * نسخة موحّدة بالكامل مع باقي المحركات + واجهات متوافقة مع الجسر
+ * engines/excel.js – Sovereign Unified Excel Engine (Heavy Edition - Fixed)
+ * نسخة موحّدة ومحصّنة ضد الملفات التي لا تحتوي على ترويسة أو تبدأ ببيانات مباشرة
  */
 
 import fs from "fs";
@@ -17,17 +17,15 @@ export async function excelRead(filePath) {
 }
 
 export async function excelModify(filePath, fn = null) {
-  // fn موجود للجسر، بس هون منستخدم المنطق الأصلي
   return await modifyExcel(filePath);
 }
 
 export async function excelCreate(text = "") {
-  // لاحقًا فيك تعمل إنشاء Excel فعلي
   return normalizedReply("إنشاء ملف Excel غير مفعّل بعد.", { text });
 }
 
 /* ============================================================
-   🟥 واجهة المحرك الموحدة (إذا بدك تستخدمها داخليًا)
+   🟥 واجهة المحرك الموحدة
    ============================================================ */
 export default async function excelEngine(filePath, action, params = {}) {
   try {
@@ -56,18 +54,49 @@ export default async function excelEngine(filePath, action, params = {}) {
 }
 
 /* ============================================================
-   🟩 READ – قراءة Excel
+   🟩 READ – قراءة Excel (محصنة ضد غياب الترويسة)
    ============================================================ */
 async function readExcel(filePath) {
   try {
     const workbook = XLSX.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
-    const sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+    const worksheet = workbook.Sheets[sheetName];
+
+    // المحاولة الأولى: القراءة بالشكل القياسي (مع ترويسة)
+    let sheetData = XLSX.utils.sheet_to_json(worksheet);
+
+    // المحاولة الثانية: إذا كانت النتيجة فارغة، نقرأ الملف كصفوف خام (Arrays) لضمان عدم ضياع أي بيانات
+    if (!sheetData || sheetData.length === 0) {
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      // تصفية الأسطر الفارغة تماماً
+      const filteredRows = rawData.filter(row => Array.isArray(row) && row.some(cell => cell !== undefined && cell !== ""));
+      
+      if (filteredRows.length > 0) {
+        // تحويل الصفوف الخام إلى كائنات مبسطة ليفهمها النموذج
+        const headers = filteredRows[0];
+        sheetData = filteredRows.slice(1).map(row => {
+          let obj = {};
+          headers.forEach((h, i) => {
+            obj[h || `col_${i}`] = row[i] !== undefined ? row[i] : "";
+          });
+          return obj;
+        });
+        
+        // إذا لم يكن هناك ترويسة حقيقية، نرسل الصفوف الخام مباشرة كمعاينة
+        if (sheetData.length === 0) {
+          sheetData = filteredRows.map((r, idx) => ({ row_index: idx, data: r }));
+        }
+      }
+    }
+
+    if (!sheetData || sheetData.length === 0) {
+      return normalizedError("الملف فارغ تماماً أو لا يحتوي على بيانات قراءة صالحة.");
+    }
 
     return normalizedReply("تم قراءة ملف Excel بنجاح.", {
       sheetName,
-      rows: sheet.length,
-      preview: sheet.slice(0, 10)
+      rows: sheetData.length,
+      preview: sheetData.slice(0, 15) // نأخذ أول 15 صفاً كمعاينة دقيقة
     });
   } catch (err) {
     return normalizedError("فشل قراءة Excel.", err);
@@ -83,7 +112,12 @@ async function extractExcel(filePath) {
     const sheets = {};
 
     workbook.SheetNames.forEach(name => {
-      sheets[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name]);
+      const ws = workbook.Sheets[name];
+      let data = XLSX.utils.sheet_to_json(ws);
+      if (!data || data.length === 0) {
+        data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      }
+      sheets[name] = data;
     });
 
     return normalizedReply("تم استخراج جميع جداول Excel.", sheets);
@@ -98,11 +132,8 @@ async function extractExcel(filePath) {
 async function convertExcel(filePath) {
   try {
     const out = path.join(path.dirname(filePath), `converted_${Date.now()}.pdf`);
-
     execSync(`libreoffice --headless --convert-to pdf "${filePath}" --outdir "${path.dirname(out)}"`);
-
     const base64 = fs.readFileSync(out).toString("base64");
-
     return normalizedFile("تم تحويل Excel إلى PDF.", out, "converted.pdf", base64);
   } catch (err) {
     return normalizedError("فشل تحويل Excel.", err);
@@ -138,7 +169,13 @@ async function analyzeExcel(filePath) {
   try {
     const workbook = XLSX.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
-    const sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+    const ws = workbook.Sheets[sheetName];
+    let sheet = XLSX.utils.sheet_to_json(ws);
+
+    if (!sheet || sheet.length === 0) {
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      sheet = raw.map((r, i) => ({ index: i, content: r }));
+    }
 
     return normalizedReply("تحليل Excel مكتمل.", {
       sheetName,
@@ -187,3 +224,4 @@ function normalizedError(reply, err = null) {
     filePath: null
   };
 }
+
