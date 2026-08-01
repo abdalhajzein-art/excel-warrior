@@ -1,6 +1,5 @@
 /**
- * api/groqService.js – Sovereign LLM Gateway (النسخة الصحيحة)
- * بوابة نظيفة وخفيفة للتواصل مع Groq بدون أي ذكاء إضافي.
+ * api/groqService.js – Sovereign LLM Gateway
  */
 
 import { Groq } from "groq-sdk";
@@ -10,7 +9,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 export default async function groqService(prompt) {
   try {
     const completion = await groq.chat.completions.create({
-      model: "openai/gpt-oss-120b",
+      model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: "أنت الأثير — رد دائماً برد لغوي واضح." },
         { role: "user", content: prompt }
