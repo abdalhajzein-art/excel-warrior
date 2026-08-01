@@ -15,7 +15,9 @@ export default async function groqService(prompt) {
         { role: "user", content: prompt }
       ],
       temperature: 0.6,
-      max_tokens: 1500
+      max_completion_tokens: 1500,   // ← المهم
+      top_p: 1,
+      stream: false
     });
 
     return completion.choices[0].message.content.trim();
