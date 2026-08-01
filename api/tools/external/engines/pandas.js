@@ -1,109 +1,132 @@
 /**
- * engines/pandas.js – Sovereign Unified Data Engine (Heavy Edition)
- * نسخة موحّدة بالكامل مع باقي المحركات
+ * engines/pandas.js – Sovereign Python/Pandas Data Engine (True Edition)
+ * محرك سيادي حقيقي يستغل قوة Python و Pandas و Openpyxl الموجودة في الـ Docker
  */
 
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 
 export default async function pandasEngine(filePath, action, params = {}) {
   try {
     switch (action) {
       case "read":
-        return await readData(filePath);
+      case "analyze":
+        return await runPythonPandas(filePath, "analyze");
 
       case "extract":
-        return await extractData(filePath);
+        return await runPythonPandas(filePath, "extract");
 
       case "convert":
-        return await convertData(filePath, params);
+        return await runPythonConvert(filePath, params);
 
       case "modify":
-        return await modifyData(filePath, params);
-
-      case "analyze":
-        return await analyzeData(filePath);
+        return await runPythonModify(filePath);
 
       default:
         return normalizedError("عملية غير معروفة.");
     }
   } catch (err) {
-    return normalizedError("خطأ أثناء معالجة البيانات.", err);
+    return normalizedError("خطأ أثناء معالجة محرك Pandas.", err);
   }
 }
 
 /* ============================================================
-   🟩 READ – قراءة البيانات
+   🐍 تنفيذ محرك Python/Pandas الداخلي
    ============================================================ */
-async function readData(filePath) {
+function runPythonPandas(filePath, mode) {
   try {
-    const ext = path.extname(filePath).toLowerCase();
-    const raw = fs.readFileSync(filePath, "utf8");
+فتمكنا من كتابة كود بايثون صغير وخفيف يُنفذ طيرانًا عبر `python3 -c` لمعالجة الملف مهما كان نوعه (Excel أو CSV) بغض النظر عن الترويسة:
+    const pythonScript = `
+import pandas as pd
+import json
+import sys
 
-    let parsed;
+try:
+    file_path = sys.argv[1]
+    if file_path.endswith(('.xlsx', '.xls')):
+        df = pd.read_excel(file_path, sheet_name=0)
+    else:
+        df = pd.read_csv(file_path)
 
-    if (ext === ".json") {
-      parsed = JSON.parse(raw);
-    } else if (ext === ".csv") {
-      parsed = parseCSV(raw);
-    } else if (ext === ".tsv") {
-      parsed = parseTSV(raw);
-    } else {
-      parsed = raw.split("\n");
+df = df.dropna(how='all').dropna(how='all', axis=1)
+    
+    # تنظيف الأعمدة وتحويلها لنصوص
+    df.columns = [str(c) for c in df.columns]
+    
+    preview = df.head(20).fillna("").to_dict(orient="records")
+    result = {
+        "ok": True,
+        "reply": "تمت القراءة والمعالجة عبر Pandas بنجاح.",
+        "data": {
+            "rows": len(df),
+            "columns": list(df.columns),
+            "preview": preview
+        }
     }
+    print(json.dumps(result, ensure_ascii=False))
+except Exception as e:
+    error_res = {"ok": False, "reply": "فشل تحليل البيانات عبر بايثون.", "error": str(e)}
+    print(json.dumps(error_res, ensure_ascii=False))
+`;
 
-    return normalizedReply("تم قراءة البيانات بنجاح.", parsed);
+    // كتابة السكريبت مؤقتاً لتنفيذه بأمان تام
+    const scriptPath = path.join(path.dirname(filePath), `script_${Date.now()}.py`);
+    fs.writeFileSync(scriptPath, pythonScript, "utf8");
+
+    const output = execSync(`python3 "${scriptPath}" "${filePath}"`, { encoding: "utf-8" });
+    
+    // تنظيف الملف المؤقت فوراً
+    if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
+
+    const parsed = JSON.parse(output.trim());
+    if (!parsed.ok) {
+      return normalizedError(parsed.reply, new Error(parsed.error));
+    }
+    return parsed;
+
   } catch (err) {
-    return normalizedError("فشل قراءة البيانات.", err);
+    return normalizedError("خطأ في تشغيل بيئة بايثون.", err);
   }
 }
 
 /* ============================================================
-   🟦 EXTRACT – استخراج الأعمدة والصفوف
+   🟥 CONVERT – تحويل الملفات عبر Pandas
    ============================================================ */
-async function extractData(filePath) {
-  try {
-    const raw = fs.readFileSync(filePath, "utf8");
-    const rows = parseCSV(raw);
-
-    return normalizedReply("تم استخراج الأعمدة والصفوف.", {
-      columns: Object.keys(rows[0] || {}),
-      rows: rows.slice(0, 20)
-    });
-  } catch (err) {
-    return normalizedError("فشل استخراج البيانات.", err);
-  }
-}
-
-/* ============================================================
-   🟥 CONVERT – تحويل البيانات
-   ============================================================ */
-async function convertData(filePath, params) {
+function runPythonConvert(filePath, params) {
   try {
     const ext = params.format || "json";
-    const raw = fs.readFileSync(filePath, "utf8");
+    const outPath = path.join(path.dirname(filePath), `converted_${Date.now()}.${ext}`);
 
-    let data;
+    const pythonScript = `
+import pandas as pd
+import sys
 
-    if (filePath.endsWith(".csv")) {
-      data = parseCSV(raw);
-    } else if (filePath.endsWith(".tsv")) {
-      data = parseTSV(raw);
-    } else {
-      data = raw.split("\n");
-    }
+file_path = sys.argv[1]
+out_path = sys.argv[2]
+ext = sys.argv[3]
 
-    const out = path.join(path.dirname(filePath), `converted_${Date.now()}.${ext}`);
+if file_path.endswith(('.xlsx', '.xls')):
+    df = pd.read_excel(file_path)
+else:
+    df = pd.read_csv(file_path)
 
-    if (ext === "json") {
-      fs.writeFileSync(out, JSON.stringify(data, null, 2));
-    } else if (ext === "csv") {
-      fs.writeFileSync(out, toCSV(data));
-    }
+if ext == 'json':
+    df.to_json(out_path, orient='records', force_ascii=False, indent=2)
+elif ext == 'csv':
+    df.to_csv(out_path, index=False)
+elif ext == 'xlsx':
+    df.to_excel(out_path, index=False)
+print("SUCCESS")
+`;
+    const scriptPath = path.join(path.dirname(filePath), `conv_${Date.now()}.py`);
+    fs.writeFileSync(scriptPath, pythonScript, "utf8");
 
-    const base64 = fs.readFileSync(out).toString("base64");
+    execSync(`python3 "${scriptPath}" "${filePath}" "${outPath}" "${ext}"`, { encoding: "utf-8" });
+    if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
-    return normalizedFile(`تم تحويل البيانات إلى ${ext}.`, out, `converted.${ext}`, base64);
+    const base64 = fs.readFileSync(outPath).toString("base64");
+    return normalizedFile(`تم التحويل إلى ${ext} بنجاح عبر Pandas.`, outPath, `converted.${ext}`, base64);
   } catch (err) {
     return normalizedError("فشل تحويل البيانات.", err);
   }
@@ -112,113 +135,57 @@ async function convertData(filePath, params) {
 /* ============================================================
    🟧 MODIFY – تعديل البيانات
    ============================================================ */
-async function modifyData(filePath) {
+function runPythonModify(filePath) {
   try {
-    const raw = fs.readFileSync(filePath, "utf8");
-    const rows = parseCSV(raw);
+    const outPath = path.join(path.dirname(filePath), `modified_${Date.now()}.xlsx`);
+    
+    const pythonScript = `
+import pandas as pd
+import sys
 
-    rows.push({ added: "تمت الإضافة", timestamp: new Date().toISOString() });
+file_path = sys.argv[1]
+out_path = sys.argv[2]
 
-    const out = path.join(path.dirname(filePath), `modified_${Date.now()}.csv`);
-    fs.writeFileSync(out, toCSV(rows));
+if file_path.endswith(('.xlsx', '.xls')):
+    df = pd.read_excel(file_path)
+else:
+    df = pd.read_csv(file_path)
 
-    const base64 = fs.readFileSync(out).toString("base64");
+# إضافة صف تجريبي كمثال للتعديل السيادي
+new_row = {col: "تم التعديل" for col in df.columns}
+df.loc[len(df)] = new_row
 
-    return normalizedFile("تم تعديل البيانات (إضافة صف جديد).", out, "modified.csv", base64);
+if file_path.endswith(('.xlsx', '.xls')):
+    df.to_excel(outPath, index=False)
+else:
+    df.to_csv(outPath, index=False)
+print("SUCCESS")
+`;
+    const scriptPath = path.join(path.dirname(filePath), `mod_${Date.now()}.py`);
+    fs.writeFileSync(scriptPath, pythonScript, "utf8");
+
+    execSync(`python3 "${scriptPath}" "${filePath}" "${outPath}"`, { encoding: "utf-8" });
+    if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
+
+    const base64 = fs.readFileSync(outPath).toString("base64");
+    return normalizedFile("تم تعديل البيانات عبر Pandas بنجاح.", outPath, "modified.xlsx", base64);
   } catch (err) {
     return normalizedError("فشل تعديل البيانات.", err);
   }
 }
 
 /* ============================================================
-   🟪 ANALYZE – تحليل البيانات
-   ============================================================ */
-async function analyzeData(filePath) {
-  try {
-    const raw = fs.readFileSync(filePath, "utf8");
-    const rows = parseCSV(raw);
-
-    return normalizedReply("تحليل البيانات مكتمل.", {
-      rows: rows.length,
-      columns: Object.keys(rows[0] || {}),
-      sample: rows[0] || {}
-    });
-  } catch (err) {
-    return normalizedError("فشل تحليل البيانات.", err);
-  }
-}
-
-/* ============================================================
-   🟫 أدوات مساعدة
-   ============================================================ */
-function parseCSV(text) {
-  const lines = text.split("\n").filter(Boolean);
-  const headers = lines[0].split(",");
-
-  return lines.slice(1).map(line => {
-    const values = line.split(",");
-    const obj = {};
-    headers.forEach((h, i) => (obj[h] = values[i] || ""));
-    return obj;
-  });
-}
-
-function parseTSV(text) {
-  const lines = text.split("\n").filter(Boolean);
-  const headers = lines[0].split("\t");
-
-  return lines.slice(1).map(line => {
-    const values = line.split("\t");
-    const obj = {};
-    headers.forEach((h, i) => (obj[h] = values[i] || ""));
-    return obj;
-  });
-}
-
-function toCSV(rows) {
-  const headers = Object.keys(rows[0] || {});
-  const lines = [headers.join(",")];
-
-  rows.forEach(row => {
-    lines.push(headers.map(h => row[h]).join(","));
-  });
-
-  return lines.join("\n");
-}
-
-/* ============================================================
-   🟪 طبقة توحيد الردود
+   🟫 طبقة توحيد الردود (نفس المعمارية)
    ============================================================ */
 function normalizedReply(reply, data = {}) {
-  return {
-    ok: true,
-    reply,
-    data,
-    fileBase64: null,
-    fileName: null,
-    filePath: null
-  };
+  return { ok: true, reply, data, fileBase64: null, fileName: null, filePath: null };
 }
 
 function normalizedFile(reply, filePath, fileName, base64) {
-  return {
-    ok: true,
-    reply,
-    data: null,
-    fileBase64: base64,
-    fileName,
-    filePath
-  };
+  return { ok: true, reply, data: null, fileBase64: base64, fileName, filePath };
 }
 
 function normalizedError(reply, err = null) {
-  return {
-    ok: false,
-    reply,
-    error: err ? err.message : reply,
-    data: null,
-    fileBase64: null,
-    fileName: null,
-    filePath: null
-  };
+  return { ok: false, reply, error: err ? err.message : reply, data: null, fileBase64: null, fileName: null, filePath: null };
 }
+
