@@ -1,13 +1,12 @@
 /**
  * api/core/conversation_orchestrator.js
- * Sovereign Orchestrator (Architect Edition) – المايسترو المحمي والمدمج
- * ملفات + دردشة + نوايا + ذاكرة + سياق + جدار حماية
+ * Sovereign Orchestrator (Semantic AI Edition) – المايسترو الذكي بالكامل
+ * ملفات + دردشة + توجيه دلالي عبر الـ JSON + ذاكرة + جدار حماية
  */
 
 import memory from "./memory.js";
 import contextProtection from "./context_protection.js";
-import detectFileIntent from "./intent/intent_file.js";
-import routeIntent from "./intent/intent_router.js";
+import routeIntent from "./intent/intent_router.js"; // الراوتر الذكي الجديد
 import kernel from "./kernel.js";
 import fusionMemory from "./fusion_memory.js";
 
@@ -25,11 +24,21 @@ export default async function conversationOrchestrator(sessionId, message, extra
   try {
     console.log(`📥 [Orchestrator] جلسة ${sessionId}: "${message}"`);
 
-    // 1. تحديد النية العامة
-    const intent = routeIntent(message);
+    const session = memory.getSession(sessionId);
+    const fileResult = extraCtx.fileResult || null;
+    const locationContext = extraCtx.locationContext || "";
+    
+    // 1. هل يوجد ملف مرفق؟
+    const hasFile = !!(fileResult && fileResult.fileName);
 
-    // 2. 🛡️ تفعيل جدار الحماية (Context Shield) قبل أي عملية
-    const shieldResult = contextProtection.check(sessionId, intent, message);
+    // 2. 🧠 التوجيه الدلالي بالذكاء الاصطناعي (Semantic Routing)
+    // ننتظر الـ JSON المهيكل القادم من الراوتر الذكي
+    const intentObj = await routeIntent(message, hasFile);
+    console.log(`🧠 [Semantic Router] النية المكتشفة:`, intentObj);
+
+    // 3. 🛡️ تفعيل جدار الحماية (Context Shield)
+    // نمرر النية المستخرجة (intentObj.intent) بدلاً من الكائن كاملاً
+    const shieldResult = contextProtection.check(sessionId, intentObj.intent, message);
     
     if (!shieldResult.ok && shieldResult.state === "noise_detected") {
       console.warn(`🛡️ [Shield] تم صد هجوم تشويش أو إدخال غير منطقي في الجلسة ${sessionId}`);
@@ -41,29 +50,25 @@ export default async function conversationOrchestrator(sessionId, message, extra
       };
     }
 
-    const session = memory.getSession(sessionId);
-    const fileResult = extraCtx.fileResult || null;
-    const locationContext = extraCtx.locationContext || "";
-
-    // 3. إضافة رسالة المستخدم للذاكرة *قبل* استخراج الذاكرة المدمجة ليراها الكرنل
+    // 4. إضافة رسالة المستخدم للذاكرة *قبل* استخراج الذاكرة المدمجة ليراها الكرنل
     memory.appendChatHistory(sessionId, { role: "user", content: message });
     
-    // 4. استخراج الذاكرة المدمجة (Fusion Memory) المعالجة بذكاء وتثبيت مرجعي
+    // 5. استخراج الذاكرة المدمجة (Fusion Memory) المعالجة بذكاء وتثبيت مرجعي
     const fusedMemory = fusionMemory.apply(sessionId);
 
     /* ============================================================
        🟧 مسار معالجة الملفات (إذا كان هناك ملف مرفق)
        ============================================================ */
-    if (fileResult && fileResult.fileName) {
+    if (hasFile) {
       const fileName = fileResult.fileName.toLowerCase();
-      const fileIntent = detectFileIntent(message);
-
+      // نعتمد الآن على النية التي حللها الذكاء الاصطناعي (modify_file, read_file, summarize_file...)
+      const fileIntent = intentObj.intent; 
       let result = null;
 
       if (fileName.endsWith(".pdf")) {
-        if (fileIntent === "read_file") result = await pdfRead(fileResult.filePath);
-        else if (fileIntent === "convert_file") result = await pdfConvert(fileResult.filePath, "pdf");
-        else if (fileIntent === "summarize_file") {
+        if (fileIntent.includes("read")) result = await pdfRead(fileResult.filePath);
+        else if (fileIntent.includes("convert")) result = await pdfConvert(fileResult.filePath, "pdf");
+        else if (fileIntent.includes("summarize")) {
           const content = await pdfRead(fileResult.filePath);
           result = buildLocalSummaryResult(content);
         } else {
@@ -72,8 +77,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
         }
       }
       else if (fileName.endsWith(".docx")) {
-        if (fileIntent === "convert_file") result = await libreConvert(fileResult.filePath, "pdf");
-        else if (fileIntent === "summarize_file") {
+        if (fileIntent.includes("convert")) result = await libreConvert(fileResult.filePath, "pdf");
+        else if (fileIntent.includes("summarize")) {
           const content = await pdfRead(fileResult.filePath);
           result = buildLocalSummaryResult(content);
         } else {
@@ -82,11 +87,11 @@ export default async function conversationOrchestrator(sessionId, message, extra
         }
       }
       else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
-        if (fileIntent === "read_file") result = await excelRead(fileResult.filePath);
-        else if (fileIntent === "modify_file") {
+        if (fileIntent.includes("read")) result = await excelRead(fileResult.filePath);
+        else if (fileIntent.includes("modify")) {
           const fn = (row) => row;
           result = await excelModify(fileResult.filePath, fn);
-        } else if (fileIntent === "summarize_file") {
+        } else if (fileIntent.includes("summarize")) {
           const content = await excelRead(fileResult.filePath);
           result = buildLocalSummaryResult(content);
         } else {
@@ -95,7 +100,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
         }
       }
       else if (fileName.match(/\.(png|jpg|jpeg|webp|tiff|avif)$/)) {
-        if (fileIntent === "convert_file") {
+        if (fileIntent.includes("convert")) {
           result = await imageConvert(fileResult.filePath, "png");
         } else {
           result = {
@@ -105,6 +110,11 @@ export default async function conversationOrchestrator(sessionId, message, extra
             fileName: null
           };
         }
+      }
+
+      // إذا لم يتعرف النظام على الأداة المطلوبة بدقة، نقوم بنقاش افتراضي
+      if (!result) {
+         result = { ok: true, reply: `تم استلام الملف: ${fileResult.fileName}. ماذا تريد أن نفعل به؟` };
       }
 
       // تسجيل الرد في ذاكرة الملفات والدردشة معاً ليظل السياق مترابطاً
@@ -120,18 +130,18 @@ export default async function conversationOrchestrator(sessionId, message, extra
        🟦 مسار الدردشة الصافية (عبر الكيرنل السيادي - الذكاء الاصطناعي)
        ============================================================ */
     
-    // تمرير تحذيرات الدرع (Shield) إلى الكرنل ليعرف كيف يتصرف في حال التشتيت
+    // تمرير النية الكاملة (بما فيها القيود Entities و Constraints) إلى الكرنل ليتعامل معها!
     const kernelContext = {
       history: fusedMemory.history,
       locationContext,
-      intent,
+      intent: intentObj, // 👈 هنا السر المعماري! نمرر كائن الـ JSON بالكامل
       fusedMemory,
       shieldWarning: shieldResult.note || null
     };
 
     const reply = await kernel(sessionId, message, kernelContext);
 
-    // إضافة رد الأثير للذاكرة
+    // إضافة رد الأثير للذاكرة (يتم هنا حصراً، وتم إزالته من الكرنل لمنع الازدواجية)
     memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
     return {
@@ -195,10 +205,11 @@ function buildLocalDiscussionResult(file, analysis) {
   if (data.hasImages !== undefined) parts.push(`- يحتوي صور: ${data.hasImages ? "نعم" : "لا"}`);
   if (data.hasTables !== undefined) parts.push(`- يحتوي جداول: ${data.hasTables ? "نعم" : "لا"}`);
 
-  parts.push("\nهذا نقاش محلي بدون تدخل الذكاء اللغوي بعد.");
+  parts.push("\nهذا نقاش محلي. إذا أردت تحليلاً أعمق، اطلب مني ذلك بوضوح.");
 
   return {
     ok: true,
     reply: parts.join("\n")
   };
 }
+
