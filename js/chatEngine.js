@@ -1,4 +1,4 @@
-/**
+/*
  * js/chatEngine.js – النسخة السيادية النهائية (بدون أي أذونات متصفح مزعجة)
  */
 
@@ -89,10 +89,14 @@ export async function handleSendMessage(renderCallbacks) {
     let processedFileResult = null;
     let fileDisplayName = null;
 
+    /* ============================================================
+       ⭐ رفع الملف إلى /api/upload مع action=preview
+       ============================================================ */
     if (currentFileToProcess) {
         try {
             const formData = new FormData();
             formData.append("file", currentFileToProcess);
+            formData.append("action", "preview");   // ← مهم جداً للجسر
 
             const uploadResponse = await fetch("/api/upload", {
                 method: "POST",
@@ -191,7 +195,6 @@ export async function handleSendMessage(renderCallbacks) {
             };
         });
 
-        // ⭐ إرسال الطلب مباشرة بدون أي طلب إذن مزعج (الباك إند سيتكفل بالـ IP)
         const requestPayload = { 
             message: displayMessage,
             history: formattedHistoryForBackend,
@@ -361,6 +364,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     }
 
     chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-
+        }
