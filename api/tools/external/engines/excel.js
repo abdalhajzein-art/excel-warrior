@@ -1,6 +1,6 @@
 /**
  * engines/excel.js – Sovereign Unified Excel Engine (Heavy Edition)
- * نسخة موحّدة بالكامل مع باقي المحركات
+ * نسخة موحّدة بالكامل مع باقي المحركات + واجهات متوافقة مع الجسر
  */
 
 import fs from "fs";
@@ -9,6 +9,26 @@ import XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import { execSync } from "child_process";
 
+/* ============================================================
+   🟩 واجهات التصدير المتوافقة مع external_file_bridge.js
+   ============================================================ */
+export async function excelRead(filePath) {
+  return await readExcel(filePath);
+}
+
+export async function excelModify(filePath, fn = null) {
+  // fn موجود للجسر، بس هون منستخدم المنطق الأصلي
+  return await modifyExcel(filePath);
+}
+
+export async function excelCreate(text = "") {
+  // لاحقًا فيك تعمل إنشاء Excel فعلي
+  return normalizedReply("إنشاء ملف Excel غير مفعّل بعد.", { text });
+}
+
+/* ============================================================
+   🟥 واجهة المحرك الموحدة (إذا بدك تستخدمها داخليًا)
+   ============================================================ */
 export default async function excelEngine(filePath, action, params = {}) {
   try {
     switch (action) {
