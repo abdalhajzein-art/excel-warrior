@@ -341,8 +341,7 @@ body {
 }
 
 /* ============================================
-   ⭐ نظام عرض المحادثة المحدث (RTL Layout)
-   المستخدم على اليمين | الأثير على اليسار
+   ⭐ التثبيت الهندسي القطعي لجهات الشات (يمين/يسار)
    ============================================ */
 .chat-area {
   flex: 1;
@@ -352,7 +351,7 @@ body {
   flex-direction: column;
   gap: 22px;
   scroll-behavior: smooth;
-  direction: rtl;
+  direction: ltr; /* تثبيت المحاور بدقة: اليسار يسار واليمين يمين */
 }
 
 .chat-area::-webkit-scrollbar {
@@ -363,13 +362,14 @@ body {
   border-radius: 4px;
 }
 
-/* Base Message Styling - خط مريح وعالي الوضوح */
+/* Base Message Styling */
 .message {
   position: relative;
   font-family: 'IBM Plex Sans Arabic', 'Cairo', sans-serif;
   font-size: 15px;
   line-height: 1.9;
   word-break: break-word;
+  direction: rtl; /* النص عربي من اليمين لليسار */
   animation: fadeInMsg 0.3s ease;
   transition: all 0.2s ease;
 }
@@ -379,10 +379,10 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 👤 1. رسالة المستخدم: مثبتة على اليمين */
+/* 👤 1. رسالة المستخدم: مجبرة على اليمين تماماً */
 .message.user {
-  align-self: flex-start;
-  margin-left: auto;
+  margin-left: auto !important; /* يدفع الرسالة لأقصى اليمين */
+  margin-right: 0 !important;
   max-width: 75%;
   background-color: var(--user-msg-bg);
   border: 1px solid rgba(212, 175, 55, 0.25);
@@ -390,12 +390,13 @@ body {
   padding: 12px 18px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
   color: var(--text-primary);
+  text-align: right;
 }
 
-/* 🤖 2. رد الأثير: لوحة حرة مثبتة على اليسار */
+/* 🤖 2. رد الأثير: مجبر على اليسار تماماً */
 .message.ai {
-  align-self: flex-end;
-  margin-right: auto;
+  margin-right: auto !important; /* يدفع الرد لأقصى اليسار */
+  margin-left: 0 !important;
   width: 100%;
   max-width: 88%;
   background: transparent !important;
@@ -405,17 +406,9 @@ body {
   color: var(--text-primary);
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   padding-bottom: 20px;
+  text-align: right;
 }
 
-.message pre {
-  background: #050608;
-  padding: 14px 18px;
-  border-radius: 10px;
-  border: 1px solid rgba(212, 175, 55, 0.2);
-  overflow-x: auto;
-  margin: 14px 0;
-  font-family: monospace;
-}
 
 /* ============================================
    ⭐ الرؤية المعمارية العضوية لجداول الأثير
