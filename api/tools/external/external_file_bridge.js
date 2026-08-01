@@ -25,12 +25,20 @@ export default async function externalBridge(req, res) {
 
     const action = req.body.action || "read";
 
-    // حفظ الملف مؤقتًا
+    // 🛡️ حفظ الملف مؤقتًا بذكاء (يدعم Memory Storage و Disk Storage)
     const tmpDir = os.tmpdir();
     const fileName = `${Date.now()}_${req.file.originalname}`;
     const filePath = path.join(tmpDir, fileName);
 
-    fs.writeFileSync(filePath, req.file.buffer);
+    if (req.file.buffer) {
+      // إذا كان الملف في الذاكرة (MemoryStorage)
+      fs.writeFileSync(filePath, req.file.buffer);
+    } else if (req.file.path) {
+      // إذا كان Multer قد حفظ الملف مسبقاً على القرص (DiskStorage)
+      fs.copyFileSync(req.file.path, filePath);
+    } else {
+      throw new Error("لم يتم العثور على بيانات الملف (لا buffer ولا path).");
+    }
 
     const ext = path.extname(fileName).toLowerCase();
     let result = null;
@@ -171,4 +179,5 @@ export default async function externalBridge(req, res) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-          }
+}
+
