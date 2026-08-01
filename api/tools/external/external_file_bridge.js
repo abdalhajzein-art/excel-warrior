@@ -1,14 +1,14 @@
 /**
- * external_file_bridge.js – Sovereign Heavy Engine Bridge (Copilot‑Style Preview Edition)
- * الجسر السيادي الموحد لمعالجة الملفات عبر المحركات المحلية + عرض ذكي للمحتوى
+ * external_file_bridge.js – Sovereign Heavy Engine Bridge (Pandas Integrated Edition)
+ * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات Python/Pandas و LibreOffice
  */
 
 import fs from "fs";
 import path from "path";
 import os from "os";
 
-// المحركات السيادية
-import { excelRead, excelModify, excelCreate } from "../excel.js";
+// المحركات السيادية (توجيه الإكسل حصرياً نحو محرك الجسر السيادي المعتمد على Pandas)
+import excelEngine, { excelRead, excelModify, excelCreate } from "./engines/excel.js";
 import { pdfRead, pdfConvert, pdfCreate } from "../pdf.js";
 import { wordCreate } from "../word.js";
 import { pptCreate } from "../ppt.js";
@@ -25,16 +25,14 @@ export default async function externalBridge(req, res) {
 
     const action = req.body.action || "read";
 
-    // 🛡️ حفظ الملف مؤقتًا بذكاء (يدعم Memory Storage و Disk Storage)
+    // 🛡️ حفظ الملف مؤقتًا بذكاء
     const tmpDir = os.tmpdir();
     const fileName = `${Date.now()}_${req.file.originalname}`;
     const filePath = path.join(tmpDir, fileName);
 
     if (req.file.buffer) {
-      // إذا كان الملف في الذاكرة (MemoryStorage)
       fs.writeFileSync(filePath, req.file.buffer);
     } else if (req.file.path) {
-      // إذا كان Multer قد حفظ الملف مسبقاً على القرص (DiskStorage)
       fs.copyFileSync(req.file.path, filePath);
     } else {
       throw new Error("لم يتم العثور على بيانات الملف (لا buffer ولا path).");
@@ -44,13 +42,12 @@ export default async function externalBridge(req, res) {
     let result = null;
 
     /* ============================================================
-       🟥 اختيار المحرك المناسب حسب الامتداد + دعم preview
+       🟥 اختيار المحرك المناسب حسب الامتداد
        ============================================================ */
 
     // 📄 PDF
     if (ext === ".pdf") {
       if (action === "preview") {
-        // عرض ذكي: أول صفحة / أول جزء نصّي
         const full = await pdfRead(filePath);
         const text = (full.data?.text || full.data || "").toString();
         const previewText = text.split("\n").slice(0, 40).join("\n");
@@ -86,55 +83,52 @@ export default async function externalBridge(req, res) {
       }
     }
 
-    // 📊 Excel
+    // 📊 Excel (متوافق تماماً مع محرك Pandas السيادي ومعالجة الجداول العشوائية)
     else if (ext === ".xlsx" || ext === ".xls") {
-      if (action === "preview") {
-        const full = await excelRead(filePath);
-        const rows = full.data?.rows || full.data || [];
-        const previewRows = Array.isArray(rows) ? rows.slice(0, 10) : rows;
+      if (action === "preview" || action === "read") {
+        const full = await excelEngine(filePath, "read");
         result = {
-          reply: "📊 لمحة عن محتوى ملف Excel (أول 10 صفوف):",
-          data: { preview: previewRows }
+          reply: full.reply || "📊 تم قراءة ملف Excel بنجاح عبر محرك Pandas السيادي.",
+          data: {
+            rowsCount: full.data?.rows || 0,
+            columns: full.data?.columns || [],
+            preview: full.data?.preview || []
+          }
         };
-      } else if (action === "read") {
-        result = await excelRead(filePath);
       } else if (action === "modify") {
-        const fn = (row) => row;
-        result = await excelModify(filePath, fn);
+        result = await excelEngine(filePath, "modify", req.body);
+      } else if (action === "convert") {
+        result = await excelEngine(filePath, "convert", req.body);
       } else if (action === "create") {
         result = await excelCreate(req.body.text || "");
+      } else {
+        result = await excelEngine(filePath, action, req.body);
       }
     }
 
     // 🖼 صور
     else if ([".png", ".jpg", ".jpeg", ".webp", ".tiff", ".avif"].includes(ext)) {
       if (action === "preview") {
-        // ممكن لاحقًا نضيف OCR، حالياً نرجّع وصف بسيط
         result = {
-          reply: "🖼 هذا ملف صورة – حالياً العرض عبارة عن معاينة بسيطة بدون OCR.",
-          data: { preview: "صورة مرفوعة، يمكن لاحقًا إضافة OCR أو تحليل محتوى." }
+          reply: "🖼 هذا ملف صورة – معاينة أولية.",
+          data: { preview: "صورة مرفوعة بنجاح." }
         };
       } else if (action === "convert") {
         const target = req.body.target || "png";
         result = await imageConvert(filePath, target);
       } else {
-        result = { reply: "📷 هذا ملف صورة – ما في استخراج نص منه حالياً.", data: null };
+        result = { reply: "📷 صورة مرفوعة.", data: null };
       }
     }
 
-    // 🎞 PPT (مبدئيًا إنشاء فقط)
+    // 🎞 PPT
     else if (ext === ".pptx") {
       if (action === "create") {
         result = await pptCreate(req.body.text || "");
-      } else if (action === "preview") {
-        result = {
-          reply: "🎞 ملف عروض تقديمية – يمكن لاحقًا إضافة معاينة للشرائح.",
-          data: { preview: "Preview للـ PPT غير مفعّل بعد." }
-        };
       } else {
         result = {
-          reply: "🎞 ملف عروض تقديمية – المعالجة الحالية محدودة بالإنشاء فقط.",
-          data: null
+          reply: "🎞 ملف عروض تقديمية.",
+          data: { preview: "Preview غير مفعّل بعد للـ PPT." }
         };
       }
     }
@@ -146,7 +140,7 @@ export default async function externalBridge(req, res) {
         const text = (full.data?.text || full.data || "").toString();
         const previewText = text.split("\n").slice(0, 40).join("\n");
         result = {
-          reply: "📄 لمحة عامة عن الملف (تمت معالجته كـ PDF):",
+          reply: "📄 لمحة عامة عن الملف:",
           data: { preview: previewText }
         };
       } else {
@@ -155,7 +149,7 @@ export default async function externalBridge(req, res) {
     }
 
     /* ============================================================
-       🟦 إذا المحرك رجّع ملف (مثلاً تحويل أو إنشاء)
+       🟦 إرجاع الملفات الناتجة (إن وجدت)
        ============================================================ */
     if (result?.fileBase64) {
       return res.status(200).json({
@@ -166,7 +160,7 @@ export default async function externalBridge(req, res) {
     }
 
     /* ============================================================
-       🟩 إذا المحرك رجّع نص أو بيانات
+       🟩 إرجاع البيانات النصية أو الهيكلية
        ============================================================ */
     return res.status(200).json({
       reply: result.reply || "تمت معالجة الملف بنجاح.",
@@ -180,4 +174,3 @@ export default async function externalBridge(req, res) {
     });
   }
 }
-
