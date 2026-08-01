@@ -1,5 +1,5 @@
 /**
- * api/core/decision_kernel.js – Sovereign Context Stitching & Orchestrator Bridge
+ * api/core/decision_kernel.js – Sovereign Context Stitching (Final Edition)
  */
 
 import memory from "./memory.js";
@@ -7,7 +7,7 @@ import globalOrchestrator from "./global_orchestrator.js";
 
 export default async function decisionKernel(sessionId, rawMessage, ctx = {}) {
   const message = (rawMessage || "").trim();
-  if (!message) return { ok: false, reply: "ما استلمت رسالة مفهومة." };
+  if (!message) return { ok: false, reply: "ما استلمت شي واضح يا عبد." };
 
   const session = memory.getSession(sessionId);
   const history = session.history || [];
@@ -18,7 +18,7 @@ export default async function decisionKernel(sessionId, rawMessage, ctx = {}) {
 
   let finalMessage = message;
 
-  // إذا الرسالة قصيرة جداً ← نعتبرها تكملة للسؤال السابق
+  // 🟩 تكملة ذكية للرسائل القصيرة
   const isShort = message.split(" ").length <= 3;
 
   const aiWasAsking =
@@ -33,18 +33,18 @@ export default async function decisionKernel(sessionId, rawMessage, ctx = {}) {
     finalMessage = `${lastUser.content} (${message})`;
   }
 
-  // 🔑 الحلقة المفقودة: تمرير الرسالة المترابطة إلى الـ Global Orchestrator لتنفيذ الطلب
+  // 🟦 تمرير الرسالة للمايسترو
   const orchestratorResult = await globalOrchestrator(sessionId, finalMessage, ctx);
 
-  // استخراج النص الصافي للرد لحفظه في الذاكرة بدقة
-  let replyText = "تم إنجاز طلبك بنجاح!";
+  // 🟧 استخراج الرد النصي
+  let replyText = "تمام يا عبد.";
   if (typeof orchestratorResult === "string") {
     replyText = orchestratorResult;
   } else if (orchestratorResult && typeof orchestratorResult === "object") {
     replyText = orchestratorResult.reply || replyText;
   }
 
-  // تحديث الذاكرة بالسجل النظيف
+  // 🟪 حفظ الرسالة والرد في الذاكرة
   memory.appendHistory(sessionId, { role: "user", content: message });
   memory.appendHistory(sessionId, { role: "assistant", content: replyText });
 
