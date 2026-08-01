@@ -1,6 +1,6 @@
 /**
- * api/core/global_orchestrator.js – Sovereign Global Router (No External Search)
- * كل البحث الخارجي متوقف — الرد يكون: "الميزة لسا ما اكتملت"
+ * api/core/global_orchestrator.js – Sovereign Global Router (Final Edition)
+ * لا بحث خارجي – كل شي يمر عبر المايسترو أو الوكلاء أو النظام.
  */
 
 import memory from "./memory.js";
@@ -14,35 +14,35 @@ export default async function globalOrchestrator(sessionId, input, ctx = {}) {
   const session = memory.getSession(sessionId);
 
   /* ============================================================
-     🟧 إذا في ملف → نمرّر للـ conversation_orchestrator
+     🟧 مسار الملفات
      ============================================================ */
   if (ctx.file || ctx.fileResult) {
     return await conversationOrchestrator(sessionId, input, ctx);
   }
 
   /* ============================================================
-     🟦 إذا المستخدم طلب agent
+     🟦 مسار الوكلاء
      ============================================================ */
   if (ctx.agent) {
     return await agentsOrchestrator(sessionId, input, ctx);
   }
 
   /* ============================================================
-     🟦 إذا المستخدم طلب system
+     🟦 مسار النظام
      ============================================================ */
   if (ctx.system) {
     return await systemAgent(sessionId, input, ctx);
   }
 
   /* ============================================================
-     🟦 إذا المستخدم طلب رفع ملف
+     🟦 مسار رفع الملفات
      ============================================================ */
   if (ctx.upload) {
     return await uploadHandler(sessionId, input, ctx);
   }
 
   /* ============================================================
-     🟦 إذا المستخدم طلب أدوات
+     🟦 مسار الأدوات
      ============================================================ */
   if (ctx.tools) {
     if (ctx.fileResult) {
@@ -61,12 +61,12 @@ export default async function globalOrchestrator(sessionId, input, ctx = {}) {
   if (looksLikeSearch) {
     return {
       ok: true,
-      reply: "🔍 ميزة البحث الخارجي لسا ما اكتملت… عبد عم يشتغل عليها، رح تنزل قريباً."
+      reply: "🔍 ميزة البحث الخارجي لسا ما اكتملت… عبد عم يشتغل عليها، ورح تنزل قريب."
     };
   }
 
   /* ============================================================
-     🟦 افتراضي: دردشة عبر orchestrator السيادي
+     🟦 مسار الدردشة الافتراضي (المايسترو)
      ============================================================ */
   return await conversationOrchestrator(sessionId, input, ctx);
 }
