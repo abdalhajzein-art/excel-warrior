@@ -1,6 +1,6 @@
 /**
  * api/core/intent/intent_file.js
- * Sovereign File Intent – نوايا الملفات + الصور
+ * Sovereign File Intent – التقاط إشارات الملفات والصور في النص
  */
 
 export default function detectFileIntent(text = "") {
@@ -25,12 +25,7 @@ export default function detectFileIntent(text = "") {
   /* ============================================================
      🟩 Excel (xlsx / xls)
      ============================================================ */
-  if (
-    lower.endsWith(".xlsx") ||
-    lower.endsWith(".xls") ||
-    lower.includes("excel") ||
-    lower.includes("جدول")
-  ) {
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.includes("excel") || lower.includes("جدول")) {
     return "excel_file";
   }
 
@@ -38,7 +33,7 @@ export default function detectFileIntent(text = "") {
      🟩 Images
      ============================================================ */
   const imageExt = /\.(png|jpg|jpeg|webp|tiff|avif)$/;
-  if (imageExt.test(lower)) {
+  if (imageExt.test(lower) || lower.includes("صورة") || lower.includes("صور")) {
     return "image_file";
   }
 
