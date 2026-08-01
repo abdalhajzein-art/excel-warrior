@@ -3,6 +3,9 @@ let attachedFileName = null;
 let isFileLoading = false;
 const fileInput = document.createElement('input');
 
+/* ============================================================
+   ⭐ تهيئة زر رفع الملف
+   ============================================================ */
 export function initFileHandler(callbacks) {
     fileInput.type = 'file';
     fileInput.accept = '.xlsx, .xls, .csv, .json, .txt, .docx, .pdf, .png, .jpg, .jpeg';
@@ -22,13 +25,15 @@ export function initFileHandler(callbacks) {
         if (!file) return;
 
         isFileLoading = true;
-        callbacks?.onUpdateSendState?.();
+        if (callbacks && typeof callbacks.onUpdateSendState === 'function') {
+            callbacks.onUpdateSendState();
+        }
 
         const fileBubbles = document.getElementById('fileBubbles');
         if (fileBubbles) {
             fileBubbles.innerHTML = `
                 <div style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; background: rgba(212, 175, 55, 0.05); color: #d4af37; padding: 6px 12px; border-radius: 6px; border: 1px dashed rgba(212, 175, 55, 0.3); opacity: 0.6; margin-bottom: 6px;">
-                    <span>جاري رفع الملف...</span>
+                    <span>جاري تحميل الملف...</span>
                 </div>
             `;
         }
@@ -36,29 +41,14 @@ export function initFileHandler(callbacks) {
         try {
             selectedFileObject = file;
             attachedFileName = file.name;
-
-            // ============================================================
-            // 🟧 رفع الملف إلى /api/upload (الجسر السيادي)
-            // ============================================================
-            const formData = new FormData();
-            formData.append("file", file);
-
-            const response = await fetch("/api/upload", {
-                method: "POST",
-                body: formData
-            });
-
-            const result = await response.json();
-
-            // يمكنك هنا تمرير النتيجة إلى chatEngine أو أي مكان آخر
-            callbacks?.onFileProcessed?.(result);
-
-            // ============================================================
-
+            await new Promise(resolve => setTimeout(resolve, 300));
             isFileLoading = false;
-            callbacks?.onUpdateSendState?.();
-            showFileBubbleUI();
 
+            if (callbacks && typeof callbacks.onUpdateSendState === 'function') {
+                callbacks.onUpdateSendState();
+            }
+
+            showFileBubbleUI();
         } catch (err) {
             console.error("Error processing file upload:", err);
             isFileLoading = false;
@@ -66,14 +56,19 @@ export function initFileHandler(callbacks) {
             attachedFileName = null;
 
             if (fileBubbles) {
-                fileBubbles.innerHTML = '<span style="color:#ff5555; font-size:12px; padding: 4px;">⚠️ فشل رفع الملف</span>';
+                fileBubbles.innerHTML = '<span style="color:#ff5555; font-size:12px; padding: 4px;">⚠️ فشل تحميل الملف</span>';
             }
 
-            callbacks?.onUpdateSendState?.();
+            if (callbacks && typeof callbacks.onUpdateSendState === 'function') {
+                callbacks.onUpdateSendState();
+            }
         }
     });
 }
 
+/* ============================================================
+   ⭐ عرض فقاعة الملف
+   ============================================================ */
 export function showFileBubbleUI() {
     const fileBubbles = document.getElementById('fileBubbles');
     if (!fileBubbles || !attachedFileName) return;
@@ -93,6 +88,9 @@ export function showFileBubbleUI() {
     }
 }
 
+/* ============================================================
+   ⭐ إزالة الملف
+   ============================================================ */
 export function resetFile() {
     selectedFileObject = null;
     attachedFileName = null;
@@ -104,6 +102,9 @@ export function resetFile() {
     fileInput.value = '';
 }
 
+/* ============================================================
+   ⭐ دوال مساعدة
+   ============================================================ */
 export function getSelectedFile() {
     return selectedFileObject;
 }
@@ -112,19 +113,29 @@ export function getAttachedFileName() {
     return attachedFileName;
 }
 
-export function readFileAsBase64(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const base64String = event.target.result.split(',')[1];
-            resolve([{
-                fileName: file.name,
-                fileBase64: base64String,
-                size: file.size,
-                type: file.type
-            }]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
+/* ============================================================
+   ⭐ إرسال الملف إلى السيرفر عبر /api/upload
+   ============================================================ */
+export async function sendSelectedFileToServer() {
+    if (!selectedFileObject) {
+        return { error: "⚠️ لا يوجد ملف مرفوع." };
+    }
+
+    const formData = new FormData();
+    formData.append("file", selectedFileObject);
+    formData.append("action", "preview");   // ← مهم جداً للجسر
+
+    try {
+        const response = await fetch("/api/upload", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await response.json();
+        return data;
+
+    } catch (err) {
+        console.error("❌ خطأ أثناء إرسال الملف:", err);
+        return { error: "❌ فشل إرسال الملف إلى السيرفر." };
+    }
 }
