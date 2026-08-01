@@ -394,18 +394,22 @@ body {
 }
 
 /* 🤖 2. رد الأثير: مجبر على اليسار تماماً */
+/* 🤖 2. رد الأثير: مجبر على اليسار تماماً باحترافية تامة */
 .message.ai {
-  width: 100% !important;
-  max-width: 100% !important;
-  margin: 12px 0 !important;
-  padding: 16px 12px;
+  margin-right: auto !important;     /* ⭐ السر: يدفع الرد بالكامل إلى أقصى اليسار */
+  margin-left: 0 !important;
+  width: fit-content !important;     /* ليتسع حسب المحتوى دون أن يفرضه المتصفح كاملاً */
+  max-width: 85% !important;         /* لضمان عدم تجاوز العرض المسموح للشاشة */
   background: rgba(255, 255, 255, 0.015); /* خلفية خفيفة جداً ومميزة للتمييز */
   border-top: 1px solid rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 16px 16px 16px 4px; /* حواف متناسقة تشبه فقابات الدردشة الذكية */
+  padding: 16px 18px;
   color: var(--text-primary);
-  text-align: right; /* أو left حسب الرغبة، لكن مع العربية اليمين هو الافتراضي الطبيعي */
+  text-align: right;                 /* محاذاة النص داخلياً لتناسب اللغة العربية */
   box-sizing: border-box;
 }
+
 
 
 
