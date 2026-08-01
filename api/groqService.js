@@ -1,11 +1,17 @@
 /**
- * api/groqService.js – Sovereign LLM Gateway
+ * api/groqService.js – Sovereign LLM Gateway (Dual Mode)
+ * يدعم:
+ * 1) groqService(prompt)  ← الوضع القديم
+ * 2) groqService.chat(messages) ← الوضع السيادي الجديد
  */
 
 import { Groq } from "groq-sdk";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+/* ============================================================
+   🟩 الوضع القديم: رسالة واحدة (prompt)
+   ============================================================ */
 export default async function groqService(prompt) {
   try {
     const completion = await groq.chat.completions.create({
@@ -20,11 +26,6 @@ export default async function groqService(prompt) {
       stream: false
     });
 
-    // ⭐⭐⭐ الأسطر المطلوبة:
-    console.log("🔍 Raw Groq Response:", completion);
-    console.log("🔍 Message Object:", completion.choices[0].message);
-    console.log("🔍 Message Content:", completion.choices[0].message.content);
-
     return completion.choices[0].message.content.trim();
 
   } catch (error) {
@@ -32,3 +33,23 @@ export default async function groqService(prompt) {
     return "⚠️ حدث خطأ أثناء توليد الرد.";
   }
 }
+
+/* ============================================================
+   🟦 الوضع السيادي الجديد: مصفوفة رسائل كاملة
+   ============================================================ */
+groqService.chat = async function(messages) {
+  try {
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages,
+      temperature: 0.4,
+      max_completion_tokens: 1500
+    });
+
+    return completion.choices[0].message.content.trim();
+
+  } catch (error) {
+    console.error("❌ Groq Chat Error:", error);
+    return "⚠️ حدث خطأ أثناء توليد الرد.";
+  }
+};
