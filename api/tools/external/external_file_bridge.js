@@ -7,16 +7,14 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-// المحركات السيادية الجديدة
-// ⚠️ بما أنك داخل api/tools/external/
-// المسار الصحيح هو الخروج خطوة واحدة فقط إلى tools/
+// المحركات السيادية
 import { excelRead, excelModify, excelCreate } from "../excel.js";
 import { pdfRead, pdfConvert, pdfCreate } from "../pdf.js";
 import { wordCreate } from "../word.js";
 import { pptCreate } from "../ppt.js";
 import { imageConvert } from "../image.js";
 
-// ⚠️ libreConvert موجود داخل engines، وليس داخل tools مباشرة
+// LibreOffice
 import libreConvert from "./engines/libre.js";
 
 export default async function externalBridge(req, res) {
@@ -35,7 +33,6 @@ export default async function externalBridge(req, res) {
     fs.writeFileSync(filePath, req.file.buffer);
 
     const ext = path.extname(fileName).toLowerCase();
-
     let result = null;
 
     /* ============================================================
@@ -48,7 +45,7 @@ export default async function externalBridge(req, res) {
     }
 
     else if (ext === ".docx") {
-      if (action === "read") result = await pdfRead(filePath); // LibreOffice نص
+      if (action === "read") result = await libreConvert(filePath, "txt");
       else if (action === "convert") result = await libreConvert(filePath, req.body.target || "pdf");
       else if (action === "create") result = await wordCreate(req.body.text || "");
     }
@@ -56,7 +53,7 @@ export default async function externalBridge(req, res) {
     else if (ext === ".xlsx" || ext === ".xls") {
       if (action === "read") result = await excelRead(filePath);
       else if (action === "modify") {
-        const fn = (row) => row; // تعديل محلي لاحقًا
+        const fn = (row) => row;
         result = await excelModify(filePath, fn);
       }
       else if (action === "create") result = await excelCreate(req.body.text || "");
@@ -67,12 +64,12 @@ export default async function externalBridge(req, res) {
         const target = req.body.target || "png";
         result = await imageConvert(filePath, target);
       } else {
-        result = { reply: "📷 صورة – لا يمكن استخراج نص منها.", data: null };
+        result = { reply: "📷 هذا ملف صورة – ما في استخراج نص منه حالياً.", data: null };
       }
     }
 
     else {
-      // أي صيغة أخرى → تحويل نص عبر LibreOffice
+      // fallback عام
       result = await pdfRead(filePath);
     }
 
@@ -101,4 +98,4 @@ export default async function externalBridge(req, res) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-        }
+}
