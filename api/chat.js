@@ -1,8 +1,9 @@
 /**
- * api/chat.js – Sovereign Chat Layer (مع رادار الـ IP الجغرافي الصامت)
+ * api/chat.js – Sovereign Chat Layer
+ * النسخة الخفيفة بعد إزالة decision_kernel وكل الطبقات الزائدة
  */
 
-import decisionKernel from "./core/decision_kernel.js";
+import conversationOrchestrator from "./core/conversation_orchestrator.js";
 
 export default async function handler(req, res) {
   try {
@@ -22,7 +23,7 @@ export default async function handler(req, res) {
     }
 
     // ⭐ تمرير الرسالة للطبقة السيادية المركزية
-    const output = await decisionKernel(sessionKey, userContent, {
+    const output = await conversationOrchestrator(sessionKey, userContent, {
       fileResult,
       history
     });
