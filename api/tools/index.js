@@ -1,6 +1,6 @@
 /**
- * api/tools/index.js – Sovereign Tools Dispatcher (Final Edition)
- * موزّع سيادي موحّد لكل محركات الملفات وأدوات البحث الحي عبر Google Gemini Grounding
+ * api/tools/index.js – Sovereign Tools Dispatcher (Final Sovereign Edition)
+ * موزّع سيادي موحّد لكل محركات الملفات – بدون أي بحث خارجي.
  */
 
 import path from "path";
@@ -11,17 +11,14 @@ import { wordCreate } from "./word.js";
 import { imageConvert } from "./image.js";
 import { pptCreate } from "./ppt.js";
 
-// 🔥 المسار الصحيح لمحرك LibreOffice
+// 🔥 محرك LibreOffice
 import libreConvert from "./external/engines/libre.js";
-
-// 🌐 محرك بحث جوجل الحقيقي عبر Gemini Search Grounding
-import { searchWithGoogle } from "./geminiSearch.js";
 
 /* ============================================================
    🧠 الموزّع السيادي للقراءة
    ============================================================ */
 export async function autoRead(filePath) {
-  if (!filePath) return "⚠️ لا يوجد مسار للملف.";
+  if (!filePath) return "⚠️ ما في مسار للملف.";
 
   const ext = path.extname(filePath).toLowerCase().replace(".", "");
 
@@ -29,20 +26,20 @@ export async function autoRead(filePath) {
   if (ext === "pdf") return await pdfRead(filePath);
 
   if (["png", "jpg", "jpeg", "webp", "tiff", "avif"].includes(ext))
-    return "📷 صورة – لا يمكن استخراج نص منها مباشرة.";
+    return "📷 هذا ملف صورة – ما في استخراج نص منه حالياً.";
 
   return "⚠️ صيغة غير مدعومة.";
 }
 
 /* ============================================================
-   🌐 موزع البحث السيادي الحي (يعتمد الآن حصراً على Gemini Grounding)
+   🟥 البحث الخارجي متوقف بالكامل
    ============================================================ */
 export async function autoSearch(query) {
-  return await searchWithGoogle(query);
+  return "🔍 ميزة البحث الخارجي لسا ما اكتملت… عبد عم يشتغل عليها.";
 }
 
 /* ============================================================
-   🟦 التصدير السيادي الموحد (بدون تكرار)
+   🟦 التصدير السيادي الموحد
    ============================================================ */
 export {
   excelRead,
@@ -53,6 +50,5 @@ export {
   wordCreate,
   pptCreate,
   imageConvert,
-  libreConvert,
-  searchWithGoogle
+  libreConvert
 };
