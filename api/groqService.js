@@ -20,7 +20,10 @@ export default async function groqService(prompt) {
       stream: false
     });
 
-    console.log("🔍 Raw Groq Response:", completion);   // ← هذا السطر المهم
+    // ⭐⭐⭐ الأسطر المطلوبة:
+    console.log("🔍 Raw Groq Response:", completion);
+    console.log("🔍 Message Object:", completion.choices[0].message);
+    console.log("🔍 Message Content:", completion.choices[0].message.content);
 
     return completion.choices[0].message.content.trim();
 
