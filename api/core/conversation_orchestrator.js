@@ -74,9 +74,17 @@ export default async function conversationOrchestrator(sessionId, message, extra
        🟦 مسار الدردشة (الكرنل)
        ============================================================ */
 
-    // 🟩 إصلاح المشكلة الأساسية: history الحقيقي
+    // 🟩 history الحقيقي + فلتر حماية
+    let history = memory.getChatHistory(sessionId, 30);
+
+    // فلتر حماية ذكي يمنع ضغط النموذج
+    history = history.map(msg => ({
+      ...msg,
+      content: msg.content.slice(0, 2000)
+    }));
+
     const kernelContext = {
-      history: memory.getChatHistory(sessionId, 30),   // ← هذا هو الإصلاح
+      history,
       locationContext,
       fusedMemory: {
         userProfile: fusedMemory.userProfile || null,
@@ -134,4 +142,4 @@ function buildLocalSummaryResult(content) {
     ok: true,
     reply: reply || "ما في محتوى واضح قابل للتلخيص."
   };
-       }
+  }
