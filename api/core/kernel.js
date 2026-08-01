@@ -49,4 +49,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   memory.appendSovereignHistory(sessionId, { role: "assistant", content: reply });
 
   return reply;
-    }
+}
