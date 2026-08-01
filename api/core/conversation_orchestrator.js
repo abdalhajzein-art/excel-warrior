@@ -1,6 +1,6 @@
 /**
  * api/core/conversation_orchestrator.js
- * النسخة السيادية الخفيفة – بدون نوايا بدائية وبدون جدار حماية
+ * النسخة السيادية النهائية – تربط history + fusedMemory بشكل صحيح
  */
 
 import memory from "./memory.js";
@@ -27,10 +27,10 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
     const hasFile = !!(fileResult && fileResult.fileName);
 
-    // إضافة رسالة المستخدم للذاكرة
+    // 🟩 إضافة رسالة المستخدم للذاكرة
     memory.appendChatHistory(sessionId, { role: "user", content: message });
 
-    // استخراج الذاكرة المدمجة
+    // 🟩 استخراج الذاكرة المدمجة
     const fusedMemory = fusionMemory.apply(sessionId);
 
     /* ============================================================
@@ -74,8 +74,9 @@ export default async function conversationOrchestrator(sessionId, message, extra
        🟦 مسار الدردشة (الكرنل)
        ============================================================ */
 
+    // 🟩 إصلاح المشكلة الأساسية: history الحقيقي
     const kernelContext = {
-      history: fusedMemory.history,
+      history: memory.getChatHistory(sessionId, 30),   // ← هذا هو الإصلاح
       locationContext,
       fusedMemory: {
         userProfile: fusedMemory.userProfile || null,
@@ -133,4 +134,4 @@ function buildLocalSummaryResult(content) {
     ok: true,
     reply: reply || "ما في محتوى واضح قابل للتلخيص."
   };
-  }
+       }
