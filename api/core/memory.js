@@ -1,6 +1,6 @@
 /**
- * api/core/memory.js – Sovereign Dual Memory Engine (Final Production Edition)
- * ذاكرة ملفات + ذاكرة دردشة خفيفة بدون تضخيم للكرنل
+ * api/core/memory.js – Sovereign Dual Memory Engine (Sovereign Edition)
+ * ذاكرة دردشة + ذاكرة ملفات، خفيفة، بدون نوايا، بدون حماية، بدون طبقات زائدة.
  */
 
 const sessions = {};
@@ -11,7 +11,7 @@ export default {
      ============================================================ */
   getSession(id = "default-session") {
     if (!sessions[id]) {
-      const sessionObj = {
+      sessions[id] = {
         sovereign: {
           lastFile: null,
           history: []
@@ -23,20 +23,17 @@ export default {
 
         meta: {
           createdAt: Date.now(),
-          lastInteraction: Date.now(),
-          lastIntent: null
+          lastInteraction: Date.now()
         }
       };
 
       // ربط history مع chat.history
-      Object.defineProperty(sessionObj, 'history', {
+      Object.defineProperty(sessions[id], "history", {
         get() { return this.chat.history; },
         set(val) { this.chat.history = val; },
         configurable: true,
         enumerable: true
       });
-
-      sessions[id] = sessionObj;
     }
 
     sessions[id].meta.lastInteraction = Date.now();
@@ -101,13 +98,13 @@ export default {
     }
   },
 
-  getChatHistory(id, max = 12) {
+  getChatHistory(id, max = 30) {
     const session = this.getSession(id);
     const history = session.chat.history;
 
     if (history.length <= max) return history;
 
-    // Anchoring خفيف: أول رسالة + آخر 11
+    // Anchoring خفيف: أول رسالة + آخر (max - 1)
     const anchor = history.slice(0, 1);
     const tail = history.slice(-(max - 1));
 
@@ -132,13 +129,5 @@ export default {
     if (session.chat.history.length > 60) {
       session.chat.history = session.chat.history.slice(-30);
     }
-  },
-
-  /* ============================================================
-     🟧 تحديث النية
-     ============================================================ */
-  updateIntent(id, intent) {
-    const session = this.getSession(id);
-    session.meta.lastIntent = intent;
   }
 };
