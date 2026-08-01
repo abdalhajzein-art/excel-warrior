@@ -1,53 +1,34 @@
 /**
- * api/core/intent/intent_router.js – Sovereign Intent Router (Final Edition)
- * نية خفيفة: type + intent فقط، بدون JSON ضخم.
+ * api/core/intent/intent_router.js – Sovereign Intent Router (Safe Edition)
+ * بدون أي LLM – فقط قواعد خفيفة.
  */
 
-import groqService from "../../groqService.js";
+export default function routeIntent(message = "", hasFile = false) {
+  const text = message.trim().toLowerCase();
 
-export default async function routeIntent(message = "", hasFile = false) {
-  const text = message.trim();
+  // ملف مرفق
+  if (hasFile) {
+    return { type: "file", intent: "file_action" };
+  }
 
-  // 🟩 رسائل قصيرة جداً → دردشة
-  if (!text && !hasFile) {
+  // رسائل قصيرة جداً
+  if (!text) {
     return { type: "chat", intent: "chat" };
   }
 
-  // 🟦 Micro Prompt خفيف جداً
-  const systemPrompt = `
-أنت محلل نوايا. رجّع JSON خفيف جداً:
-{
-  "type": "chat | file | tool | system",
-  "intent": "نية مختصرة جداً مثل: chat, read_file, modify_file, tool_usage"
-}
-`.trim();
-
-  const prompt = `${systemPrompt}\n\nرسالة: "${text}"`;
-
-  try {
-    const response = await groqService(prompt);
-
-    // تنظيف أي Markdown
-    const cleaned = response
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
-
-    const parsed = JSON.parse(cleaned);
-
-    // 🟧 نضمن إنو خفيف
-    return {
-      type: parsed.type || "chat",
-      intent: parsed.intent || "chat"
-    };
-
-  } catch (err) {
-    console.error("🔥 [Intent Router Error]:", err);
-
-    // 🟥 fallback خفيف
-    return {
-      type: "chat",
-      intent: "chat"
-    };
+  // نوايا بسيطة
+  if (text.includes("مرحبا") || text.includes("اهلا")) {
+    return { type: "chat", intent: "greeting" };
   }
+
+  if (text.includes("مين") && text.includes("انت")) {
+    return { type: "chat", intent: "identity" };
+  }
+
+  if (text.includes("حكيلي") || text.includes("احكيلي")) {
+    return { type: "chat", intent: "story" };
+  }
+
+  // افتراضي
+  return { type: "chat", intent: "chat" };
 }
