@@ -1,21 +1,18 @@
 /**
- * api/groqService.js – Sovereign Gemini Gateway (Wrapped)
- * تم تحويل المحرك الداخلي بالكامل إلى Google Gemini لضمان الذاكرة العملاقة والسيادة المطلقة
- * يدعم نفس الواجهة القديمة تماماً لضمان عدم كسر أي استدعاءات:
- * 1) groqService(prompt)  ← الوضع القديم
- * 2) groqService.chat(messages) ← الوضع السيادي الجديد (Orchestrator)
+ * api/groqService.js – Sovereign Gemini Gateway
+ * محرك الربط السيادي لـ Google Gemini عبر الحزمة الرسمية والمستقرة
  */
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 if (!process.env.GEMINI_API_KEY) {
   console.warn("⚠️ WARNING: GEMINI_API_KEY is not defined in environment variables.");
 }
 
-// تهيئة حزمة جوجل الرسمية باستخدام مفتاحك السيادي
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// تهيئة العميل باستخدام المفتاح السيادي الخاص بك
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// اختيار نموذج جيميني الفائق والسريع
+// استخدام أحدث نموذج فائق السرعة
 const MODEL_NAME = "gemini-2.5-flash";
 
 /* ============================================================
@@ -23,20 +20,18 @@ const MODEL_NAME = "gemini-2.5-flash";
    ============================================================ */
 export default async function groqService(prompt) {
   try {
-    const response = await ai.models.generateContent({
+    const model = genAI.getGenerativeModel({ 
       model: MODEL_NAME,
-      contents: prompt,
-      config: {
-        temperature: 0.6,
-        maxOutputTokens: 1500,
-      }
+      systemInstruction: "أنت الأثير — رد دائماً برد لغوي واضح."
     });
 
-    return response.text.trim();
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text().trim();
 
   } catch (error) {
     console.error("❌ Gemini Gateway Error (Legacy Mode):", error);
-    return "⚠️ حدث خطأ أثناء توليد الرد من محرك جيميني السيادي.";
+    return "⚠️ حدث خطأ أثناء توليد الرد من محرك جيميني.";
   }
 }
 
@@ -46,31 +41,40 @@ export default async function groqService(prompt) {
 groqService.chat = async function(messages) {
   try {
     let systemInstruction = "";
-    const contents = [];
+    const history = [];
 
-    // تحويل هيكل مصفوفة الرسائل ليتوافق بدقة مع متطلبات محرك جيميني
+    // تصفية وترتيب الرسائل بنظام هيكل جيميني
     for (const msg of messages) {
       if (msg.role === "system") {
         systemInstruction += msg.content + "\n";
       } else {
-        contents.push({
+        history.push({
           role: msg.role === "assistant" ? "model" : "user",
           parts: [{ text: msg.content }]
         });
       }
     }
 
-    const response = await ai.models.generateContent({
+    // استخراج الرسالة الأخيرة للمستخدم لتكون هي الطلب الحالي
+    const lastMessage = history.pop(); 
+
+    const model = genAI.getGenerativeModel({ 
       model: MODEL_NAME,
-      contents: contents,
-      config: {
-        ...(systemInstruction ? { systemInstruction } : {}),
+      ...(systemInstruction ? { systemInstruction: systemInstruction.trim() } : {})
+    });
+
+    // بدء محادثة مع تمرير التاريخ السابق لضمان الذاكرة المطلقة
+    const chat = model.startChat({
+      history: history,
+      generationConfig: {
         temperature: 0.4,
         maxOutputTokens: 1500,
       }
     });
 
-    return response.text.trim();
+    const result = await chat.sendMessage(lastMessage ? lastMessage.parts[0].text : "");
+    const response = await result.response;
+    return response.text().trim();
 
   } catch (error) {
     console.error("❌ Gemini Chat Error (Sovereign Mode):", error);
