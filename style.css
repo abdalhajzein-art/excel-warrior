@@ -395,19 +395,18 @@ body {
 
 /* 🤖 2. رد الأثير: مجبر على اليسار تماماً */
 .message.ai {
-  margin-right: auto !important; /* يدفع الرد لأقصى اليسار */
-  margin-left: 0 !important;
-  width: 100%;
-  max-width: 88%;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 10px 0;
-  color: var(--text-primary);
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 12px 0 !important;
+  padding: 16px 12px;
+  background: rgba(255, 255, 255, 0.015); /* خلفية خفيفة جداً ومميزة للتمييز */
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  padding-bottom: 20px;
-  text-align: right;
+  color: var(--text-primary);
+  text-align: right; /* أو left حسب الرغبة، لكن مع العربية اليمين هو الافتراضي الطبيعي */
+  box-sizing: border-box;
 }
+
 
 
 /* ============================================
