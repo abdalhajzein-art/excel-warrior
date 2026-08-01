@@ -1,5 +1,5 @@
 /**
- * api/core/decision_kernel.js – Sovereign Context Stitching (Final Edition)
+ * api/core/decision_kernel.js – Sovereign Context Stitching (Stable Edition)
  */
 
 import memory from "./memory.js";
@@ -12,13 +12,11 @@ export default async function decisionKernel(sessionId, rawMessage, ctx = {}) {
   const session = memory.getSession(sessionId);
   const history = session.history || [];
 
-  // آخر رسالتين
   const lastUser = [...history].reverse().find(h => h.role === "user");
   const lastAi = [...history].reverse().find(h => h.role === "assistant");
 
   let finalMessage = message;
 
-  // 🟩 تكملة ذكية للرسائل القصيرة
   const isShort = message.split(" ").length <= 3;
 
   const aiWasAsking =
@@ -33,10 +31,8 @@ export default async function decisionKernel(sessionId, rawMessage, ctx = {}) {
     finalMessage = `${lastUser.content} (${message})`;
   }
 
-  // 🟦 تمرير الرسالة للمايسترو
   const orchestratorResult = await globalOrchestrator(sessionId, finalMessage, ctx);
 
-  // 🟧 استخراج الرد النصي
   let replyText = "تمام يا عبد.";
   if (typeof orchestratorResult === "string") {
     replyText = orchestratorResult;
@@ -44,9 +40,9 @@ export default async function decisionKernel(sessionId, rawMessage, ctx = {}) {
     replyText = orchestratorResult.reply || replyText;
   }
 
-  // 🟪 حفظ الرسالة والرد في الذاكرة
   memory.appendHistory(sessionId, { role: "user", content: message });
   memory.appendHistory(sessionId, { role: "assistant", content: replyText });
 
-  return orchestratorResult;
+  // 🟩 الحل الحقيقي:
+  return replyText;
 }
