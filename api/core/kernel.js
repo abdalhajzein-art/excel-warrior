@@ -1,6 +1,6 @@
 /**
- * api/core/kernel.js – Sovereign Kernel (Architect Edition)
- * العقل المدبر النقي: بناء البرومبت، استدعاء نموذج Groq، وتجنب التكرار المزدوج للذاكرة
+ * api/core/kernel.js – Sovereign Kernel (Final Production Edition)
+ * تاريخ طويل داخل النظام + Snapshot صغير داخل البرومبت.
  */
 
 import groqService from "../groqService.js";
@@ -9,46 +9,49 @@ import systemPrompt from "../agent/system.js";
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const message = (rawMessage || "").trim();
-  if (!message) return "ما استلمت رسالة مفهومة يا مهندس.";
+  if (!message) return "وضحلي أكتر يا عبد.";
 
-  // التاريخ والسياق القادمين من المايسترو والذاكرة المدمجة
-  let history = ctx.history || [];
-  if (!Array.isArray(history)) history = [];
-  history = history.slice(-20);
+  // التاريخ الكامل داخل النظام (30 رسالة)
+  let history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
 
+  // Snapshot صغير للبرومبت (آخر 6 رسائل فقط)
+  const historySnapshot = history.slice(-6);
+
+  // الذاكرة — Snapshot خفيف
   const fusedMemory = ctx.fusedMemory || {};
+
+  // النية — خفيفة
   const intent = ctx.intent || routeIntent(message);
+
+  // تنبيه الحماية إذا موجود
   const shieldWarning = ctx.shieldWarning || null;
 
-  // بناء الـ prompt النهائي السيادي
+  // بناء البرومبت النهائي — نسخة خفيفة
   const prompt = `
 ${systemPrompt()}
 
-${shieldWarning ? `[تنبيه أمني من جدار الحماية: ${shieldWarning}]` : ""}
+${shieldWarning ? `[تنبيه أمني: ${shieldWarning}]` : ""}
 
-الرسالة الحالية:
+الرسالة:
 "${message}"
 
-النية المكتشفة:
-${JSON.stringify(intent, null, 2)}
+النية:
+${intent.type || "chat"}
 
-السياق المدمج والذاكرة:
-${JSON.stringify(fusedMemory, null, 2)}
+سياق مختصر:
+${JSON.stringify(fusedMemory).slice(0, 300)}
 
-التاريخ السابق:
-${history.map(h => `${h.role}: ${h.content}`).join("\n")}
+تاريخ مختصر:
+${historySnapshot.map(h => `${h.role}: ${h.content}`).join("\n")}
 
 مهمتك:
-- الرد دائماً برد لغوي واضح وعميق.
-- ممنوع ترجع نص فاضي أو null أو undefined.
-- إذا الرسالة قصيرة → رد بروح الزميل الذكي.
-- إذا الرسالة سؤال أو نقاش → أعطِ الزبدة بذكاء واحترافية.
-- خاطب عبدالغني دائماً بروح المعماري والزميل المطور.
+- رد واضح ومختصر.
+- الرسائل القصيرة → رد طبيعي.
+- الأسئلة → جواب مباشر.
+- النقاش → ناقش بدون تطويل.
 `.trim();
 
-  // إرسال الطلب لـ Groq عبر الخدمة المركزية
   const reply = await groqService(prompt);
 
-  // *ملاحظة معمارية*: تم فصل حفظ الذاكرة ليتم حصراً في الأوركسترا لضمان عدم الازدواجية والتضخم.
-  return reply || "يبدو أن النموذج لم يعرِف رداً مناسباً، جرب مرة أخرى.";
+  return reply || "ما طلع معي رد مناسب، جرّب صياغة تانية.";
 }
