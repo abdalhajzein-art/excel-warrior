@@ -15,10 +15,12 @@ export default async function groqService(prompt) {
         { role: "user", content: prompt }
       ],
       temperature: 0.6,
-      max_completion_tokens: 1500,   // ← المهم
+      max_completion_tokens: 1500,
       top_p: 1,
       stream: false
     });
+
+    console.log("🔍 Raw Groq Response:", completion);   // ← هذا السطر المهم
 
     return completion.choices[0].message.content.trim();
 
