@@ -1,12 +1,14 @@
 /**
  * api/core/conversation_orchestrator.js
- * Sovereign Orchestrator – ملفات + دردشة + نوايا + ذاكرة + سياق
+ * Sovereign Orchestrator (Architect Edition) – المايسترو المحمي والمدمج
+ * ملفات + دردشة + نوايا + ذاكرة + سياق + جدار حماية
  */
 
 import memory from "./memory.js";
+import contextProtection from "./context_protection.js";
 import detectFileIntent from "./intent/intent_file.js";
 import routeIntent from "./intent/intent_router.js";
-import kernel from "./kernel.js"; // ← الكيرنل الحقيقي
+import kernel from "./kernel.js";
 import fusionMemory from "./fusion_memory.js";
 
 /* ============================================================
@@ -23,23 +25,45 @@ export default async function conversationOrchestrator(sessionId, message, extra
   try {
     console.log(`📥 [Orchestrator] جلسة ${sessionId}: "${message}"`);
 
+    // 1. تحديد النية العامة
+    const intent = routeIntent(message);
+
+    // 2. 🛡️ تفعيل جدار الحماية (Context Shield) قبل أي عملية
+    const shieldResult = contextProtection.check(sessionId, intent, message);
+    
+    if (!shieldResult.ok && shieldResult.state === "noise_detected") {
+      console.warn(`🛡️ [Shield] تم صد هجوم تشويش أو إدخال غير منطقي في الجلسة ${sessionId}`);
+      return {
+        ok: false,
+        reply: "عذراً يا زميلي، المدخلات غير واضحة أو تحتوي على تشويش. هل يمكنك إعادة صياغة طلبك؟ 🛑",
+        fileBase64: null,
+        fileName: null
+      };
+    }
+
     const session = memory.getSession(sessionId);
     const fileResult = extraCtx.fileResult || null;
     const locationContext = extraCtx.locationContext || "";
 
+    // 3. إضافة رسالة المستخدم للذاكرة *قبل* استخراج الذاكرة المدمجة ليراها الكرنل
+    memory.appendChatHistory(sessionId, { role: "user", content: message });
+    
+    // 4. استخراج الذاكرة المدمجة (Fusion Memory) المعالجة بذكاء وتثبيت مرجعي
+    const fusedMemory = fusionMemory.apply(sessionId);
+
     /* ============================================================
-       🟧 إذا في ملف → معالجة ملفات فقط
+       🟧 مسار معالجة الملفات (إذا كان هناك ملف مرفق)
        ============================================================ */
     if (fileResult && fileResult.fileName) {
       const fileName = fileResult.fileName.toLowerCase();
-      const intent = detectFileIntent(message);
+      const fileIntent = detectFileIntent(message);
 
       let result = null;
 
       if (fileName.endsWith(".pdf")) {
-        if (intent === "read_file") result = await pdfRead(fileResult.filePath);
-        else if (intent === "convert_file") result = await pdfConvert(fileResult.filePath, "pdf");
-        else if (intent === "summarize_file") {
+        if (fileIntent === "read_file") result = await pdfRead(fileResult.filePath);
+        else if (fileIntent === "convert_file") result = await pdfConvert(fileResult.filePath, "pdf");
+        else if (fileIntent === "summarize_file") {
           const content = await pdfRead(fileResult.filePath);
           result = buildLocalSummaryResult(content);
         } else {
@@ -47,10 +71,9 @@ export default async function conversationOrchestrator(sessionId, message, extra
           result = buildLocalDiscussionResult(fileResult, analysis);
         }
       }
-
       else if (fileName.endsWith(".docx")) {
-        if (intent === "convert_file") result = await libreConvert(fileResult.filePath, "pdf");
-        else if (intent === "summarize_file") {
+        if (fileIntent === "convert_file") result = await libreConvert(fileResult.filePath, "pdf");
+        else if (fileIntent === "summarize_file") {
           const content = await pdfRead(fileResult.filePath);
           result = buildLocalSummaryResult(content);
         } else {
@@ -58,13 +81,12 @@ export default async function conversationOrchestrator(sessionId, message, extra
           result = buildLocalDiscussionResult(fileResult, analysis);
         }
       }
-
       else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
-        if (intent === "read_file") result = await excelRead(fileResult.filePath);
-        else if (intent === "modify_file") {
+        if (fileIntent === "read_file") result = await excelRead(fileResult.filePath);
+        else if (fileIntent === "modify_file") {
           const fn = (row) => row;
           result = await excelModify(fileResult.filePath, fn);
-        } else if (intent === "summarize_file") {
+        } else if (fileIntent === "summarize_file") {
           const content = await excelRead(fileResult.filePath);
           result = buildLocalSummaryResult(content);
         } else {
@@ -72,44 +94,44 @@ export default async function conversationOrchestrator(sessionId, message, extra
           result = buildLocalDiscussionResult(fileResult, analysis);
         }
       }
-
       else if (fileName.match(/\.(png|jpg|jpeg|webp|tiff|avif)$/)) {
-        if (intent === "convert_file") {
+        if (fileIntent === "convert_file") {
           result = await imageConvert(fileResult.filePath, "png");
         } else {
           result = {
             ok: true,
-            reply: "📷 هذا ملف صورة — لا يمكن استخراج نص منه.",
+            reply: "📷 هذا ملف صورة — لا يمكن استخراج نص منه حالياً.",
             fileBase64: null,
             fileName: null
           };
         }
       }
 
-      memory.appendSovereignHistory(sessionId, {
-        role: "assistant",
-        content: result.reply
-      });
+      // تسجيل الرد في ذاكرة الملفات والدردشة معاً ليظل السياق مترابطاً
+      if (result && result.reply) {
+        memory.appendSovereignHistory(sessionId, { role: "assistant", content: result.reply });
+        memory.appendChatHistory(sessionId, { role: "assistant", content: result.reply });
+      }
 
       return result;
     }
 
     /* ============================================================
-       🟦 إذا ما في ملف → دردشة عبر الكيرنل السيادي
+       🟦 مسار الدردشة الصافية (عبر الكيرنل السيادي - الذكاء الاصطناعي)
        ============================================================ */
-    const history = memory.getChatHistory(sessionId, 12);
-    const fusedMemory = fusionMemory.apply(sessionId);
-    const intent = routeIntent(message);
-
-    memory.appendChatHistory(sessionId, { role: "user", content: message });
-
-    const reply = await kernel(sessionId, message, {
-      history,
+    
+    // تمرير تحذيرات الدرع (Shield) إلى الكرنل ليعرف كيف يتصرف في حال التشتيت
+    const kernelContext = {
+      history: fusedMemory.history,
       locationContext,
       intent,
-      fusedMemory
-    });
+      fusedMemory,
+      shieldWarning: shieldResult.note || null
+    };
 
+    const reply = await kernel(sessionId, message, kernelContext);
+
+    // إضافة رد الأثير للذاكرة
     memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
     return {
@@ -123,15 +145,16 @@ export default async function conversationOrchestrator(sessionId, message, extra
     console.error("🔥 [Orchestrator Error]:", err);
     return {
       ok: false,
-      reply: `⚠️ خطأ أثناء المعالجة: ${err.message}`,
+      reply: `⚠️ حدث خطأ في النظام أثناء المعالجة: ${err.message}`,
       error: err.message
     };
   }
 }
 
 /* ============================================================
-   🧠 تلخيص محلي
+   🧠 دوال التلخيص والنقاش المحلي (Local Fallbacks)
    ============================================================ */
+
 function buildLocalSummaryResult(content) {
   const data = content?.data;
   const reply = content?.reply;
@@ -158,9 +181,6 @@ function buildLocalSummaryResult(content) {
   };
 }
 
-/* ============================================================
-   🧠 نقاش محلي
-   ============================================================ */
 function buildLocalDiscussionResult(file, analysis) {
   const name = file.fileName;
   const data = analysis?.data || {};
@@ -175,10 +195,10 @@ function buildLocalDiscussionResult(file, analysis) {
   if (data.hasImages !== undefined) parts.push(`- يحتوي صور: ${data.hasImages ? "نعم" : "لا"}`);
   if (data.hasTables !== undefined) parts.push(`- يحتوي جداول: ${data.hasTables ? "نعم" : "لا"}`);
 
-  parts.push("\nهذا نقاش محلي بدون ذكاء لغوي.");
+  parts.push("\nهذا نقاش محلي بدون تدخل الذكاء اللغوي بعد.");
 
   return {
     ok: true,
     reply: parts.join("\n")
   };
-            }
+}
