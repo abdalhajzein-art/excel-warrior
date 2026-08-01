@@ -1,48 +1,42 @@
 /**
- * api/groqService.js – Sovereign LLM Gateway (GitHub Models Dual Mode)
- * تم التحويل كاملاً إلى خوادم GitHub Models لضمان الاستقرار والمجانية
- * يدعم:
+ * api/groqService.js – Sovereign Gemini Gateway (Wrapped)
+ * تم تحويل المحرك الداخلي بالكامل إلى Google Gemini لضمان الذاكرة العملاقة والسيادة المطلقة
+ * يدعم نفس الواجهة القديمة تماماً لضمان عدم كسر أي استدعاءات:
  * 1) groqService(prompt)  ← الوضع القديم
  * 2) groqService.chat(messages) ← الوضع السيادي الجديد (Orchestrator)
  */
 
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 
-if (!process.env.GITHUB_TOKEN) {
-  console.warn("⚠️ WARNING: GITHUB_TOKEN is not defined in environment variables.");
+if (!process.env.GEMINI_API_KEY) {
+  console.warn("⚠️ WARNING: GEMINI_API_KEY is not defined in environment variables.");
 }
 
-// تهيئة الاتصال بـ GitHub Models عبر OpenAI SDK
-const client = new OpenAI({
-  baseURL: "https://models.inference.ai.azure.com",
-  apiKey: process.env.GITHUB_TOKEN
-});
+// تهيئة حزمة جوجل الرسمية باستخدام مفتاحك السيادي
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// نموذج Llama 3.1 70B المستضيف على جيت هب (جاهز ومجاني للتطوير)
-const MODEL_NAME = "meta-llama-3.1-70b-instruct";
+// اختيار نموذج جيميني الفائق والسريع
+const MODEL_NAME = "gemini-2.5-flash";
 
 /* ============================================================
    🟩 الوضع القديم: رسالة واحدة (prompt)
    ============================================================ */
 export default async function groqService(prompt) {
   try {
-    const completion = await client.chat.completions.create({
+    const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      messages: [
-        { role: "system", content: "أنت الأثير — رد دائماً برد لغوي واضح." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.6,
-      max_tokens: 1500,
-      top_p: 1,
-      stream: false
+      contents: prompt,
+      config: {
+        temperature: 0.6,
+        maxOutputTokens: 1500,
+      }
     });
 
-    return completion.choices[0].message.content.trim();
+    return response.text.trim();
 
   } catch (error) {
-    console.error("❌ GitHub Gateway Error (Legacy Mode):", error);
-    return "⚠️ حدث خطأ أثناء توليد الرد من المحرك.";
+    console.error("❌ Gemini Gateway Error (Legacy Mode):", error);
+    return "⚠️ حدث خطأ أثناء توليد الرد من محرك جيميني السيادي.";
   }
 }
 
@@ -51,17 +45,35 @@ export default async function groqService(prompt) {
    ============================================================ */
 groqService.chat = async function(messages) {
   try {
-    const completion = await client.chat.completions.create({
+    let systemInstruction = "";
+    const contents = [];
+
+    // تحويل هيكل مصفوفة الرسائل ليتوافق بدقة مع متطلبات محرك جيميني
+    for (const msg of messages) {
+      if (msg.role === "system") {
+        systemInstruction += msg.content + "\n";
+      } else {
+        contents.push({
+          role: msg.role === "assistant" ? "model" : "user",
+          parts: [{ text: msg.content }]
+        });
+      }
+    }
+
+    const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      messages,
-      temperature: 0.4,
-      max_tokens: 1500
+      contents: contents,
+      config: {
+        ...(systemInstruction ? { systemInstruction } : {}),
+        temperature: 0.4,
+        maxOutputTokens: 1500,
+      }
     });
 
-    return completion.choices[0].message.content.trim();
+    return response.text.trim();
 
   } catch (error) {
-    console.error("❌ GitHub Chat Error (Sovereign Mode):", error);
-    throw error; // نمرر الخطأ لتتعامل معه طبقة الـ Agentic Loop
+    console.error("❌ Gemini Chat Error (Sovereign Mode):", error);
+    throw error; // تمرير الخطأ لطبقة الـ Agentic Loop
   }
 };
