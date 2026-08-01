@@ -1,6 +1,6 @@
 /**
- * api/core/fusion_memory.js – Sovereign Memory Fusion (Final Edition)
- * نسخة خفيفة تمنع تضخم التوكنز وتبقي السياق دقيق وواضح.
+ * api/core/fusion_memory.js – Sovereign Memory Fusion (Sovereign Edition)
+ * ذاكرة سياقية خفيفة، دقيقة، بدون نوايا، بدون حماية، بدون طبقات زائدة.
  */
 
 import memory from "./memory.js";
@@ -9,49 +9,81 @@ export default {
   apply(sessionId) {
     const session = memory.getSession(sessionId);
 
-    // 🟩 تاريخ خفيف للكرنل (آخر 12 رسالة فقط)
-    const chatHistory = memory.getChatHistory(sessionId, 12) || [];
+    if (!session) {
+      return {
+        history: [],
+        userProfile: null,
+        lastTopics: [],
+        tags: []
+      };
+    }
 
-    // 🟩 تاريخ سيادي خفيف (آخر 4 ردود فقط)
-    const sovereignHistory = memory.getSovereignHistory(sessionId, 4) || [];
+    // 🟩 تاريخ الجلسة (آخر 30 رسالة فقط)
+    const history = session.chatHistory || [];
+    const recentHistory = history.slice(-30);
 
-    // 🟩 آخر نية
-    const currentIntent = session.meta?.lastIntent || null;
+    // 🟩 استخراج المواضيع
+    const lastTopics = extractTopics(recentHistory);
 
-    // 🟩 نص سياقي مختصر (Snapshot)
-    const fusedContextString = chatHistory
-      .slice(-6)
-      .map(msg => `${msg.role === 'user' ? 'المستخدم' : 'الأثير'}: ${msg.content}`)
-      .join("\n");
+    // 🟩 استخراج النبرة (Tags)
+    const tags = extractTags(recentHistory);
+
+    // 🟩 بروفايل المستخدم (اختياري للتوسعة لاحقاً)
+    const userProfile = session.userProfile || null;
 
     return {
-      lastIntent: currentIntent,
-
-      // 🟩 التاريخ الذي يراه الكيرنل (خفيف)
-      history: chatHistory.slice(-12),
-
-      // 🟩 تاريخ سيادي خفيف
-      sovereignHistory: sovereignHistory.slice(-4),
-
-      // 🟩 لا نحقن personaHistory داخل البرومبت نهائياً
-      personaHistory: [],
-
-      // 🟩 نص سياقي خفيف
-      fusedContextText: fusedContextString,
-
-      // 🟩 بيانات نهائية خفيفة جداً
-      final: {
-        intent: currentIntent,
-        historyCount: chatHistory.length,
-        sovereignCount: sovereignHistory.length
-      }
+      history: recentHistory,
+      userProfile,
+      lastTopics,
+      tags
     };
   },
 
-  // 🟩 دالة فهم التكملة القصيرة
+  // 🟩 آخر رسالة للمستخدم (مفيد للكرنل)
   getLastUserMessage(sessionId) {
-    const chatHistory = memory.getChatHistory(sessionId, 5);
-    const userMessages = chatHistory.filter(msg => msg.role === 'user');
+    const history = memory.getChatHistory(sessionId, 5);
+    const userMessages = history.filter(msg => msg.role === "user");
     return userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
   }
 };
+
+/* ============================================================
+   🧠 استخراج المواضيع من الرسائل
+   ============================================================ */
+function extractTopics(history) {
+  const topics = [];
+
+  history.forEach(h => {
+    const text = (h.content || "").toLowerCase();
+
+    if (text.includes("ملف")) topics.push("file");
+    if (text.includes("شجرة")) topics.push("tree");
+    if (text.includes("كرنل")) topics.push("kernel");
+    if (text.includes("ذاكرة")) topics.push("memory");
+    if (text.includes("نظام")) topics.push("system");
+    if (text.includes("تنظيف")) topics.push("cleanup");
+    if (text.includes("سياق")) topics.push("context");
+  });
+
+  return [...new Set(topics)].slice(-10);
+}
+
+/* ============================================================
+   🧠 استخراج النبرة (Tags)
+   ============================================================ */
+function extractTags(history) {
+  const tags = [];
+
+  history.forEach(h => {
+    const text = (h.content || "").toLowerCase();
+
+    if (text.includes("يلا")) tags.push("fast");
+    if (text.includes("جاهز")) tags.push("ready");
+    if (text.includes("بدون عشوائية")) tags.push("precision");
+    if (text.includes("نظام")) tags.push("system");
+    if (text.includes("بناء")) tags.push("build");
+    if (text.includes("شيل")) tags.push("remove");
+  });
+
+  return [...new Set(tags)].slice(-10);
+  }
