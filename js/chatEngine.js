@@ -68,7 +68,7 @@ function cleanArtifacts(text) {
         .replace(/<(unk|pad|mask)>/gi, "")
         .replace(/#{2,}/g, "")
         .replace(/\s{3,}/g, " ")
-        .replace(/[^\x00-\x7F]+(?=[^\x00-\x7F]*$)/g, "");
+        
 }
 
 export async function handleSendMessage(renderCallbacks) {
@@ -362,4 +362,5 @@ export function appendMessageToDOM(sender, text, fileData = null) {
 
     chatArea.scrollTop = chatArea.scrollHeight;
 }
+
 
