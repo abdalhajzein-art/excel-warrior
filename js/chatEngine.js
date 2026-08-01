@@ -1,5 +1,5 @@
 /*
- * js/chatEngine.js – النسخة السيادية النهائية (بدون أي أذونات متصفح مزعجة)
+ * js/chatEngine.js – النسخة السيادية النهائية (محدثة لدعم حقن معاينة الملفات)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -67,8 +67,7 @@ function cleanArtifacts(text) {
         .replace(/\$\d+/g, "")
         .replace(/<(unk|pad|mask)>/gi, "")
         .replace(/#{2,}/g, "")
-        .replace(/\s{3,}/g, " ")
-        
+        .replace(/\s{3,}/g, " ");
 }
 
 export async function handleSendMessage(renderCallbacks) {
@@ -195,10 +194,24 @@ export async function handleSendMessage(renderCallbacks) {
             };
         });
 
+        /* ============================================================
+           🛡️ الحقن السيادي للملف: دمج محتوى الملف داخل رسالة المستخدم
+           ============================================================ */
+        let finalMessageForAI = displayMessage || "ممكن تعطيني ملخص عن محتوى الملف؟";
+        
+        if (processedFileResult) {
+            if (processedFileResult.data && processedFileResult.data.preview) {
+                finalMessageForAI += `\n\n[محتوى الملف المرفق "${fileDisplayName}":\n${JSON.stringify(processedFileResult.data.preview, null, 2)}\n]`;
+            } else if (processedFileResult.error) {
+                finalMessageForAI += `\n\n[النظام: حاول المستخدم إرفاق ملف ولكن حدث خطأ: ${processedFileResult.error}]`;
+            } else if (processedFileResult.reply) {
+                finalMessageForAI += `\n\n[النظام: رسالة من جسر الملفات: ${processedFileResult.reply}]`;
+            }
+        }
+
         const requestPayload = { 
-            message: displayMessage,
+            message: finalMessageForAI,
             history: formattedHistoryForBackend,
-            fileResult: processedFileResult,
             sessionId: sessionId
         };
 
@@ -364,4 +377,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     }
 
     chatArea.scrollTop = chatArea.scrollHeight;
-        }
+}
