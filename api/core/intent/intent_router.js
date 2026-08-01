@@ -1,62 +1,56 @@
 /**
  * api/core/intent/intent_router.js
- * Sovereign Intent Router (Architect Edition)
- * بوابة النوايا الذكية: تفصل النية الأساسية، وتستخلص القيود برمجياً لتقليل استهلاك التوكنز.
+ * Sovereign Intent Router (Agentic JSON Edition)
+ * المعالج القبلي الذكي: يقرأ رسالة المستخدم، يحلل النية، يستخرج القيود، ويرجع JSON مهيكل.
  */
 
-import detectFileIntent from "./intent_file.js";
-import detectActionIntent from "./intent_actions.js";
-import detectGeneralIntent from "./intent_general.js";
+import groqService from "../../groqService.js";
 
-export default function routeIntent(message = "") {
-  const text = message.toLowerCase().trim();
-
-  // فلتر أولي: تجنب معالجة الرسائل الفارغة
-  if (!text) {
-    return { type: "chat", intent: "chat", metadata: { constraint: null } };
+export default async function routeIntent(message = "", hasFile = false) {
+  const text = message.trim();
+  
+  // إذا كانت الرسالة فارغة أو قصيرة جداً وليس هناك ملف، لا تضيع التوكنز
+  if (!text && !hasFile) {
+    return { type: "chat", intent: "casual_chat", constraints: null, entities: [] };
   }
 
-  // 🧠 استخلاص القيود الذكية (Metadata Extraction)
-  // التقاط أي قيود رقمية صريحة (مثل "٢٠ كلمة"، "30 كلمة"، "سطرين") لتمريرها كقيد برمجي صارم
-  let wordConstraint = null;
-  const wordMatch = text.match(/(\d+|[٠-٩]+)\s*(كلمة|كلمات|سطر|أسطر|حرف)/);
-  if (wordMatch) {
-    wordConstraint = wordMatch[0];
-  }
+  // 1. بناء الـ System Prompt المصغر (Micro-Prompt) لنموذج النوايا
+  const systemPrompt = `
+أنت "محلل نوايا" (Intent Analyzer) صامت في منصة الأثير.
+مهمتك الوحيدة هي قراءة رسالة المستخدم وإرجاع كائن JSON صالح (Valid JSON) فقط، بدون أي نص إضافي أو شروحات.
 
-  const metadata = { constraint: wordConstraint };
+هيكلية الـ JSON المطلوبة:
+{
+  "type": "chat | file_action | tech_inquiry | system_command",
+  "intent": "حدد النية بدقة (مثال: casual_chat, read_excel, fact_check, modify_pdf, extract_text)",
+  "constraints": "أي قيود أو شروط طلبها المستخدم (مثال: '30 كلمة', 'ملخص قصير', 'باللغة الإنجليزية')، وإذا لم يوجد ضع null",
+  "entities": ["قائمة بأسماء التقنيات، الإصدارات، الهواتف، أو الشركات المذكورة (مثال: 'Gemini 30', 'S25')، وإذا لم يوجد ضع مصفوفة فارغة"]
+}
 
-  /* ============================================================
-     🟩 1) نية الملفات (File Operations)
-     ============================================================ */
-  const fileIntent = detectFileIntent(text);
-  if (fileIntent !== "chat_mode") {
-    return { type: "file", intent: fileIntent, metadata };
-  }
+معلومات إضافية للسياق:
+- هل المستخدم أرفق ملفاً في هذه الرسالة؟ ${hasFile ? "نعم" : "لا"}
+`.trim();
 
-  /* ============================================================
-     🟧 2) نية الأفعال (Actions: Read, Modify, Analyze...)
-     ============================================================ */
-  const actionIntent = detectActionIntent(text);
-  if (actionIntent !== "chat_mode") {
-    return { type: "action", intent: actionIntent, metadata };
-  }
+  const prompt = `${systemPrompt}\n\nرسالة المستخدم: "${text}"`;
 
-  /* ============================================================
-     🟥 3) النوايا العامة والبحث الخارجي (General, Search, Fact Check)
-     ============================================================ */
-  // تعديل التقاط النية العامة لتشمل التحقق من الحقائق والاستعلام التقني
-  const generalIntent = detectGeneralIntent(text);
-  if (generalIntent !== "chat_mode") {
-    return { 
-      type: generalIntent === "external_search" ? "external_search" : "general", 
-      intent: generalIntent, 
-      metadata 
+  try {
+    // 2. استدعاء سريع لنموذج Groq (تكلفة شبه صفرية وسرعة بالملي ثانية)
+    const response = await groqService(prompt);
+    
+    // 3. تنظيف الاستجابة لضمان أنها JSON نقي (إزالة علامات Markdown إذا أضافها النموذج)
+    const cleanedResponse = response.replace(/```json/g, "").replace(/```/g, "").trim();
+    
+    const parsedJSON = JSON.parse(cleanedResponse);
+    return parsedJSON;
+
+  } catch (error) {
+    console.error("🔥 [Intent Router Error]: فشل في تحليل الـ JSON:", error);
+    // 4. خطة طوارئ (Fallback) في حال فشل التحليل
+    return {
+      type: "chat",
+      intent: "chat",
+      constraints: null,
+      entities: []
     };
   }
-
-  /* ============================================================
-     🟦 4) افتراضي → دردشة نقية (Fallback: Chat)
-     ============================================================ */
-  return { type: "chat", intent: "chat", metadata };
 }
