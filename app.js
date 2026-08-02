@@ -1,5 +1,5 @@
 /**
- * app.js – العقل الرئيسي للسيرفر (Express Server Entry Point - النسخة المصححة)
+ * app.js – العقل الرئيسي للسيرفر (Express Server Entry Point - النسخة المصححة والمزودة بمسار التنزيل الآمن)
  */
 
 import express from 'express';
@@ -59,6 +59,24 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
   } catch (err) {
     console.error("🔥 Error in /api/upload:", err);
     if (!res.headersSent) res.status(500).json({ reply: "⚠️ خطأ داخلي أثناء رفع الملف." });
+  }
+});
+
+// 📥 مسار تنزيل آمن ومباشر للملفات الناتجة
+app.get("/download/:filename", (req, res) => {
+  const filename = req.params.filename;
+  const safeFilename = path.basename(filename);
+  const filePath = path.join(uploadDir, safeFilename);
+
+  if (fs.existsSync(filePath)) {
+    res.download(filePath, safeFilename, (err) => {
+      if (err) {
+        console.error("🔥 Error downloading file:", err);
+        if (!res.headersSent) res.status(500).json({ error: "فشل تنزيل الملف" });
+      }
+    });
+  } else {
+    res.status(404).json({ error: "الملف غير موجود أو انتهت صلاحيته" });
   }
 });
 
