@@ -1,11 +1,12 @@
 /**
  * engines/excel.js – Sovereign Excel Gateway & Orchestrator (Absolute Edition)
- * بوابة سيادية شاملة وغير مقيدة لتوجيه كافة عمليات وقدرات Pandas و Openpyxl البرمجية والبصرية دون أي استنزاف لتوكنز النموذج.
+ * بوابة سيادية شاملة، حرة، ومطلقة لتوجيه كافة عمليات وقدرات Pandas و Openpyxl البرمجية والبصرية دون أي استنزاف لتوكنز النموذج.
  */
 
 import path from "path";
 import { execSync } from "child_process";
 import fs from "fs";
+import os from "os";
 import pandasEngine from "./pandas.js";
 
 /* ============================================================
@@ -20,7 +21,6 @@ export async function excelModify(filePath, params = {}) {
 }
 
 export async function excelCreate(params = {}) {
-  // تمرير طلب الإنشاء المباشر لمحرك بايثون لتوليد ملف إكسل احترافي عبر openpyxl
   return await pandasEngine(filePathDummyForCreate(), "create", params);
 }
 
@@ -29,20 +29,18 @@ function filePathDummyForCreate() {
 }
 
 /* ============================================================
-   🟥 واجهة الموجه العام المفتوحة (Omnipotent Excel Dispatcher)
+   🟥 واجهة الموجه العام المطلقة (Omnipotent Excel Dispatcher)
    ============================================================ */
 export default async function excelEngine(filePath, action, params = {}) {
   try {
-    // ⚡ تمرير أي عملية مهما كانت (قراءة، تحليل، تجميع، Pivot، تعديل، تنسيق، رسوم بيانية، صيغ)
-    // مباشرة إلى محرك Pandas & Openpyxl السيادي لتنفيذها برمجياً في البيئة المحلية.
+    // ⚡ التعامل مع التحويلات الثقيلة الخاصة بالنظام إن وجدت، وإلا تفويض كافة النوايا والأفعال المطلقة مباشرة لمحرك بايثون
     switch (action) {
       case "convert_pdf":
       case "to_pdf":
         return convertExcelToPdf(filePath);
 
       default:
-        // أي عملية أخرى (read, analyze, transform, aggregate, pivot, style, format, chart, modify, create)
-        // يتم تفويضها بالكامل للمحرك الماستر ليقوم بتطبيقها عبر بايثون.
+        // إطلاق حرية تنفيذ أي عملية برمجية ديناميكية دون قيود مسبقة
         return await pandasEngine(filePath, action, params);
     }
   } catch (err) {
