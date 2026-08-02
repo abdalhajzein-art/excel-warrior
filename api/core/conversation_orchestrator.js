@@ -1,11 +1,11 @@
 /**
- * api/core/conversation_orchestrator.js – النسخة السيادية المرتبطة بالأدوات التنفيذية
+ * api/core/conversation_orchestrator.js – Sovereign Universal Orchestrator
+ * المنسق السيادي العام: إدارة سياق الجلسة والملفات وتمريرها بمرونة مطلقة بدون قيود لغوية.
  */
 
 import memory from "./memory.js";
 import fusionMemory from "./fusion_memory.js";
 import kernel from "./kernel.js";
-import { excelModify } from "../tools/index.js"; // استدعاء أداة تعديل الإكسل البرمجية
 
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
   try {
@@ -13,7 +13,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
     const session = memory.getSession(sessionId);
 
-    const lowerMsg = message.toLowerCase();
+    // 1. رصد نية إنهاء أو إعادة ضبط الملف النشط فقط
+    const lowerMsg = (message || "").toLowerCase();
     const isResetFile = lowerMsg.includes("انسى الملف") || 
                         lowerMsg.includes("اغلق الملف") || 
                         lowerMsg.includes("ملف جديد") || 
@@ -25,6 +26,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
       session.activeFile = null;
     }
 
+    // 2. إدارة حالة الملف (استلام جديد أو استرجاع من الذاكرة المؤقتة للجلسة)
     let fileData = extraCtx.fileData || null;
     let fileName = extraCtx.fileName || null;
     let filePath = extraCtx.filePath || null;
@@ -38,29 +40,18 @@ export default async function conversationOrchestrator(sessionId, message, extra
       filePath = session.activeFile.filePath;
     }
 
+    // 3. تسجيل رسالة المستخدم في التاريخ
     memory.appendChatHistory(sessionId, { role: "user", content: message });
 
-    // 🚀 كشف النية التنفيذية: هل يطلب المستخدم تعديل ملف إكسل نشط؟
-    let toolResult = null;
-    const isExcelFile = fileName && (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv'));
-    const isModificationIntent = lowerMsg.includes("أضف") || lowerMsg.includes("اضيف") || lowerMsg.includes("عدل") || 
-                                 lowerMsg.includes("عمود") || lowerMsg.includes("قائمة") || lowerMsg.includes("تنسيق") ||
-                                 lowerMsg.includes("سبب الغياب");
-
-    if (isExcelFile && isModificationIntent && filePath) {
-      console.log(`⚙️ [Orchestrator] تم رصد نية تعديل إكسل. جاري استدعاء محرك التنفيذ البرمجي...`);
-      try {
-        // استدعاء أداة التعديل الفعلية من مجلد tools
-        toolResult = await excelModify(filePath, message);
-        console.log(`✅ [Orchestrator] تمت معالجة الملف برمجياً بنجاح.`);
-      } catch (toolErr) {
-        console.error(`❌ [Orchestrator Tool Error]:`, toolErr);
-      }
-    }
-
+    // 4. تجميع الذاكرة والسياق العام
     const fusedMemory = fusionMemory.apply(sessionId);
     let history = memory.getChatHistory(sessionId, 30);
-    history = history.map(msg => ({ ...msg, content: (msg.content || "").slice(0, 2000) }));
+    
+    // تقليم ذكي لحماية نافذة السياق من التضخم
+    history = history.map(msg => ({
+      ...msg,
+      content: (msg.content || "").slice(0, 2000)
+    }));
 
     const kernelContext = {
       history,
@@ -72,15 +63,18 @@ export default async function conversationOrchestrator(sessionId, message, extra
       },
       fileData,
       fileName,
-      toolResult // تمرير نتيجة التنفيذ البرمجي للنموذج ليصيغ الرد بناءً عليها
+      filePath,
+      activeFile: session.activeFile || null
     };
 
+    // 5. إرسال السياق كاملاً لعقل الكرنل لمعالجة الطلب أياً كان محتواه أو نوعه
     const kernelOutput = await kernel(sessionId, message, kernelContext);
 
     let reply = "تم إنجاز طلبك بنجاح!";
     let fileBase64 = null;
     let returnedFileName = fileName;
 
+    // معالجة مرنة لمخرجات الكرنل (سواء نص أو كائن متكامل يحمل ملفاً ناتجاً)
     if (typeof kernelOutput === "string") {
       reply = kernelOutput;
     } else if (kernelOutput && typeof kernelOutput === "object") {
@@ -89,15 +83,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
       returnedFileName = kernelOutput.fileName || returnedFileName;
     }
 
-    // إذا نجح التنفيذ البرمجي للأداة، نضمن ربط اسم الملف الناتج
-    if (toolResult && typeof toolResult === "object") {
-      returnedFileName = toolResult.fileName || `Updated_${fileName}`;
-      fileBase64 = toolResult.fileBase64 || fileBase64;
-      if (toolResult.message) {
-        reply = toolResult.message;
-      }
-    }
-
+    // تسجيل رد المساعد في التاريخ
     memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
     return {
@@ -118,3 +104,4 @@ export default async function conversationOrchestrator(sessionId, message, extra
     };
   }
 }
+
