@@ -1,6 +1,6 @@
 /**
  * api/core/conversation_orchestrator.js – Sovereign Universal Orchestrator
- * المنسق السيادي العام: إدارة سياق الجلسة والملفات وتمريرها بمرونة مطلقة بدون قيود لغوية.
+ * المنسق السيادي العام: حرية مطلقة، لا قيود، لا أكواد صلبة. تمرير نظيف للسياق والملفات.
  */
 
 import memory from "./memory.js";
@@ -26,7 +26,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
       session.activeFile = null;
     }
 
-    // 2. إدارة حالة الملف (استلام جديد أو استرجاع من الذاكرة المؤقتة للجلسة)
+    // 2. إدارة حالة الملف بمرونة (أي نوع ملف، أي مسار)
     let fileData = extraCtx.fileData || null;
     let fileName = extraCtx.fileName || null;
     let filePath = extraCtx.filePath || null;
@@ -53,6 +53,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
       content: (msg.content || "").slice(0, 2000)
     }));
 
+    // تجهيز مسرح العمليات للنموذج اللغوي (Kernel) ليفعل ما يشاء!
     const kernelContext = {
       history,
       locationContext: extraCtx.locationContext || "",
@@ -63,18 +64,18 @@ export default async function conversationOrchestrator(sessionId, message, extra
       },
       fileData,
       fileName,
-      filePath,
+      filePath, // 🔥 هذا هو الأهم: تمرير المسار الفيزيائي ليتعامل معه الكرنل برمجياً بحرية
       activeFile: session.activeFile || null
     };
 
-    // 5. إرسال السياق كاملاً لعقل الكرنل لمعالجة الطلب أياً كان محتواه أو نوعه
+    // 5. تسليم القيادة المطلقة للـ Kernel (هنا يتم اتخاذ القرار وتوليد/تنفيذ البايثون ديناميكياً)
     const kernelOutput = await kernel(sessionId, message, kernelContext);
 
     let reply = "تم إنجاز طلبك بنجاح!";
     let fileBase64 = null;
     let returnedFileName = fileName;
 
-    // معالجة مرنة لمخرجات الكرنل (سواء نص أو كائن متكامل يحمل ملفاً ناتجاً)
+    // معالجة مرنة لمخرجات الكرنل
     if (typeof kernelOutput === "string") {
       reply = kernelOutput;
     } else if (kernelOutput && typeof kernelOutput === "object") {
