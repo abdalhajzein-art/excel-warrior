@@ -2,13 +2,14 @@
  * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة)
  * ✅ تم تحديثها لاستخدام المحرك الشامل (Excel Ultimate Engine)
  * ✅ يدعم ExcelJS + XLSX معاً
+ * ✅ تم إصلاح مشكلة تضاعف حجم الملف
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import excelEngine from './tools/external/engines/excel.js'; // ✅ المحرك الشامل
+import excelEngine from './tools/external/engines/excel.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,7 +23,6 @@ async function extractExcelContent(filePath, options = {}) {
       return { error: "⚠️ الملف غير موجود على السيرفر." };
     }
 
-    // ✅ التحقق من حجم الملف
     const stats = fs.statSync(filePath);
     if (stats.size === 0) {
       return { error: "⚠️ الملف فارغ (0 بايت)." };
@@ -42,7 +42,6 @@ async function extractExcelContent(filePath, options = {}) {
       return { error: result.error || "فشل قراءة الملف" };
     }
 
-    // ✅ استخراج البيانات من النتيجة
     const data = result.data;
     
     return {
@@ -57,7 +56,7 @@ async function extractExcelContent(filePath, options = {}) {
         engines: data.metadata?.engines || ['exceljs'],
         analysis: data.analysis || null
       },
-      rawData: data // ✅ الاحتفاظ بالبيانات الخام للتحليل المتقدم
+      rawData: data
     };
 
   } catch (error) {
@@ -105,7 +104,7 @@ export default async function handler(req, res) {
     const fileName = body.fileName || null;
     const history = body.history || [];
     const metadata = body.metadata || null;
-    const operations = body.operations || null; // ✅ عمليات التعديل من المستخدم
+    const operations = body.operations || null;
 
     if (!userContent && !fileData) {
       return res.status(400).json({
@@ -117,7 +116,6 @@ export default async function handler(req, res) {
     let extractedContent = null;
     let modifiedResult = null;
 
-    // ✅ معالجة الملف إذا وجد
     if (fileData && fileName) {
       try {
         const uploadDir = path.join(__dirname, '../uploads');
@@ -125,16 +123,38 @@ export default async function handler(req, res) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
         
-        // ✅ إنشاء اسم ملف فريد
         const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(7)}-${fileName}`;
         localFilePath = path.join(uploadDir, uniqueFileName);
 
         let buffer = null;
 
-        // ✅ معالجة البيانات الواردة
+        // ✅ معالجة البيانات الواردة بشكل صحيح
         if (typeof fileData === 'string') {
-          const cleanBase64 = fileData.replace(/^data:.*;base64,/, '');
+          // ✅ تنظيف Base64 بشكل متقدم
+          let cleanBase64 = fileData;
+          
+          // إزالة البيانات التعريفية
+          if (cleanBase64.includes('base64,')) {
+            cleanBase64 = cleanBase64.split('base64,')[1];
+          }
+          
+          // إزالة المسافات والأسطر الجديدة
+          cleanBase64 = cleanBase64.replace(/\s/g, '');
+          
+          // ✅ التحقق من صحة Base64
+          const base64Regex = /^[A-Za-z0-9+/=]+$/;
+          if (!base64Regex.test(cleanBase64)) {
+            // محاولة استخراج Base64 من النص
+            const match = cleanBase64.match(/[A-Za-z0-9+/=]+/);
+            if (match) {
+              cleanBase64 = match[0];
+            } else {
+              throw new Error("البيانات المرسلة ليست بصيغة Base64 صالحة");
+            }
+          }
+          
           buffer = Buffer.from(cleanBase64, 'base64');
+          
         } else if (Buffer.isBuffer(fileData)) {
           buffer = fileData;
         } else if (typeof fileData === 'object' && fileData !== null) {
@@ -172,16 +192,13 @@ export default async function handler(req, res) {
         
         // ✅ استخدام المحرك الشامل للملفات Excel
         if (['.xlsx', '.xls', '.xlsm', '.csv'].includes(fileExt)) {
-          // ✅ إذا كانت هناك عمليات تعديل مطلوبة
           if (operations && operations.length > 0) {
             modifiedResult = await modifyExcelContent(localFilePath, operations);
             if (modifiedResult.error) {
               throw new Error(modifiedResult.error);
             }
-            // ✅ استخدام الملف المعدل
             extractedContent = await extractExcelContent(modifiedResult.filePath, { analyze: true });
           } else {
-            // ✅ قراءة عادية
             extractedContent = await extractExcelContent(localFilePath, { analyze: true });
           }
           
@@ -197,7 +214,6 @@ export default async function handler(req, res) {
         } else if (['.pptx', '.ppt'].includes(fileExt)) {
           extractedContent = { text: `[ملف PowerPoint: ${fileName}]`, markdown: '', metadata: {} };
         } else {
-          // ملفات نصية عادية
           const content = fs.readFileSync(localFilePath, 'utf-8');
           extractedContent = { text: content.slice(0, 10000), markdown: '', metadata: {} };
         }
@@ -206,7 +222,6 @@ export default async function handler(req, res) {
         console.error("❌ خطأ في حفظ أو معالجة الملف:", err);
         extractedContent = { error: `فشل معالجة الملف: ${err.message}` };
         
-        // ✅ تنظيف الملف التالف
         if (localFilePath && fs.existsSync(localFilePath)) {
           try {
             fs.unlinkSync(localFilePath);
@@ -218,14 +233,12 @@ export default async function handler(req, res) {
       }
     }
 
-    // ✅ إذا فشل استخراج المحتوى، نرسل رسالة خطأ للمستخدم
     if (extractedContent && extractedContent.error) {
       return res.status(400).json({
         reply: `⚠️ ${extractedContent.error}`
       });
     }
 
-    // ✅ إعداد البيانات للمنظم (Orchestrator)
     const orchestratorInput = {
       fileData,
       fileName,
@@ -233,10 +246,9 @@ export default async function handler(req, res) {
       history,
       metadata,
       extractedContent,
-      operations // ✅ تمرير العمليات للمنظم
+      operations
     };
 
-    // ✅ إذا كان هناك نتيجة تعديل، نضيفها
     if (modifiedResult) {
       orchestratorInput.modifiedResult = modifiedResult;
     }
@@ -255,7 +267,6 @@ export default async function handler(req, res) {
       returnedFileName = output.fileName || modifiedResult?.fileName || null;
     }
 
-    // ✅ إذا كان هناك ملف معدل، نضيف رابط التحميل
     if (returnedFileName) {
       const realFileUrl = encodeURI(`/uploads/${returnedFileName}`);
       if (!reply.includes(returnedFileName)) {
@@ -267,7 +278,7 @@ export default async function handler(req, res) {
       reply,
       fileBase64,
       fileName: returnedFileName,
-      metadata: extractedContent?.metadata || null // ✅ إضافة الميتاداتا للواجهة
+      metadata: extractedContent?.metadata || null
     });
 
   } catch (error) {
@@ -276,4 +287,4 @@ export default async function handler(req, res) {
       reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
     });
   }
-}
+      }
