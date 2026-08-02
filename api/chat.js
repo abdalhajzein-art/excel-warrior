@@ -13,37 +13,42 @@ export default async function handler(req, res) {
 
     const userContent = (body.message || body.prompt || "").trim();
     const sessionKey = body.sessionId || "default";
-    const fileResult = body.fileResult || null;
+
+    // ⭐ الطريقة الجديدة: استقبال full.data مباشرة
+    const fileData = body.fileData || null;
+    const fileName = body.fileName || null;
+
     const history = body.history || [];
 
-    if (!userContent && !fileResult) {
+    if (!userContent && !fileData) {
       return res.status(400).json({
         reply: "⚠️ الرجاء إرسال رسالة أو ملف."
       });
     }
 
-    // ⭐ تمرير الرسالة للطبقة السيادية المركزية
+    // ⭐ تمرير الرسالة + full.data للطبقة السيادية المركزية
     const output = await conversationOrchestrator(sessionKey, userContent, {
-      fileResult,
+      fileData,
+      fileName,
       history
     });
 
     let reply = "تم إنجاز طلبك بنجاح!";
     let fileBase64 = null;
-    let fileName = null;
+    let returnedFileName = null;
 
     if (typeof output === "string") {
       reply = output;
     } else if (output && typeof output === "object") {
       reply = output.reply || reply;
       fileBase64 = output.fileBase64 || null;
-      fileName = output.fileName || null;
+      returnedFileName = output.fileName || null;
     }
 
     return res.status(200).json({
       reply,
       fileBase64,
-      fileName
+      fileName: returnedFileName
     });
 
   } catch (error) {
