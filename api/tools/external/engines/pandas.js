@@ -1,6 +1,6 @@
 /**
- * engines/pandas.js – Sovereign Python/Pandas Data Engine (Armored Edition)
- * محرك سيادي حقيقي يستغل قوة Python و Pandas و Openpyxl الموجودة في الـ Docker
+ * engines/pandas.js – Sovereign Unconstrained Python/Pandas Engine
+ * محرك سيادي مطلق يستغل القدرات الكاملة لـ Pandas و Openpyxl بدون أي قيود أو تحجيم
  */
 
 import fs from "fs";
@@ -32,7 +32,7 @@ export default async function pandasEngine(filePath, action, params = {}) {
 }
 
 /* ============================================================
-   🐍 تنفيذ محرك Python/Pandas الداخلي (محصّن ضد الجداول العشوائية وغياب الترويسة)
+   🐍 محرك بايثون المطلق (بدون قيود أو تصفية مسبقة)
    ============================================================ */
 function runPythonPandas(filePath, mode) {
   try {
@@ -43,37 +43,54 @@ import sys
 
 try:
     file_path = sys.argv[1]
-    df = None
     
     if file_path.endswith(('.xlsx', '.xls')):
-        try:
-            df = pd.read_excel(file_path, sheet_name=0)
-            if df.empty or all(str(c).startswith('Unnamed') for c in df.columns):
-                raise ValueError("No valid headers")
-        except:
-            df = pd.read_excel(file_path, sheet_name=0, header=None)
-    else:
-        df = pd.read_csv(file_path)
-
-    df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
-    
-    if df.empty:
+        # استكشاف كافة الأوراق (Sheets) الموجودة في ملف الإكسل
+        xls = pd.ExcelFile(file_path)
+        sheets_data = {}
+        
+        for sheet in xls.sheet_names:
+            # قراءة الورقة بكل مرونة دون فرض أي افتراضات مسبقة
+            df = pd.read_excel(file_path, sheet_name=sheet)
+            
+            # تنظيف الفراغات التامة فقط للحفاظ على نظافة الهيكل
+            df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
+            
+            # تحويل الأعمدة لنصوص آمنة
+            df.columns = [str(c) for c in df.columns]
+            
+            sheets_data[sheet] = {
+                "rows": len(df),
+                "columns": list(df.columns),
+                "preview": df.head(50).fillna("").to_dict(orient="records")
+            }
+            
         result = {
             "ok": True,
-            "reply": "الملف فارغ تماماً أو لا يحتوي على بيانات مقروءة.",
-            "data": {"rows": 0, "columns": [], "preview": []}
+            "reply": f"تم استقراء ملف Excel بنجاح عبر محرك Pandas السيادي (يحتوي على الأوراق: {list(xls.sheet_names)})",
+            "data": {
+                "sheets": sheets_data,
+                "multi_sheet": True
+            }
         }
     else:
+        # ملفات CSV والملفات النصية المهيكلة
+        df = pd.read_csv(file_path)
+        df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
         df.columns = [str(c) for c in df.columns]
-        preview = df.head(25).fillna("").to_dict(orient="records")
         
         result = {
             "ok": True,
-            "reply": "تمت قراءة ومعالجة الملف بنجاح عبر محرك Pandas السيادي.",
+            "reply": "تمت قراءة ملف البيانات بنجاح.",
             "data": {
-                "rows": len(df),
-                "columns": list(df.columns),
-                "preview": preview
+                "sheets": {
+                    "Sheet1": {
+                        "rows": len(df),
+                        "columns": list(df.columns),
+                        "preview": df.head(50).fillna("").to_dict(orient="records")
+                    }
+                },
+                "multi_sheet": False
             }
         }
         
@@ -118,7 +135,7 @@ out_path = sys.argv[2]
 ext = sys.argv[3]
 
 if file_path.endswith(('.xlsx', '.xls')):
-    df = pd.read_excel(file_path)
+    df = pd.read_excel(file_path, sheet_name=0)
 else:
     df = pd.read_csv(file_path)
 
@@ -158,7 +175,7 @@ file_path = sys.argv[1]
 out_path = sys.argv[2]
 
 if file_path.endswith(('.xlsx', '.xls')):
-    df = pd.read_excel(file_path)
+    df = pd.read_excel(file_path, sheet_name=0)
 else:
     df = pd.read_csv(file_path)
 
@@ -198,3 +215,4 @@ function normalizedFile(reply, filePath, fileName, base64) {
 function normalizedError(reply, err = null) {
   return { ok: false, reply, error: err ? err.message : reply, data: null, fileBase64: null, fileName: null, filePath: null };
 }
+
