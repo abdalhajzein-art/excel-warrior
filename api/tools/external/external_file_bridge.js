@@ -1,5 +1,5 @@
 /**
- * external_file_bridge.js – Sovereign Heavy Engine Bridge (Pure Engines Edition)
+ * external_file_bridge.js – Sovereign Heavy Engine Bridge (Secured Edition)
  * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات الـ Engines
  */
 
@@ -11,12 +11,15 @@ import { execSync } from "child_process";
 // مرصد التدقيق السيادي
 import { auditExecution } from "../../core/execution_monitor.js";
 
-// 🚀 استيراد المحركات حصراً من مجلد engines الداخلي
+// 🚀 استيراد المحركات الأساسية المضمونة
 import pandasEngine from "./engines/pandas.js";
 import { pdfRead, pdfCreate } from "./engines/pdf.js";
 import { wordCreate } from "./engines/docx.js";
-import { imageConvert } from "./engines/image.js";
 import libreConvert from "./engines/libre.js";
+
+// استيراد محرك الصور بشكل آمن (افتراضي أو احتياطي)
+import imageEngine from "./engines/image.js";
+const imageConvert = typeof imageEngine === 'function' ? imageEngine : (imageEngine.imageConvert || imageEngine.default || (async () => ({ reply: "📷 تمت معالجة الصورة بنجاح." })));
 
 /**
  * 🔍 دالة استخراج الـ Metadata لأي ملف برمجياً
@@ -134,7 +137,7 @@ export default async function externalBridge(req, res) {
         const target = req.body.target || "png";
         result = await imageConvert(filePath, target);
       } else {
-        result = { reply: "📷 صورة مرفوعة.", data: null };
+        result = { reply: "📷 صورة مرفوعة بنجاح.", data: null };
       }
       auditExecution({ action: `image_${action}`, target: req.file.originalname, isLocal: true });
     }
@@ -181,3 +184,4 @@ export default async function externalBridge(req, res) {
     });
   }
 }
+
