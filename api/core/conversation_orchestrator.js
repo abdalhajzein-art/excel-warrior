@@ -1,6 +1,7 @@
 /**
  * api/core/conversation_orchestrator.js – Sovereign Universal Orchestrator
  * المنسق السيادي العام: حرية مطلقة، لا قيود، لا أكواد صلبة. تمرير نظيف للسياق والملفات.
+ * ✅ تم تحديثها لاستخدام المحتوى المستخرج محلياً من office-oxide
  */
 
 import memory from "./memory.js";
@@ -30,17 +31,19 @@ export default async function conversationOrchestrator(sessionId, message, extra
     let fileData = extraCtx.fileData || null;
     let fileName = extraCtx.fileName || null;
     let filePath = extraCtx.filePath || null;
-    const metadata = extraCtx.metadata || null; // ✅ استقبال الميتاداتا
+    const metadata = extraCtx.metadata || null;
+    const extractedContent = extraCtx.extractedContent || null; // ✅ المحتوى المستخرج محلياً
     const hasFile = !!fileData || !!filePath;
 
     if (hasFile) {
-      session.activeFile = { fileData, fileName, filePath, metadata };
+      session.activeFile = { fileData, fileName, filePath, metadata, extractedContent };
     } else if (session.activeFile && !isResetFile) {
       fileData = session.activeFile.fileData;
       fileName = session.activeFile.fileName;
       filePath = session.activeFile.filePath;
-      // ✅ استرجاع الميتاداتا من الجلسة إذا كانت موجودة
+      // استرجاع الميتاداتا والمحتوى المستخرج من الجلسة
       const sessionMetadata = session.activeFile.metadata || null;
+      const sessionExtractedContent = session.activeFile.extractedContent || null;
     }
 
     // 3. تسجيل رسالة المستخدم في التاريخ
@@ -56,7 +59,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
       content: (msg.content || "").slice(0, 2000)
     }));
 
-    // تجهيز مسرح العمليات للنموذج اللغوي (Kernel) ليفعل ما يشاء!
+    // ✅ بناء السياق للمعالج (Kernel) مع المحتوى المستخرج
     const kernelContext = {
       history,
       locationContext: extraCtx.locationContext || "",
@@ -67,19 +70,19 @@ export default async function conversationOrchestrator(sessionId, message, extra
       },
       fileData,
       fileName,
-      filePath, // 🔥 هذا هو الأهم: تمرير المسار الفيزيائي ليتعامل معه الكرنل برمجياً بحرية
+      filePath,
       activeFile: session.activeFile || null,
-      metadata // ✅ تمرير الميتاداتا إلى kernel
+      metadata,
+      extractedContent // ✅ تمرير المحتوى المستخرج محلياً
     };
 
-    // 5. تسليم القيادة المطلقة للـ Kernel (هنا يتم اتخاذ القرار وتوليد/تنفيذ البايثون ديناميكياً)
+    // 5. تسليم القيادة المطلقة للـ Kernel
     const kernelOutput = await kernel(sessionId, message, kernelContext);
 
     let reply = "تم إنجاز طلبك بنجاح!";
     let fileBase64 = null;
     let returnedFileName = fileName;
 
-    // معالجة مرنة لمخرجات الكرنل
     if (typeof kernelOutput === "string") {
       reply = kernelOutput;
     } else if (kernelOutput && typeof kernelOutput === "object") {
@@ -88,7 +91,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
       returnedFileName = kernelOutput.fileName || returnedFileName;
     }
 
-    // تسجيل رد المساعد في التاريخ
     memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
     return {
