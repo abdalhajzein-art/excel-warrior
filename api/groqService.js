@@ -1,6 +1,6 @@
 /**
  * api/groqService.js – Sovereign Gemini Gateway (Optimized for Gemini 3.6 Flash)
- * محرك الربط السيادي لـ Google Gemini مع إدارة محسنة للنافذة والتوكنز
+ * محرك الربط السيادي لـ Google Gemini مع إدارة محسنة للنافذة والتوكنز والـ JSON الإلزامي
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -23,14 +23,15 @@ export default async function groqService(prompt) {
   try {
     const model = genAI.getGenerativeModel({ 
       model: MODEL_NAME,
-      systemInstruction: "أنت الأثير — المساعد السيادي الذكي. رد دائماً بدقة واحترافية."
+      systemInstruction: "أنت الأثير — المساعد السيادي الذكي. رد دائماً بدقة واحترافية بصيغة JSON."
     });
 
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
-        temperature: 0.5,
+        temperature: 0.1,
         maxOutputTokens: 8192,
+        responseMimeType: "application/json",
       }
     });
     
@@ -48,7 +49,11 @@ export default async function groqService(prompt) {
 
   } catch (error) {
     console.error("❌ Gemini Gateway Error (Legacy Mode):", error);
-    return "⚠️ حدث خطأ أثناء توليد الرد من محرك جيميني.";
+    return JSON.stringify({
+      intent: "chat",
+      reply: "⚠️ حدث خطأ أثناء توليد الرد من محرك جيميني.",
+      python_code: ""
+    });
   }
 }
 
@@ -97,8 +102,9 @@ groqService.chat = async function(messages, extra = {}) {
     const chat = model.startChat({
       history: history,
       generationConfig: {
-        temperature: 0.3, // تقليل الـ temperature يضمن دقة أعلى في تنفيذ الأوامر البرمجية والتحليلية
+        temperature: 0.1, // تثبيت الدقة لضمان صياغة دقيقة لـ JSON وكود بايثون
         maxOutputTokens: 8192,
+        responseMimeType: "application/json", // 🔥 القفل السيادي الإلزامي لجيميني لمنع الدردشة النصية وإجبار الـ JSON
       }
     });
 
@@ -121,4 +127,3 @@ groqService.chat = async function(messages, extra = {}) {
     throw error;
   }
 };
-
