@@ -1,5 +1,5 @@
 /**
- * app.js – العقل الرئيسي للسيرفر (Express Server Entry Point - النسخة المصححة)
+ * app.js – العقل الرئيسي للسيرفر (Express Server Entry Point - النسخة السيادية المصححة)
  */
 
 import express from 'express';
@@ -17,13 +17,36 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// التأكد من وجود مجلد التخزين المؤقت للملفات
+// 1️⃣ التأكد من وجود مجلد التخزين المؤقت للملفات
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// تخزين الملفات على القرص لضمان توفر مسار حقيقي (filePath) للأدوات
+// 2️⃣ 🧹 منظف القرص التلقائي (حذف الملفات المؤقتة القديمة التي تجاوزت ساعة واحدة)
+function cleanupUploadsFolder() {
+  try {
+    const files = fs.readdirSync(uploadDir);
+    const now = Date.now();
+    const ONE_HOUR = 60 * 60 * 1000;
+
+    files.forEach(file => {
+      const filePath = path.join(uploadDir, file);
+      const stats = fs.statSync(filePath);
+      if (now - stats.mtimeMs > ONE_HOUR) {
+        fs.unlinkSync(filePath);
+        console.log(`🧹 [Disk Sweeper] تم تنظيف الملف القديم: ${file}`);
+      }
+    });
+  } catch (err) {
+    console.warn("⚠️ [Disk Sweeper Warning]:", err.message);
+  }
+}
+
+// تشغيل المنظف كل ساعة
+setInterval(cleanupUploadsFolder, 60 * 60 * 1000);
+
+// 3️⃣ تخزين الملفات على القرص لضمان توفر مسار حقيقي (filePath) للأدوات
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
@@ -63,7 +86,7 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 });
 
 // 📂 التصريح الرسمي لمسار التحميلات لضمان تنزيل الملفات بسلاسة
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(uploadDir));
 
 // Frontend Static Files
 app.use(express.static(__dirname));
@@ -75,4 +98,5 @@ app.get("/", (req, res) => {
 // 🚀 تشغيل السيرفر السيادي
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 [Alatheer Server] يعمل بنجاح على المنفذ: ${PORT}`);
+  cleanupUploadsFolder(); // تنظيف فوري عند الإقلاع الأول
 });
