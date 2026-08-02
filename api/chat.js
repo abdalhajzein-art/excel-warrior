@@ -1,63 +1,62 @@
 /**
  * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة)
- * ✅ تم تحديثها لاستخدام @aspose/cells لمعالجة ملفات Excel
+ * ✅ تم تحديثها لاستخدام exceljs لمعالجة ملفات Excel
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Workbook } from '@aspose/cells'; // ✅ المكتبة الجديدة
+import ExcelJS from 'exceljs'; // ✅ المكتبة الجديدة
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * ✅ دالة معالجة الملفات محلياً باستخدام @aspose/cells
+ * ✅ دالة معالجة الملفات محلياً باستخدام exceljs
  */
-function extractExcelContent(filePath) {
+async function extractExcelContent(filePath) {
   try {
     if (!fs.existsSync(filePath)) {
       return { error: "⚠️ الملف غير موجود على السيرفر." };
     }
 
-    // تحميل الملف
-    const workbook = new Workbook(filePath);
-    const worksheet = workbook.getWorksheets().get(0);
-    const cells = worksheet.getCells();
+    // تحميل الملف باستخدام exceljs
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const worksheet = workbook.getWorksheet(1); // أول ورقة عمل
+
+    if (!worksheet) {
+      return { error: "⚠️ لا توجد أوراق عمل في هذا الملف." };
+    }
 
     // استخراج البيانات
     const data = [];
-    const rows = cells.getMaxDataRow() + 1;
-    const cols = cells.getMaxDataColumn() + 1;
+    worksheet.eachRow((row, rowNumber) => {
+      const rowData = [];
+      row.eachCell((cell) => {
+        rowData.push(cell.value || '');
+      });
+      data.push(rowData);
+    });
 
-    for (let i = 0; i < rows; i++) {
-      const row = [];
-      for (let j = 0; j < cols; j++) {
-        const cell = cells.get(i, j);
-        row.push(cell.getValue() || '');
-      }
-      data.push(row);
-    }
-
-    // استخراج الصيغ
+    // استخراج الصيغ (Formulas) إذا وجدت
     const formulas = [];
-    for (let i = 0; i < rows; i++) {
-      for (let j = 0; j < cols; j++) {
-        const cell = cells.get(i, j);
-        if (cell.getFormula()) {
-          formulas.push(`الخلية ${String.fromCharCode(65 + j)}${i + 1}: ${cell.getFormula()}`);
+    worksheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+        if (cell.formula) {
+          formulas.push(`الخلية ${cell.address}: ${cell.formula}`);
         }
-      }
-    }
+      });
+    });
 
     return {
       text: data.map(row => row.join(' | ')).join('\n'),
       markdown: data.map(row => `| ${row.join(' | ')} |`).join('\n'),
       metadata: {
-        sheets: workbook.getWorksheets().getCount(),
-        rows: rows,
-        columns: cols,
+        sheets: workbook.worksheets.length,
+        rows: data.length,
+        columns: data[0]?.length || 0,
         hasFormulas: formulas.length > 0,
         formulas: formulas.slice(0, 20) // أول 20 صيغة
       }
@@ -100,6 +99,7 @@ export default async function handler(req, res) {
         }
         localFilePath = path.join(uploadDir, fileName);
 
+        // حفظ الملف
         if (typeof fileData === 'string') {
           const cleanBase64 = fileData.replace(/^data:.*;base64,/, '');
           fs.writeFileSync(localFilePath, Buffer.from(cleanBase64, 'base64'));
@@ -112,10 +112,10 @@ export default async function handler(req, res) {
 
         const fileExt = path.extname(fileName).toLowerCase();
         
-        // ✅ استخدام @aspose/cells للملفات Excel
+        // ✅ استخدام exceljs للملفات Excel
         if (['.xlsx', '.xls'].includes(fileExt)) {
-          extractedContent = extractExcelContent(localFilePath);
-          console.log(`📄 [chat.js] تم استخراج محتوى Excel باستخدام Aspose.Cells: ${fileName}`);
+          extractedContent = await extractExcelContent(localFilePath); // ✅ استخدام await
+          console.log(`📄 [chat.js] تم استخراج محتوى Excel باستخدام exceljs: ${fileName}`);
         } else if (['.docx', '.doc'].includes(fileExt)) {
           // TODO: استخدام مكتبة أخرى لـ Word
           extractedContent = { text: `[ملف Word: ${fileName}]`, markdown: '', metadata: {} };
@@ -137,6 +137,7 @@ export default async function handler(req, res) {
       }
     }
 
+    // استدعاء الـ orchestrator
     const output = await conversationOrchestrator(sessionKey, userContent, {
       fileData,
       fileName,
@@ -177,4 +178,4 @@ export default async function handler(req, res) {
       reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
     });
   }
-    }
+  }
