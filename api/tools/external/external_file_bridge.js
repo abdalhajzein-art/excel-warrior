@@ -54,7 +54,7 @@ export default async function externalBridge(req, res, fileInfo = null) {
     }
 
     const action = req.body.action || "read";
-    const metadata = file.metadata || null; // ✅ الميتاداتا من upload.js
+    const metadata = file.metadata || null;
 
     // 🛡️ حفظ الملف مؤقتاً (إذا لم يكن محفوظاً بالفعل)
     let filePath = file.path;
@@ -68,6 +68,21 @@ export default async function externalBridge(req, res, fileInfo = null) {
       } else {
         throw new Error("لم يتم العثور على بيانات الملف.");
       }
+    }
+
+    // ✅ التحقق من وجود الملف وحجمه
+    if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      console.log(`📊 [Bridge] حجم الملف المستلم: ${stats.size} bytes`);
+      if (stats.size < 10) {
+        console.warn(`⚠️ [Bridge] الملف صغير جداً (${stats.size} bytes)، قد يكون تالفاً.`);
+        return res.status(400).json({
+          error: `⚠️ الملف تالف أو فارغ (الحجم: ${stats.size} bytes). يرجى إعادة رفع الملف.`
+        });
+      }
+    } else {
+      console.error(`❌ [Bridge] الملف غير موجود: ${filePath}`);
+      return res.status(400).json({ error: "⚠️ الملف غير موجود على السيرفر." });
     }
 
     const ext = path.extname(file.originalname || filePath).toLowerCase();
@@ -123,7 +138,6 @@ export default async function externalBridge(req, res, fileInfo = null) {
 
     // 📊 Excel عبر محرك Openpyxl السيادي (مع دعم الميتاداتا)
     else if (ext === ".xlsx" || ext === ".xls") {
-      // ✅ تمرير الميتاداتا إن وجدت
       const params = { ...req.body, metadata };
       result = await excelEngine(filePath, action, params);
       auditExecution({ action: `excel_${action}`, target: file.originalname, isLocal: true });
@@ -188,4 +202,4 @@ export default async function externalBridge(req, res, fileInfo = null) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-      }
+        }
