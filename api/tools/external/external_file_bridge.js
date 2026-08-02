@@ -1,6 +1,6 @@
 /**
- * external_file_bridge.js – Sovereign Heavy Engine Bridge (Audited & Secured Edition)
- * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات Python/Pandas ومحطات التدقيق المحلية
+ * external_file_bridge.js – Sovereign Heavy Engine Bridge (Pure Engines Edition)
+ * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات الـ Engines
  */
 
 import fs from "fs";
@@ -11,18 +11,15 @@ import { execSync } from "child_process";
 // مرصد التدقيق السيادي
 import { auditExecution } from "../../core/execution_monitor.js";
 
-// 🚀 المحرك السيادي المطلق الذي تم تحديثه (Pandas & Openpyxl)
+// 🚀 استيراد المحركات حصراً من مجلد engines الداخلي
 import pandasEngine from "./engines/pandas.js";
-
-// المحركات الأخرى
-import { pdfRead, pdfConvert, pdfCreate } from "../pdf.js";
-import { wordCreate } from "../word.js";
-import { pptCreate } from "../ppt.js";
-import { imageConvert } from "../image.js";
+import { pdfRead, pdfCreate } from "./engines/pdf.js";
+import { wordCreate } from "./engines/docx.js";
+import { imageConvert } from "./engines/image.js";
 import libreConvert from "./engines/libre.js";
 
 /**
- * 🔍 دالة استخراج الـ Metadata لأي ملف برمجياً (للاستخدام الداخلي في الكرنل)
+ * 🔍 دالة استخراج الـ Metadata لأي ملف برمجياً
  */
 export function extractFileMetadata(filePath) {
   try {
@@ -80,7 +77,7 @@ export default async function externalBridge(req, res) {
     }
 
     /* ============================================================
-       🟥 التوجيه الذكي للمحركات حسب الامتداد
+       🟥 التوجيه الذكي للمحركات عبر مجلد engines
        ============================================================ */
 
     // 📄 PDF
@@ -95,38 +92,35 @@ export default async function externalBridge(req, res) {
         };
       } else if (action === "read") {
         result = await pdfRead(filePath);
-      } else if (action === "convert") {
-        result = await pdfConvert(filePath, req.body.target || "pdf");
       } else if (action === "create") {
         result = await pdfCreate(req.body.text || "");
+      } else {
+        result = await pdfRead(filePath);
       }
       auditExecution({ action: `pdf_${action}`, target: req.file.originalname, isLocal: true });
     }
 
     // 📝 DOCX
     else if (ext === ".docx") {
-      if (action === "preview") {
+      if (action === "preview" || action === "read") {
         const txt = await libreConvert(filePath, "txt");
         const text = (txt.data?.text || txt.data || txt || "").toString();
         const previewText = text.split("\n").slice(0, 30).join("\n");
         result = {
-          reply: "📝 لمحة عن محتوى ملف Word:",
+          reply: "📝 محتوى المستند:",
           data: { preview: previewText }
         };
-      } else if (action === "read") {
-        result = await libreConvert(filePath, "txt");
-      } else if (action === "convert") {
-        result = await libreConvert(filePath, req.body.target || "pdf");
       } else if (action === "create") {
         result = await wordCreate(req.body.text || "");
+      } else {
+        result = await libreConvert(filePath, "txt");
       }
       auditExecution({ action: `docx_${action}`, target: req.file.originalname, isLocal: true });
     }
 
-    // 📊 Excel & CSV (تم توجيهها للمحرك السيادي الجديد)
+    // 📊 Excel & CSV (محرك Pandas السيادي)
     else if (ext === ".xlsx" || ext === ".xls" || ext === ".csv") {
       result = await pandasEngine(filePath, action, req.body);
-      
       auditExecution({
         action: `pandas_${action}`,
         target: req.file.originalname,
@@ -136,12 +130,7 @@ export default async function externalBridge(req, res) {
 
     // 🖼 صور
     else if ([".png", ".jpg", ".jpeg", ".webp", ".tiff", ".avif"].includes(ext)) {
-      if (action === "preview") {
-        result = {
-          reply: "🖼 هذا ملف صورة – معاينة أولية.",
-          data: { preview: "صورة مرفوعة بنجاح." }
-        };
-      } else if (action === "convert") {
+      if (action === "convert") {
         const target = req.body.target || "png";
         result = await imageConvert(filePath, target);
       } else {
@@ -150,37 +139,14 @@ export default async function externalBridge(req, res) {
       auditExecution({ action: `image_${action}`, target: req.file.originalname, isLocal: true });
     }
 
-    // 🎞 PPT
-    else if (ext === ".pptx") {
-      if (action === "create") {
-        result = await pptCreate(req.body.text || "");
-      } else {
-        result = {
-          reply: "🎞 ملف عروض تقديمية.",
-          data: { preview: "Preview غير مفعّل بعد للـ PPT." }
-        };
-      }
-      auditExecution({ action: `ppt_${action}`, target: req.file.originalname, isLocal: true });
-    }
-
     // 🟪 fallback عام
     else {
-      if (action === "preview") {
-        const full = await pdfRead(filePath);
-        const text = (full.data?.text || full.data || "").toString();
-        const previewText = text.split("\n").slice(0, 40).join("\n");
-        result = {
-          reply: "📄 لمحة عامة عن الملف:",
-          data: { preview: previewText }
-        };
-      } else {
-        result = await pdfRead(filePath);
-      }
+      result = await pdfRead(filePath);
       auditExecution({ action: `fallback_${action}`, target: req.file.originalname, isLocal: true });
     }
 
     /* ============================================================
-       ⚠️ فلترة الأخطاء من المحركات الداخلية (حماية السيادة)
+       ⚠️ فلترة الأخطاء من المحركات الداخلية
        ============================================================ */
     if (result && result.ok === false) {
       console.error("❌ فشل المحرك الداخلي:", result.error);
@@ -190,7 +156,7 @@ export default async function externalBridge(req, res) {
     }
 
     /* ============================================================
-       🟦 إرجاع الملفات الناتجة (في حال التعديل أو التوليد الفعلي فقط)
+       🟦 إرجاع الملفات الناتجة
        ============================================================ */
     if (result?.fileBase64) {
       return res.status(200).json({
@@ -201,7 +167,7 @@ export default async function externalBridge(req, res) {
     }
 
     /* ============================================================
-       🟩 إرجاع البيانات النصية (للقراءة والاستعلام والتحليل)
+       🟩 إرجاع البيانات النصية
        ============================================================ */
     return res.status(200).json({
       reply: result?.reply || "تمت قراءة الملف بنجاح.",
@@ -215,4 +181,3 @@ export default async function externalBridge(req, res) {
     });
   }
 }
-
