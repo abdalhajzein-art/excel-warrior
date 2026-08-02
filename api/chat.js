@@ -1,22 +1,22 @@
 /**
  * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة)
- * ✅ تم تحديثها لاستخدام exceljs لمعالجة ملفات Excel
- * ✅ تحسين معالجة حفظ الملفات
+ * ✅ تم تحديثها لاستخدام المحرك الشامل (Excel Ultimate Engine)
+ * ✅ يدعم ExcelJS + XLSX معاً
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ExcelJS from 'exceljs';
+import excelEngine from './tools/external/engines/excel.js'; // ✅ المحرك الشامل
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * ✅ دالة معالجة الملفات محلياً باستخدام exceljs
+ * ✅ دالة معالجة الملفات باستخدام المحرك الشامل
  */
-async function extractExcelContent(filePath) {
+async function extractExcelContent(filePath, options = {}) {
   try {
     if (!fs.existsSync(filePath)) {
       return { error: "⚠️ الملف غير موجود على السيرفر." };
@@ -29,51 +29,66 @@ async function extractExcelContent(filePath) {
     }
 
     console.log(`📊 [extractExcelContent] حجم الملف: ${stats.size} bytes`);
+    console.log(`📊 [extractExcelContent] نوع الملف: ${path.extname(filePath)}`);
 
-    // تحميل الملف باستخدام exceljs
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
-    const worksheet = workbook.getWorksheet(1);
+    // ✅ استخدام المحرك الشامل للقراءة
+    const result = await excelEngine.execute(filePath, 'read', {
+      analyze: options.analyze || false,
+      includeFormulas: true,
+      includeStyles: true
+    });
 
-    if (!worksheet) {
-      return { error: "⚠️ لا توجد أوراق عمل في هذا الملف." };
+    if (!result.ok) {
+      return { error: result.error || "فشل قراءة الملف" };
     }
 
-    // استخراج البيانات
-    const data = [];
-    worksheet.eachRow((row, rowNumber) => {
-      const rowData = [];
-      row.eachCell((cell) => {
-        rowData.push(cell.value || '');
-      });
-      data.push(rowData);
-    });
-
-    // استخراج الصيغ (Formulas) إذا وجدت
-    const formulas = [];
-    worksheet.eachRow((row, rowNumber) => {
-      row.eachCell((cell) => {
-        if (cell.formula) {
-          formulas.push(`الخلية ${cell.address}: ${cell.formula}`);
-        }
-      });
-    });
-
+    // ✅ استخراج البيانات من النتيجة
+    const data = result.data;
+    
     return {
-      text: data.map(row => row.join(' | ')).join('\n'),
-      markdown: data.map(row => `| ${row.join(' | ')} |`).join('\n'),
+      text: data.text || '',
+      markdown: data.markdown || '',
       metadata: {
-        sheets: workbook.worksheets.length,
-        rows: data.length,
-        columns: data[0]?.length || 0,
-        hasFormulas: formulas.length > 0,
-        formulas: formulas.slice(0, 20)
-      }
+        sheets: data.metadata?.sheets || 0,
+        rows: data.metadata?.totalRows || 0,
+        columns: data.metadata?.totalColumns || 0,
+        hasFormulas: data.metadata?.hasFormulas || false,
+        formulas: data.formulas?.flat() || [],
+        engines: data.metadata?.engines || ['exceljs'],
+        analysis: data.analysis || null
+      },
+      rawData: data // ✅ الاحتفاظ بالبيانات الخام للتحليل المتقدم
     };
 
   } catch (error) {
     console.error("❌ خطأ في استخراج محتوى الملف:", error);
     return { error: `فشل قراءة الملف: ${error.message}` };
+  }
+}
+
+/**
+ * ✅ دالة معالجة طلبات التعديل على الملف
+ */
+async function modifyExcelContent(filePath, operations) {
+  try {
+    const result = await excelEngine.execute(filePath, 'modify', {
+      operations: operations
+    });
+
+    if (!result.ok) {
+      return { error: result.error || "فشل تعديل الملف" };
+    }
+
+    return {
+      success: true,
+      filePath: result.filePath,
+      fileBase64: result.fileBase64,
+      fileName: result.fileName,
+      reply: result.reply
+    };
+  } catch (error) {
+    console.error("❌ خطأ في تعديل الملف:", error);
+    return { error: `فشل تعديل الملف: ${error.message}` };
   }
 }
 
@@ -90,6 +105,7 @@ export default async function handler(req, res) {
     const fileName = body.fileName || null;
     const history = body.history || [];
     const metadata = body.metadata || null;
+    const operations = body.operations || null; // ✅ عمليات التعديل من المستخدم
 
     if (!userContent && !fileData) {
       return res.status(400).json({
@@ -99,7 +115,9 @@ export default async function handler(req, res) {
 
     let localFilePath = null;
     let extractedContent = null;
+    let modifiedResult = null;
 
+    // ✅ معالجة الملف إذا وجد
     if (fileData && fileName) {
       try {
         const uploadDir = path.join(__dirname, '../uploads');
@@ -107,21 +125,19 @@ export default async function handler(req, res) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
         
-        // ✅ إنشاء اسم ملف فريد لتجنب التعارض
+        // ✅ إنشاء اسم ملف فريد
         const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(7)}-${fileName}`;
         localFilePath = path.join(uploadDir, uniqueFileName);
 
         let buffer = null;
 
-        // ✅ تحسين معالجة البيانات الواردة
+        // ✅ معالجة البيانات الواردة
         if (typeof fileData === 'string') {
-          // ✅ التعامل مع Base64
           const cleanBase64 = fileData.replace(/^data:.*;base64,/, '');
           buffer = Buffer.from(cleanBase64, 'base64');
         } else if (Buffer.isBuffer(fileData)) {
           buffer = fileData;
         } else if (typeof fileData === 'object' && fileData !== null) {
-          // ✅ إذا كانت البيانات كائن (مثل ArrayBuffer)
           if (fileData.data && Buffer.isBuffer(fileData.data)) {
             buffer = fileData.data;
           } else {
@@ -130,7 +146,6 @@ export default async function handler(req, res) {
             buffer = Buffer.from(jsonStr);
           }
         } else if (Array.isArray(fileData)) {
-          // ✅ إذا كانت البيانات مصفوفة (مثل Uint8Array)
           buffer = Buffer.from(fileData);
         }
 
@@ -143,7 +158,7 @@ export default async function handler(req, res) {
         // ✅ حفظ الملف
         fs.writeFileSync(localFilePath, buffer);
 
-        // ✅ التحقق من أن الملف تم حفظه بشكل صحيح
+        // ✅ التحقق من صحة الملف المحفوظ
         const savedStats = fs.statSync(localFilePath);
         if (savedStats.size === 0) {
           throw new Error("الملف المحفوظ فارغ (0 بايت)");
@@ -155,13 +170,25 @@ export default async function handler(req, res) {
 
         const fileExt = path.extname(fileName).toLowerCase();
         
-        // ✅ استخدام exceljs للملفات Excel
-        if (['.xlsx', '.xls'].includes(fileExt)) {
-          extractedContent = await extractExcelContent(localFilePath);
+        // ✅ استخدام المحرك الشامل للملفات Excel
+        if (['.xlsx', '.xls', '.xlsm', '.csv'].includes(fileExt)) {
+          // ✅ إذا كانت هناك عمليات تعديل مطلوبة
+          if (operations && operations.length > 0) {
+            modifiedResult = await modifyExcelContent(localFilePath, operations);
+            if (modifiedResult.error) {
+              throw new Error(modifiedResult.error);
+            }
+            // ✅ استخدام الملف المعدل
+            extractedContent = await extractExcelContent(modifiedResult.filePath, { analyze: true });
+          } else {
+            // ✅ قراءة عادية
+            extractedContent = await extractExcelContent(localFilePath, { analyze: true });
+          }
+          
           if (extractedContent.error) {
             console.error(`❌ [chat.js] فشل استخراج محتوى Excel: ${extractedContent.error}`);
           } else {
-            console.log(`📄 [chat.js] تم استخراج محتوى Excel باستخدام exceljs: ${fileName}`);
+            console.log(`📄 [chat.js] تم استخراج محتوى Excel باستخدام المحرك الشامل: ${fileName}`);
           }
         } else if (['.docx', '.doc'].includes(fileExt)) {
           extractedContent = { text: `[ملف Word: ${fileName}]`, markdown: '', metadata: {} };
@@ -198,14 +225,23 @@ export default async function handler(req, res) {
       });
     }
 
-    const output = await conversationOrchestrator(sessionKey, userContent, {
+    // ✅ إعداد البيانات للمنظم (Orchestrator)
+    const orchestratorInput = {
       fileData,
       fileName,
-      filePath: localFilePath,
+      filePath: modifiedResult?.filePath || localFilePath,
       history,
       metadata,
-      extractedContent
-    });
+      extractedContent,
+      operations // ✅ تمرير العمليات للمنظم
+    };
+
+    // ✅ إذا كان هناك نتيجة تعديل، نضيفها
+    if (modifiedResult) {
+      orchestratorInput.modifiedResult = modifiedResult;
+    }
+
+    const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
 
     let reply = "تم إنجاز طلبك بنجاح!";
     let fileBase64 = null;
@@ -215,10 +251,11 @@ export default async function handler(req, res) {
       reply = output;
     } else if (output && typeof output === "object") {
       reply = output.reply || output.message || "تم إنجاز طلبك بنجاح!";
-      fileBase64 = output.fileBase64 || null;
-      returnedFileName = output.fileName || null;
+      fileBase64 = output.fileBase64 || modifiedResult?.fileBase64 || null;
+      returnedFileName = output.fileName || modifiedResult?.fileName || null;
     }
 
+    // ✅ إذا كان هناك ملف معدل، نضيف رابط التحميل
     if (returnedFileName) {
       const realFileUrl = encodeURI(`/uploads/${returnedFileName}`);
       if (!reply.includes(returnedFileName)) {
@@ -229,7 +266,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       reply,
       fileBase64,
-      fileName: returnedFileName
+      fileName: returnedFileName,
+      metadata: extractedContent?.metadata || null // ✅ إضافة الميتاداتا للواجهة
     });
 
   } catch (error) {
@@ -238,4 +276,4 @@ export default async function handler(req, res) {
       reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
     });
   }
-      }
+}
