@@ -195,22 +195,17 @@ export async function handleSendMessage(renderCallbacks) {
         });
 
         /* ============================================================
-           🛡️ الحقن السيادي للملف: إرسال البيانات الكاملة للأثير
+           🛡️ الحقن السيادي الجديد: إرسال full.data خارج الرسالة
            ============================================================ */
+
         let finalMessageForAI = displayMessage || "ممكن تعطيني ملخص عن محتوى الملف؟";
-        
-        if (processedFileResult?.data) {
-            finalMessageForAI += `\n\n[محتوى الملف المرفق "${fileDisplayName}":\n${JSON.stringify(processedFileResult.data, null, 2)}\n]`;
-        } else if (processedFileResult?.error) {
-            finalMessageForAI += `\n\n[النظام: حاول المستخدم إرفاق ملف ولكن حدث خطأ: ${processedFileResult.error}]`;
-        } else if (processedFileResult?.reply) {
-            finalMessageForAI += `\n\n[النظام: رسالة من جسر الملفات: ${processedFileResult.reply}]`;
-        }
 
         const requestPayload = { 
             message: finalMessageForAI,
             history: formattedHistoryForBackend,
-            sessionId: sessionId
+            sessionId: sessionId,
+            fileData: processedFileResult?.data || null,
+            fileName: fileDisplayName || null
         };
 
         const response = await fetch('/api/chat', {
