@@ -1,120 +1,67 @@
 /**
- * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة بالكامل لتناول الملفات)
- * ✅ تم تحديثها لاستخدام office-oxide مع Fallback إلى openpyxl
+ * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة)
+ * ✅ تم تحديثها لاستخدام @aspose/cells لمعالجة ملفات Excel
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { Workbook } from '@aspose/cells'; // ✅ المكتبة الجديدة
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * ✅ دالة معالجة الملفات محلياً مع Fallback (بدون await import)
+ * ✅ دالة معالجة الملفات محلياً باستخدام @aspose/cells
  */
-function extractFileContent(filePath) {
+function extractExcelContent(filePath) {
   try {
     if (!fs.existsSync(filePath)) {
       return { error: "⚠️ الملف غير موجود على السيرفر." };
     }
 
-    let result = {
-      text: '',
-      markdown: '',
-      metadata: {}
-    };
+    // تحميل الملف
+    const workbook = new Workbook(filePath);
+    const worksheet = workbook.getWorksheets().get(0);
+    const cells = worksheet.getCells();
 
-    // ✅ المحاولة الأولى: استخدام office-oxide (مع require)
-    try {
-      // استيراد المكتبة باستخدام require (يعمل في أي دالة)
-      const { Document } = require('office-oxide');
-      const doc = Document.open(filePath);
-      
-      const ext = path.extname(filePath).toLowerCase();
-      if (['.xlsx', '.xls'].includes(ext)) {
-        result.markdown = doc.toMarkdown();
-        result.text = doc.plainText();
-        result.metadata = {
-          sheets: doc.sheetCount ? doc.sheetCount() : 1,
-          rows: doc.rowCount ? doc.rowCount() : 0,
-          columns: doc.columnCount ? doc.columnCount() : 0
-        };
-      } else if (['.docx', '.doc'].includes(ext)) {
-        result.text = doc.plainText();
-        result.metadata = { paragraphs: doc.paragraphCount ? doc.paragraphCount() : 0 };
-      } else if (ext === '.pdf') {
-        result.text = doc.plainText();
-        result.metadata = { pages: doc.pageCount ? doc.pageCount() : 0 };
-      } else if (['.pptx', '.ppt'].includes(ext)) {
-        result.text = doc.plainText();
-        result.metadata = { slides: doc.slideCount ? doc.slideCount() : 0 };
-      } else {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        result.text = content.slice(0, 10000);
+    // استخراج البيانات
+    const data = [];
+    const rows = cells.getMaxDataRow() + 1;
+    const cols = cells.getMaxDataColumn() + 1;
+
+    for (let i = 0; i < rows; i++) {
+      const row = [];
+      for (let j = 0; j < cols; j++) {
+        const cell = cells.get(i, j);
+        row.push(cell.getValue() || '');
       }
-      
-      doc.close();
-      console.log(`✅ [chat.js] تم استخراج المحتوى باستخدام office-oxide`);
+      data.push(row);
+    }
 
-    } catch (officeError) {
-      console.warn(`⚠️ [chat.js] office-oxide فشل: ${officeError.message}`);
-      console.log(`🔄 [chat.js] استخدام Fallback إلى openpyxl...`);
-
-      // ✅ Fallback: استخدام openpyxl عبر Python
-      const ext = path.extname(filePath).toLowerCase();
-      
-      if (['.xlsx', '.xls'].includes(ext)) {
-        const pythonScript = `
-import json
-from openpyxl import load_workbook
-
-file_path = "${filePath}"
-try:
-    wb = load_workbook(file_path, data_only=True)
-    ws = wb.active
-    data = []
-    for row in ws.iter_rows(values_only=True):
-        data.append([str(cell) if cell is not None else "" for cell in row])
-    print(json.dumps({"ok": True, "data": data, "rows": len(data), "cols": len(data[0]) if data else 0}))
-except Exception as e:
-    print(json.dumps({"ok": False, "error": str(e)}))
-`;
-        const scriptPath = path.join('/tmp', `fallback_${Date.now()}.py`);
-        fs.writeFileSync(scriptPath, pythonScript, 'utf8');
-        
-        try {
-          const output = execSync(`python3 "${scriptPath}"`, { encoding: 'utf-8', timeout: 30000 });
-          fs.unlinkSync(scriptPath);
-          const parsed = JSON.parse(output.trim());
-          
-          if (parsed.ok) {
-            result.text = parsed.data.map(row => row.join(' | ')).join('\n');
-            result.metadata = {
-              rows: parsed.rows,
-              columns: parsed.cols,
-              fallback: 'openpyxl'
-            };
-            console.log(`✅ [chat.js] تم استخراج المحتوى باستخدام openpyxl (fallback)`);
-          } else {
-            throw new Error(parsed.error);
-          }
-        } catch (pyError) {
-          console.error(`❌ [chat.js] فشل openpyxl: ${pyError.message}`);
-          const content = fs.readFileSync(filePath, 'utf-8');
-          result.text = content.slice(0, 10000);
-          result.metadata = { fallback: 'raw_text' };
+    // استخراج الصيغ
+    const formulas = [];
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        const cell = cells.get(i, j);
+        if (cell.getFormula()) {
+          formulas.push(`الخلية ${String.fromCharCode(65 + j)}${i + 1}: ${cell.getFormula()}`);
         }
-      } else {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        result.text = content.slice(0, 10000);
-        result.metadata = { fallback: 'raw_text' };
       }
     }
 
-    return result;
+    return {
+      text: data.map(row => row.join(' | ')).join('\n'),
+      markdown: data.map(row => `| ${row.join(' | ')} |`).join('\n'),
+      metadata: {
+        sheets: workbook.getWorksheets().getCount(),
+        rows: rows,
+        columns: cols,
+        hasFormulas: formulas.length > 0,
+        formulas: formulas.slice(0, 20) // أول 20 صيغة
+      }
+    };
 
   } catch (error) {
     console.error("❌ خطأ في استخراج محتوى الملف:", error);
@@ -164,10 +111,22 @@ export default async function handler(req, res) {
         }
 
         const fileExt = path.extname(fileName).toLowerCase();
-        if (['.xlsx', '.xls', '.docx', '.doc', '.pdf', '.pptx', '.ppt'].includes(fileExt)) {
-          extractedContent = extractFileContent(localFilePath);
-          console.log(`📄 [chat.js] تم استخراج محتوى الملف: ${fileName}`);
+        
+        // ✅ استخدام @aspose/cells للملفات Excel
+        if (['.xlsx', '.xls'].includes(fileExt)) {
+          extractedContent = extractExcelContent(localFilePath);
+          console.log(`📄 [chat.js] تم استخراج محتوى Excel باستخدام Aspose.Cells: ${fileName}`);
+        } else if (['.docx', '.doc'].includes(fileExt)) {
+          // TODO: استخدام مكتبة أخرى لـ Word
+          extractedContent = { text: `[ملف Word: ${fileName}]`, markdown: '', metadata: {} };
+        } else if (['.pdf'].includes(fileExt)) {
+          // TODO: استخدام مكتبة أخرى لـ PDF
+          extractedContent = { text: `[ملف PDF: ${fileName}]`, markdown: '', metadata: {} };
+        } else if (['.pptx', '.ppt'].includes(fileExt)) {
+          // TODO: استخدام مكتبة أخرى لـ PowerPoint
+          extractedContent = { text: `[ملف PowerPoint: ${fileName}]`, markdown: '', metadata: {} };
         } else {
+          // ملفات نصية عادية
           const content = fs.readFileSync(localFilePath, 'utf-8');
           extractedContent = { text: content.slice(0, 10000), markdown: '', metadata: {} };
         }
@@ -218,4 +177,4 @@ export default async function handler(req, res) {
       reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
     });
   }
-                 }
+    }
