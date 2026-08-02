@@ -45,39 +45,43 @@ export function extractFileMetadata(filePath) {
   }
 }
 
-export default async function externalBridge(req, res) {
+export default async function externalBridge(req, res, fileInfo = null) {
   try {
-    if (!req.file) {
+    // ✅ استقبال الملف من `upload.js` مع الميتاداتا
+    const file = fileInfo || req.file;
+    if (!file) {
       return res.status(400).json({ error: "⚠️ لم يتم رفع أي ملف." });
     }
 
     const action = req.body.action || "read";
+    const metadata = file.metadata || null; // ✅ الميتاداتا من upload.js
 
-    // 🛡️ حفظ الملف مؤقتاً
-    const tmpDir = os.tmpdir();
-    const fileName = `${Date.now()}_${req.file.originalname}`;
-    const filePath = path.join(tmpDir, fileName);
+    // 🛡️ حفظ الملف مؤقتاً (إذا لم يكن محفوظاً بالفعل)
+    let filePath = file.path;
+    if (!filePath || !fs.existsSync(filePath)) {
+      const tmpDir = os.tmpdir();
+      const fileName = `${Date.now()}_${file.originalname || "file"}`;
+      filePath = path.join(tmpDir, fileName);
 
-    if (req.file.buffer) {
-      fs.writeFileSync(filePath, req.file.buffer);
-    } else if (req.file.path) {
-      fs.copyFileSync(req.file.path, filePath);
-    } else {
-      throw new Error("لم يتم العثور على بيانات الملف.");
+      if (file.buffer) {
+        fs.writeFileSync(filePath, file.buffer);
+      } else {
+        throw new Error("لم يتم العثور على بيانات الملف.");
+      }
     }
 
-    const ext = path.extname(fileName).toLowerCase();
+    const ext = path.extname(file.originalname || filePath).toLowerCase();
     let result = null;
 
     /* ============================================================
-       🌐 استخراج Metadata
+       🌐 استخراج Metadata (إذا كان مطلوباً)
        ============================================================ */
     if (action === "extract_metadata") {
       result = {
         reply: "تم استخراج هيكلية البيانات بنجاح.",
         data: extractFileMetadata(filePath)
       };
-      auditExecution({ action: `metadata_${ext}`, target: req.file.originalname, isLocal: true });
+      auditExecution({ action: `metadata_${ext}`, target: file.originalname, isLocal: true });
       return res.status(200).json(result);
     }
 
@@ -99,7 +103,7 @@ export default async function externalBridge(req, res) {
       } else {
         result = await pdfEngine.pdfRead(filePath);
       }
-      auditExecution({ action: `pdf_${action}`, target: req.file.originalname, isLocal: true });
+      auditExecution({ action: `pdf_${action}`, target: file.originalname, isLocal: true });
     }
 
     // 📝 DOCX
@@ -114,19 +118,22 @@ export default async function externalBridge(req, res) {
       } else {
         result = await libreConvert(filePath, "txt");
       }
-      auditExecution({ action: `docx_${action}`, target: req.file.originalname, isLocal: true });
+      auditExecution({ action: `docx_${action}`, target: file.originalname, isLocal: true });
     }
 
-    // 📊 Excel عبر محرك Openpyxl السيادي فقط
+    // 📊 Excel عبر محرك Openpyxl السيادي (مع دعم الميتاداتا)
     else if (ext === ".xlsx" || ext === ".xls") {
-      result = await excelEngine(filePath, action, req.body);
-      auditExecution({ action: `excel_${action}`, target: req.file.originalname, isLocal: true });
+      // ✅ تمرير الميتاداتا إن وجدت
+      const params = { ...req.body, metadata };
+      result = await excelEngine(filePath, action, params);
+      auditExecution({ action: `excel_${action}`, target: file.originalname, isLocal: true });
     }
 
     // 📄 CSV فقط عبر pandasEngine (اختياري)
     else if (ext === ".csv") {
-      result = await pandasEngine(filePath, action, req.body);
-      auditExecution({ action: `csv_${action}`, target: req.file.originalname, isLocal: true });
+      const params = { ...req.body, metadata };
+      result = await pandasEngine(filePath, action, params);
+      auditExecution({ action: `csv_${action}`, target: file.originalname, isLocal: true });
     }
 
     // 🖼 صور
@@ -137,13 +144,13 @@ export default async function externalBridge(req, res) {
       } else {
         result = { reply: "📷 صورة مرفوعة بنجاح.", data: null };
       }
-      auditExecution({ action: `image_${action}`, target: req.file.originalname, isLocal: true });
+      auditExecution({ action: `image_${action}`, target: file.originalname, isLocal: true });
     }
 
     // 🟪 fallback
     else {
       result = await pdfEngine.pdfRead(filePath);
-      auditExecution({ action: `fallback_${action}`, target: req.file.originalname, isLocal: true });
+      auditExecution({ action: `fallback_${action}`, target: file.originalname, isLocal: true });
     }
 
     /* ============================================================
@@ -181,4 +188,4 @@ export default async function externalBridge(req, res) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-        }
+      }
