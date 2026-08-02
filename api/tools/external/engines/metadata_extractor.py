@@ -1,18 +1,7 @@
 import sys
 import os
 import json
-import pandas as pd
-
-# استيراد آمن للمكتبات الأخرى
-try:
-    import docx
-except ImportError:
-    docx = None
-
-try:
-    import PyPDF2
-except ImportError:
-    PyPDF2 = None
+from openpyxl import load_workbook
 
 def extract_metadata(file_path):
     if not os.path.exists(file_path):
@@ -30,58 +19,63 @@ def extract_metadata(file_path):
     }
 
     try:
-        # 1. معالجة ملفات الإكسل (Excel)
-        if ext in ['.xlsx', '.xls', '.xlsm']:
+        # معالجة ملفات Excel عبر openpyxl فقط
+        if ext in ['.xlsx', '.xlsm']:
             meta["type"] = "excel"
-            excel_file = pd.ExcelFile(file_path)
+            wb = load_workbook(file_path, data_only=True)
             sheets_meta = {}
-            for sheet_name in excel_file.sheet_names:
-                df_sample = pd.read_excel(file_path, sheet_name=sheet_name, nrows=5)
-                full_shape = pd.read_excel(file_path, sheet_name=sheet_name).shape
-                
+
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+
+                # قراءة أول 5 صفوف فقط
+                sample_rows = []
+                for row in ws.iter_rows(min_row=1, max_row=5, values_only=True):
+                    sample_rows.append([str(v) if v is not None else "" for v in row])
+
                 sheets_meta[sheet_name] = {
-                    "total_rows": full_shape[0],
-                    "total_columns": full_shape[1],
-                    "columns": list(df_sample.columns),
-                    "dtypes": {col: str(dtype) for col, dtype in df_sample.dtypes.items()},
-                    "sample_rows": df_sample.fillna("").to_dict(orient="records")
+                    "total_rows": ws.max_row,
+                    "total_columns": ws.max_column,
+                    "sample_rows": sample_rows
                 }
+
             meta["details"]["sheets"] = sheets_meta
 
-        # 2. معالجة ملفات (CSV)
-        elif ext == '.csv':
+        elif ext == ".csv":
             meta["type"] = "csv"
-            df_sample = pd.read_csv(file_path, nrows=5)
-            full_shape = pd.read_csv(file_path).shape
+            # قراءة CSV عبر بايثون فقط بدون pandas
+            import csv
+            with open(file_path, newline='', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+
+            sample = rows[:5]
             meta["details"] = {
-                "total_rows": full_shape[0],
-                "total_columns": full_shape[1],
-                "columns": list(df_sample.columns),
-                "dtypes": {col: str(dtype) for col, dtype in df_sample.dtypes.items()},
-                "sample_rows": df_sample.fillna("").to_dict(orient="records")
+                "total_rows": len(rows),
+                "total_columns": len(rows[0]) if rows else 0,
+                "sample_rows": sample
             }
 
-        # 3. معالجة مستندات وورد (Word .docx)
-        elif ext == '.docx' and docx:
+        elif ext == ".docx":
             meta["type"] = "word"
+            import docx
             doc = docx.Document(file_path)
             paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
             meta["details"] = {
                 "total_paragraphs": len(doc.paragraphs),
-                "total_tables": len(doc.tables),
-                "sample_text": paragraphs[:3] if paragraphs else []
+                "sample_text": paragraphs[:3]
             }
 
-        # 4. معالجة ملفات الـ (PDF)
-        elif ext == '.pdf' and PyPDF2:
+        elif ext == ".pdf":
             meta["type"] = "pdf"
+            import PyPDF2
             with open(file_path, 'rb') as f:
                 reader = PyPDF2.PdfReader(f)
                 num_pages = len(reader.pages)
                 first_page_text = reader.pages[0].extract_text() if num_pages > 0 else ""
                 meta["details"] = {
                     "total_pages": num_pages,
-                    "sample_text_page_1": first_page_text[:400] if first_page_text else ""
+                    "sample_text_page_1": first_page_text[:400]
                 }
 
     except Exception as e:
