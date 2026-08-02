@@ -16,7 +16,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
   let userMessage = message;
   
-  // توجيه صارم ومخفي لجيميني ليكتب كود بايثون بدلاً من الثرثرة إذا كان هناك ملف
+  // توجيهات النظام الحيوية لتوجيه جيميني لكتابة الكود إذا وُجد ملف
   let agenticInstructions = "";
   if (ctx.filePath) {
     agenticInstructions = `
@@ -27,7 +27,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 - يجب أن يقرأ الكود الملف من المسار أعلاه، ويحفظ الملف المعدل في نفس المجلد باسم جديد، ويطبع في النهاية: print("OUTPUT_FILE: " + new_file_name)
 - ضع الكود حصرياً داخل كتلة \`\`\`python ... \`\`\`
 `;
-    // نخبر جيميني بأسماء الأعمدة فقط (Metadata) ليعرف كيف يكتب الكود دون إرسال البيانات الضخمة!
     if (ctx.fileData && ctx.fileData.headers) {
       agenticInstructions += `\n- أعمدة الملف الحالي هي: ${ctx.fileData.headers.join(" , ")}\n`;
     }
@@ -41,7 +40,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     { role: "user", content: userMessage }
   ];
 
-  // 1. استدعاء العقل اللغوي (جيميني)
+  // 1. استدعاء العقل اللغوي
   let reply = await groqService.chat(messages, {
     fileName: ctx.fileName || null
   });
@@ -59,26 +58,22 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       const scriptName = `agent_task_${Date.now()}.py`;
       const scriptPath = path.join(path.dirname(ctx.filePath), scriptName);
       
-      // كتابة الكود الذي ولّده جيميني في ملف حقيقي
       fs.writeFileSync(scriptPath, pythonCode);
 
-      // تنفيذ الكود محلياً على السيرفر (مجاناً وبدون توكنز!)
+      // تنفيذ الكود محلياً على السيرفر مجاناً
       const stdout = execSync(`python3 "${scriptPath}"`, { encoding: 'utf8' });
       console.log("✅ [Kernel Local Execution Output]:", stdout);
 
-      // استخراج اسم الملف الجديد إذا قام بايثون بطباعته
       const outMatch = stdout.match(/OUTPUT_FILE:\s*(.+)/);
       if (outMatch) {
         returnedFileName = outMatch[1].trim();
-        // إزالة الكود البرمجي من الرد وتجميله للمستخدم
         reply = reply.replace(/```python[\s\S]*?```/, "");
-        reply += `\n\n✅ **تم تنفيذ طلبك برمجياً وتعديل الملف بنجاح!**\n📥 [تحميل الملف المعدل مباشرة](/uploads/${returnedFileName})`;
+        reply += `\n\n✅ **تم تنفيذ طلبك برمجياً وتعديل الملف بنجاح!**`;
       } else {
         reply = reply.replace(/```python[\s\S]*?```/, "");
-        reply += `\n\n✅ **تمت المعالجة بنجاح!**\n(مخرجات النظام: ${stdout.trim()})`;
+        reply += `\n\n✅ **تمت المعالجة بنجاح!**`;
       }
 
-      // تنظيف ملف السكريبت المؤقت
       if(fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
     } catch (err) {
@@ -87,10 +82,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     }
   }
 
-  // تسجيل الرد في الذاكرة السيادية
   memory.appendSovereignHistory(sessionId, { role: "assistant", content: reply });
 
-  // 3. إرجاع الرد ككائن (Object) ليفهمه الـ Orchestrator بشكل سليم
   return {
     reply: reply.trim(),
     fileName: returnedFileName
