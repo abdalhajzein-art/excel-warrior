@@ -1,5 +1,5 @@
 /**
- * js/uiController.js – Alatheer UI Controller & Formatter (Final Edition - Updated for Server Download)
+ * js/uiController.js – Alatheer UI Controller & Formatter (Final Edition)
  */
 
 export function initUIController(getGeneratingStatus, onFileSelected) {
@@ -101,14 +101,9 @@ export function formatReply(text) {
         return '\n' + cleanHeaderStr + '\n' + standardSep + '\n' + bLines + '\n';
     });
 
-    // 3️⃣ روابط التحميل والروابط الخارجية (محدثة لدعم مسارات الخادم والـ Base64)
+    // 3️⃣ روابط التحميل والروابط الخارجية
     formatted = formatted.replace(/\[(.*?)\]\((data:[^)]+)\)/g, (match, label, url) => {
         return `<a href="${url}" download class="alatheer-download-btn">${label}</a>`;
-    });
-
-    formatted = formatted.replace(/\[(.*?)\]\((?:\.\/)?(download\/[^)]+|\/?uploads\/[^)]+)\)/g, (match, label, url) => {
-        const cleanUrl = url.startsWith('/') ? url : '/' + url;
-        return `<a href="${cleanUrl}" download class="alatheer-download-btn">${label}</a>`;
     });
 
     formatted = formatted.replace(/\[(.*?)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" style="color: #d4af37; text-decoration: underline; font-weight: bold;">$1</a>');
