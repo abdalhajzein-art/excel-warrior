@@ -3,7 +3,7 @@
  * المحرك السيادي لنظام الأثير – دعم حلقة التصحيح الذاتي واستكشاف الهيكلية الآلي
  */
 
-import groqService from "../groqService.js";
+import groqService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 import fs from 'fs';
