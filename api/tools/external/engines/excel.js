@@ -1,13 +1,13 @@
 /**
  * engines/excel.js – Sovereign Excel Gateway & Orchestrator (Absolute Edition)
- * ✅ تم تحديثها لاستخدام @aspose/cells بدلاً من office-oxide
+ * ✅ تم تحديثها لاستخدام exceljs بدلاً من @aspose/cells
  */
 
 import path from "path";
 import fs from "fs";
 import os from "os";
 import { execSync } from "child_process";
-import { Workbook } from "@aspose/cells";
+import ExcelJS from 'exceljs'; // ✅ استبدال @aspose/cells بـ exceljs
 
 /* ============================================================
    🟩 واجهات التصدير المباشرة المتوافقة مع البنية الأساسية
@@ -23,49 +23,48 @@ export async function excelRead(filePath, params = {}) {
   }
 
   try {
-    // ✅ استخدام Aspose.Cells لقراءة الملف
-    const workbook = new Workbook(filePath);
-    const worksheet = workbook.getWorksheets().get(0);
-    const cells = worksheet.getCells();
+    // ✅ استخدام exceljs لقراءة الملف
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const worksheet = workbook.getWorksheet(1); // أول ورقة عمل
+
+    if (!worksheet) {
+      return normalizedError("⚠️ لا توجد أوراق عمل في هذا الملف.");
+    }
 
     // استخراج البيانات
     const data = [];
-    const rows = cells.getMaxDataRow() + 1;
-    const cols = cells.getMaxDataColumn() + 1;
-
-    for (let i = 0; i < rows; i++) {
-      const row = [];
-      for (let j = 0; j < cols; j++) {
-        const cell = cells.get(i, j);
-        row.push(cell.getValue() || '');
-      }
-      data.push(row);
-    }
+    worksheet.eachRow((row, rowNumber) => {
+      const rowData = [];
+      row.eachCell((cell) => {
+        rowData.push(cell.value || '');
+      });
+      data.push(rowData);
+    });
 
     // استخراج الصيغ
     const formulas = [];
-    for (let i = 0; i < rows; i++) {
-      for (let j = 0; j < cols; j++) {
-        const cell = cells.get(i, j);
-        if (cell.getFormula()) {
-          formulas.push(`الخلية ${String.fromCharCode(65 + j)}${i + 1}: ${cell.getFormula()}`);
+    worksheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+        if (cell.formula) {
+          formulas.push(`الخلية ${cell.address}: ${cell.formula}`);
         }
-      }
-    }
+      });
+    });
 
     const result = {
       text: data.map(row => row.join(' | ')).join('\n'),
       markdown: data.map(row => `| ${row.join(' | ')} |`).join('\n'),
       metadata: {
-        sheets: workbook.getWorksheets().getCount(),
-        rows: rows,
-        columns: cols,
+        sheets: workbook.worksheets.length,
+        rows: data.length,
+        columns: data[0]?.length || 0,
         hasFormulas: formulas.length > 0,
         formulas: formulas.slice(0, 20)
       }
     };
     
-    return normalizedReply("📊 تم قراءة ملف Excel بنجاح باستخدام Aspose.Cells.", result);
+    return normalizedReply("📊 تم قراءة ملف Excel بنجاح باستخدام exceljs.", result);
   } catch (err) {
     console.error("❌ خطأ في excelRead:", err);
     return normalizedError("فشل قراءة ملف Excel.", err);
@@ -78,32 +77,36 @@ export async function excelModify(filePath, params = {}) {
   }
 
   try {
-    // ✅ استخدام Aspose.Cells للتعديل
-    const workbook = new Workbook(filePath);
-    const worksheet = workbook.getWorksheets().get(0);
-    const cells = worksheet.getCells();
+    // ✅ استخدام exceljs للتعديل
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const worksheet = workbook.getWorksheet(1);
+
+    if (!worksheet) {
+      return normalizedError("⚠️ لا توجد أوراق عمل في هذا الملف.");
+    }
 
     // تطبيق التعديلات
     if (params.instruction) {
       // مثال: إضافة عمود جديد
-      const lastCol = cells.getMaxDataColumn();
+      const lastCol = worksheet.columnCount || 1;
       const newCol = lastCol + 1;
       
       // إضافة عنوان العمود
-      const headerCell = cells.get(0, newCol);
-      headerCell.putValue("تم التعديل");
+      const headerCell = worksheet.getCell(1, newCol);
+      headerCell.value = "تم التعديل";
       
       // تعبئة البيانات
-      const rows = cells.getMaxDataRow();
-      for (let i = 1; i <= rows; i++) {
-        const cell = cells.get(i, newCol);
-        cell.putValue(`تم التعديل في الصف ${i+1}`);
+      const rowCount = worksheet.rowCount || 1;
+      for (let i = 2; i <= rowCount; i++) {
+        const cell = worksheet.getCell(i, newCol);
+        cell.value = `تم التعديل في الصف ${i}`;
       }
     }
 
     // حفظ الملف المعدل
     const outPath = path.join(os.tmpdir(), `modified_${Date.now()}.xlsx`);
-    workbook.save(outPath);
+    await workbook.xlsx.writeFile(outPath);
 
     const base64 = fs.readFileSync(outPath).toString('base64');
     return normalizedFile("✅ تم تعديل الملف بنجاح.", outPath, "modified.xlsx", base64);
@@ -115,15 +118,14 @@ export async function excelModify(filePath, params = {}) {
 
 export async function excelCreate(params = {}) {
   try {
-    // ✅ استخدام Aspose.Cells لإنشاء ملف جديد
-    const workbook = new Workbook();
-    const worksheet = workbook.getWorksheets().get(0);
-    const cells = worksheet.getCells();
+    // ✅ استخدام exceljs لإنشاء ملف جديد
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Sheet1');
 
     // كتابة البيانات الأولية
     const headers = params.headers || ['العمود 1', 'العمود 2', 'العمود 3'];
     for (let i = 0; i < headers.length; i++) {
-      cells.get(0, i).putValue(headers[i]);
+      worksheet.getCell(1, i + 1).value = headers[i];
     }
 
     // إضافة بيانات افتراضية
@@ -131,13 +133,13 @@ export async function excelCreate(params = {}) {
       for (let i = 0; i < params.data.length; i++) {
         const row = params.data[i];
         for (let j = 0; j < row.length; j++) {
-          cells.get(i + 1, j).putValue(row[j]);
+          worksheet.getCell(i + 2, j + 1).value = row[j];
         }
       }
     }
 
     const outPath = path.join(os.tmpdir(), `created_${Date.now()}.xlsx`);
-    workbook.save(outPath);
+    await workbook.xlsx.writeFile(outPath);
 
     const base64 = fs.readFileSync(outPath).toString('base64');
     return normalizedFile("✅ تم إنشاء ملف Excel بنجاح.", outPath, "created.xlsx", base64);
@@ -235,4 +237,4 @@ function normalizedError(reply, err = null) {
     fileName: null,
     filePath: null
   };
-       }
+           }
