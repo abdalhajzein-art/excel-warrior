@@ -9,6 +9,27 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
+/* ============================================================
+   🟩 طبقة التصحيح التلقائي للكود قبل التنفيذ (Auto‑Fix Layer)
+   ============================================================ */
+function autoFixPythonCode(code, filePath) {
+  return code
+    // إصلاح خطأ openpyxl الشائع
+    .replace(/openpyxl\.workslet/gi, "openpyxl.worksheet")
+
+    // إصلاح استيراد DataValidation
+    .replace(
+      /from openpyxl\.worksheet\.datavalidation import DataValidation/gi,
+      "from openpyxl.worksheet.datavalidation import DataValidation"
+    )
+
+    // إصلاح أي مسار اخترعه النموذج
+    .replace(/\/app\/uploads\/[^\s'"]+/gi, filePath)
+
+    // إصلاح قراءة pandas
+    .replace(/pd\.read_excel\((.*?)\)/gi, `pd.read_excel("${filePath}")`);
+}
+
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const message = (rawMessage || "").trim();
   if (!message) return "ولا يهمّك… احكيلي أكتر.";
@@ -16,7 +37,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   let userMessage = message;
 
   /* ============================================================
-     ⭐ أهم تعديل: تمرير المسار الحقيقي داخل الرسالة نفسها
+     🟩 تمرير المسار الحقيقي للملف داخل الرسالة
      ============================================================ */
   let agenticInstructions = "";
   if (ctx.filePath) {
@@ -42,18 +63,29 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     { role: "user", content: userMessage }
   ];
 
-  // 1. استدعاء العقل اللغوي
+  /* ============================================================
+     🟩 استدعاء النموذج وإخفاء الكود من الواجهة
+     ============================================================ */
   let reply = await groqService.chat(messages, {
     fileName: ctx.fileName || null
   });
 
+  // إزالة أي كود بايثون من الرسالة قبل عرضها للمستخدم
+  reply = reply.replace(/```python[\s\S]*?```/g, "");
+
   let returnedFileName = ctx.fileName;
 
-  // 2. التقاط كود البايثون وتنفيذه محلياً
-  const pythonCodeMatch = reply.match(/```python\n([\s\S]*?)```/);
+  /* ============================================================
+     🟩 التقاط كود البايثون وتنفيذه محلياً
+     ============================================================ */
+  const pythonCodeMatch = rawMessage.match(/```python\n([\s\S]*?)```/);
 
   if (pythonCodeMatch && ctx.filePath) {
-    const pythonCode = pythonCodeMatch[1].trim();
+    let pythonCode = pythonCodeMatch[1].trim();
+
+    // تطبيق طبقة التصحيح التلقائي
+    pythonCode = autoFixPythonCode(pythonCode, ctx.filePath);
+
     console.log("🐍 [Kernel] تم اصطياد كود بايثون من جيميني. جاري التنفيذ المحلي...");
 
     try {
@@ -62,24 +94,21 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
       fs.writeFileSync(scriptPath, pythonCode);
 
-      const stdout = execSync(`python3 "${scriptPath}"`, { encoding: 'utf8' });
+      const stdout = execSync(`python3 "${scriptPath}"`, { encoding: "utf8" });
       console.log("✅ [Kernel Local Execution Output]:", stdout);
 
       const outMatch = stdout.match(/OUTPUT_FILE:\s*(.+)/);
       if (outMatch) {
         returnedFileName = outMatch[1].trim();
-        reply = reply.replace(/```python[\s\S]*?```/, "");
-        reply += `\n\n✅ **تم تنفيذ طلبك برمجياً وتعديل الملف بنجاح!**`;
+        reply += `\n\n✅ تم تنفيذ طلبك وتعديل الملف بنجاح.`;
       } else {
-        reply = reply.replace(/```python[\s\S]*?```/, "");
-        reply += `\n\n✅ **تمت المعالجة بنجاح!**`;
+        reply += `\n\n✅ تمت المعالجة البرمجية بنجاح.`;
       }
 
       if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
-
     } catch (err) {
       console.error("❌ [Kernel Local Execution Error]:", err.message);
-      reply += `\n\n⚠️ **حاولت تنفيذ التعديل برمجياً ولكن حدث خطأ في النظام المحلي:**\n${err.message}`;
+      reply += `\n\n⚠️ حدث خطأ أثناء التنفيذ المحلي:\n${err.message}`;
     }
   }
 
@@ -89,4 +118,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     reply: reply.trim(),
     fileName: returnedFileName
   };
-  }
+      }
