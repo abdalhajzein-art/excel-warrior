@@ -8,6 +8,17 @@ import { execSync } from "child_process";
 
 export default async function pandasEngine(filePath, action, params = {}) {
   try {
+    // ✅ إذا كانت الميتاداتا موجودة، نقرأها مباشرة (تجاوز openpyxl)
+    if (params.metadata && params.metadata.sheet_name) {
+      return {
+        ok: true,
+        reply: "📊 تم قراءة الميتاداتا بنجاح (تجاوز openpyxl).",
+        data: { metadata: params.metadata },
+        fileBase64: null,
+        fileName: null
+      };
+    }
+
     switch (action) {
       case "preview":
       case "read":
@@ -32,13 +43,23 @@ export default async function pandasEngine(filePath, action, params = {}) {
    ============================================================ */
 function runOpenpyxlPreview(filePath) {
   try {
+    // ✅ التحقق من وجود الملف قبل القراءة
+    if (!fs.existsSync(filePath)) {
+      return normalizedError("الملف غير موجود: " + filePath);
+    }
+
     const pythonScript = `
 import json
 from openpyxl import load_workbook
 
 file_path = "${filePath}"
 
-wb = load_workbook(file_path, data_only=True)
+try:
+    wb = load_workbook(file_path, data_only=True)
+except Exception as e:
+    print(json.dumps({"ok": False, "reply": f"فشل تحميل الملف: {str(e)}"}))
+    exit(1)
+
 sheets = {}
 
 for sheet_name in wb.sheetnames:
@@ -75,6 +96,11 @@ print(json.dumps({"ok": True, "reply": "📊 تمت قراءة الملف بنج
    ============================================================ */
 function runPythonDynamicExecutor(filePath, params = {}) {
   try {
+    // ✅ التحقق من وجود الملف قبل التعديل
+    if (!fs.existsSync(filePath)) {
+      return normalizedError("الملف غير موجود: " + filePath);
+    }
+
     const outPath = path.join(path.dirname(filePath), `modified_${Date.now()}.xlsx`);
     const dynamicCode = params.custom_python_code || "";
 
@@ -88,7 +114,12 @@ import json
 file_path = "${filePath}"
 out_path = "${outPath}"
 
-wb = openpyxl.load_workbook(file_path)
+try:
+    wb = openpyxl.load_workbook(file_path)
+except Exception as e:
+    print(json.dumps({"ok": False, "reply": f"فشل تحميل الملف للتعديل: {str(e)}"}))
+    exit(1)
+
 ws = wb.active
 
 ${dynamicCode}
@@ -130,4 +161,4 @@ function normalizedFile(reply, filePath, fileName, base64) {
 
 function normalizedError(reply, err = null) {
   return { ok: false, reply, error: err ? err.message : reply };
-}
+      }
