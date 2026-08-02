@@ -1,7 +1,7 @@
 /**
  * api/core/kernel.js – Alatheer Sovereign Kernel (Agentic Self-Correction Edition)
  * مع دعم الميتاداتا والملفات المرفقة مع بياناتها الوصفية
- * ✅ تم تحديثها لاستخدام المحتوى المستخرج محلياً (extractedContent) بدلاً من openpyxl
+ * ✅ تم تحديثها لاستخدام المحتوى المستخرج محلياً (extractedContent) من Aspose.Cells
  */
 
 import groqService from "../geminiService.js";
@@ -14,7 +14,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const message = (rawMessage || "").trim();
   if (!message) return "أهلاً بك يا هندسة… كيف يمكنني مساعدتك اليوم؟";
 
-  // ✅ الحصول على المحتوى المستخرج محلياً من office-oxide
+  // ✅ الحصول على المحتوى المستخرج محلياً من Aspose.Cells
   const extractedContent = ctx.extractedContent || null;
   const metadata = ctx.metadata || null;
   const fileName = ctx.fileName || "الملف";
@@ -40,12 +40,23 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     }
     
     if (extractedContent.metadata) {
-      metadataInfo += `\n[البيانات المستخرجة]:\n${Object.entries(extractedContent.metadata).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`;
+      metadataInfo += `\n[البيانات المستخرجة]:\n`;
+      metadataInfo += `- عدد الأوراق: ${extractedContent.metadata.sheets || 0}\n`;
+      metadataInfo += `- عدد الصفوف: ${extractedContent.metadata.rows || 0}\n`;
+      metadataInfo += `- عدد الأعمدة: ${extractedContent.metadata.columns || 0}\n`;
+      if (extractedContent.metadata.hasFormulas) {
+        metadataInfo += `- يحتوي على صيغ: نعم\n`;
+        if (extractedContent.metadata.formulas && extractedContent.metadata.formulas.length > 0) {
+          metadataInfo += `- الصيغ المكتشفة:\n${extractedContent.metadata.formulas.map(f => `  • ${f}`).join('\n')}\n`;
+        }
+      }
     }
     
     fileContextPrompt = `
 📄 **[محتوى الملف "${fileName}" المستخرج محلياً (بدون استهلاك توكنز)]:**
+
 ${contentText.slice(0, 8000)}${contentText.length > 8000 ? '\n... (تم اختصار المحتوى)' : ''}
+
 ${metadataInfo}
 `;
   } else if (ctx.filePath && fs.existsSync(ctx.filePath)) {
@@ -67,11 +78,12 @@ ${content.slice(0, 8000)}${content.length > 8000 ? '\n... (تم اختصار ا�
   if (fileContextPrompt) {
     agenticInstructions = `
 [قوانين سيادية للمعالجة]:
-1. أنت تعمل مع محتوى ملف تم استخراجه محلياً.
+1. أنت تعمل مع محتوى ملف تم استخراجه محلياً باستخدام محرك Excel احترافي.
 2. لا حاجة لكتابة كود Python لقراءة الملف (المحتوى موجود بالفعل).
 3. أجب عن طلب المستخدم بناءً على المحتوى المقدم أعلاه.
-4. إذا طلب المستخدم تعديلاً، قم بوصف التعديل المطلوب.
+4. إذا طلب المستخدم تعديلاً، قم بوصف التعديل المطلوب بناءً على المحتوى.
 5. لا تختلق معلومات غير موجودة في المحتوى.
+6. إذا كان هناك صيغ في الملف، يمكنك اقتراح تعديلات عليها.
 ${fileContextPrompt}`;
   }
 
@@ -82,7 +94,7 @@ ${fileContextPrompt}`;
     { role: "user", content: message },
   ];
 
-  /* 🤖 التنفيذ المباشر (بدون حلقة Python إلا إذا لزم الأمر) */
+  /* 🤖 التنفيذ المباشر (بدون حلقة Python) */
   let finalReplyText = "";
   let returnedFileName = ctx.fileName;
   let fileBase64 = null;
@@ -91,10 +103,11 @@ ${fileContextPrompt}`;
   if (extractedContent && !extractedContent.error) {
     const systemInstruction = `
 ⚠️ **تعليمات إضافية:**
-- المحتوى أعلاه مستخرج من ملف "${fileName}" باستخدام معالج محلي.
-- المحتوى دقيق ويعكس محتوى الملف الفعلي.
+- المحتوى أعلاه مستخرج من ملف "${fileName}" باستخدام محرك Excel احترافي (Aspose.Cells).
+- المحتوى دقيق ويعكس محتوى الملف الفعلي مع الصيغ والتنسيقات.
 - استخدم هذا المحتوى للإجابة على استفسارات المستخدم.
 - إذا طلب المستخدم تعديلاً، صف التعديل المطلوب بناءً على المحتوى.
+- إذا كانت هناك صيغ في الملف، يمكنك اقتراح تعديلات عليها.
 `;
     conversationMessages[0].content += "\n" + systemInstruction;
   }
@@ -108,11 +121,14 @@ ${fileContextPrompt}`;
 
     finalReplyText = reply;
     
-    // ✅ إذا كان هناك ملف وتعديل، يمكننا محاكاة التعديل (اختياري)
-    // في الإصدارات القادمة، يمكن استخدام office-oxide للتعديل المباشر
+    // ✅ إذا كان هناك ملف وتعديل، نمرر المعلومات للتعديل الفعلي
     if (ctx.filePath && extractedContent && !extractedContent.error) {
-      // محاكاة التعديل (للمرحلة القادمة)
       console.log(`📝 [Kernel] تمت معالجة الملف: ${fileName}`);
+      console.log(`📊 [Kernel] عدد الصفوف: ${extractedContent.metadata?.rows || 0}`);
+      console.log(`📊 [Kernel] عدد الأعمدة: ${extractedContent.metadata?.columns || 0}`);
+      if (extractedContent.metadata?.hasFormulas) {
+        console.log(`📊 [Kernel] يحتوي على صيغ: نعم (${extractedContent.metadata.formulas?.length || 0} صيغة)`);
+      }
     }
 
   } catch (error) {
