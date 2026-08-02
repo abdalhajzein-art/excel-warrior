@@ -1,5 +1,5 @@
 /**
- * engines/pandas.js – Sovereign Excel Engine (Openpyxl Only Edition)
+ * engines/pandas.js – Sovereign Excel Engine (Openpyxl + Metadata Fallback Edition)
  */
 
 import fs from "fs";
@@ -10,13 +10,30 @@ export default async function pandasEngine(filePath, action, params = {}) {
   try {
     // ✅ إذا كانت الميتاداتا موجودة، نقرأها مباشرة (تجاوز openpyxl)
     if (params.metadata && params.metadata.sheet_name) {
+      console.log(`📋 [pandasEngine] تم استخدام الميتاداتا المرفقة: ${params.metadata.sheet_name}`);
       return {
         ok: true,
         reply: "📊 تم قراءة الميتاداتا بنجاح (تجاوز openpyxl).",
         data: { metadata: params.metadata },
         fileBase64: null,
-        fileName: null
+        fileName: null,
+        isMetadata: true // ✅ إشارة بأنها ميتاداتا
       };
+    }
+
+    // ✅ التحقق من وجود الملف
+    if (!filePath || !fs.existsSync(filePath)) {
+      return normalizedError("الملف غير موجود: " + filePath);
+    }
+
+    // ✅ التحقق من أن الملف هو Excel حقيقي (ZIP-based)
+    const isRealExcel = await isExcelFile(filePath);
+    if (!isRealExcel) {
+      // ❌ إذا كان الملف ليس Excel حقيقياً، نرجع خطأ واضحاً
+      return normalizedError(
+        "⚠️ الملف المرفق ليس بصيغة Excel حقيقية (ZIP-based). " +
+        "يرجى رفع ملف Excel صحيح، أو استخدام وصف الملف (metadata) بدلاً من الملف الفعلي."
+      );
     }
 
     switch (action) {
@@ -38,12 +55,25 @@ export default async function pandasEngine(filePath, action, params = {}) {
   }
 }
 
+/**
+ * 🛡️ كشف ما إذا كان الملف Excel حقيقياً (ZIP-based)
+ */
+async function isExcelFile(filePath) {
+  try {
+    const buffer = fs.readFileSync(filePath);
+    // ملفات Excel الحقيقية تبدأ بـ "PK" (ZIP signature)
+    const header = buffer.slice(0, 4).toString();
+    return header === "PK" || header === "PK\x03\x04";
+  } catch {
+    return false;
+  }
+}
+
 /* ============================================================
    🟦 قراءة Excel عبر openpyxl فقط
    ============================================================ */
 function runOpenpyxlPreview(filePath) {
   try {
-    // ✅ التحقق من وجود الملف قبل القراءة
     if (!fs.existsSync(filePath)) {
       return normalizedError("الملف غير موجود: " + filePath);
     }
@@ -96,7 +126,6 @@ print(json.dumps({"ok": True, "reply": "📊 تمت قراءة الملف بنج
    ============================================================ */
 function runPythonDynamicExecutor(filePath, params = {}) {
   try {
-    // ✅ التحقق من وجود الملف قبل التعديل
     if (!fs.existsSync(filePath)) {
       return normalizedError("الملف غير موجود: " + filePath);
     }
@@ -161,4 +190,4 @@ function normalizedFile(reply, filePath, fileName, base64) {
 
 function normalizedError(reply, err = null) {
   return { ok: false, reply, error: err ? err.message : reply };
-      }
+                              }
