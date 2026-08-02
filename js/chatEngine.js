@@ -1,5 +1,6 @@
 /**
  * js/chatEngine.js – النسخة السيادية النهائية (محدثة لدعم حقن معاينة الملفات)
+ * ✅ تم إصلاح مشكلة إرسال الملفات بشكل صحيح
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -87,12 +88,25 @@ export async function handleSendMessage(renderCallbacks) {
     let displayMessage = message || "";
     let processedFileResult = null;
     let fileDisplayName = null;
+    let fileBase64 = null;
 
     /* ============================================================
        ⭐ رفع الملف إلى /api/upload مع action=preview
+       ✅ تحسين: قراءة الملف كـ Base64 بشكل صحيح
        ============================================================ */
     if (currentFileToProcess) {
         try {
+            // ✅ قراءة الملف كـ Base64 بشكل صحيح
+            const fileBuffer = await currentFileToProcess.arrayBuffer();
+            const base64Data = btoa(String.fromCharCode(...new Uint8Array(fileBuffer)));
+            
+            // ✅ تخزين الملف في الذاكرة المحلية
+            fileBase64 = base64Data;
+            fileDisplayName = currentFileName;
+            
+            console.log(`📊 [chatEngine] تم تحويل الملف إلى Base64، الحجم: ${base64Data.length} حرف`);
+            
+            // ✅ إرسال الملف إلى السيرفر عبر /api/upload للحصول على المعاينة
             const formData = new FormData();
             formData.append("file", currentFileToProcess);
             formData.append("action", "preview");
@@ -103,11 +117,15 @@ export async function handleSendMessage(renderCallbacks) {
             });
 
             processedFileResult = await uploadResponse.json();
-            fileDisplayName = currentFileName;
+            
+            if (processedFileResult.error) {
+                console.warn(`⚠️ تحذير من السيرفر: ${processedFileResult.error}`);
+                // نستمر حتى لو فشلت المعاينة
+            }
 
         } catch (err) {
-            console.error("❌ Error uploading file:", err);
-            appendMessageToDOM('assistant', '⚠️ تعذر رفع الملف. حاول مرة أخرى.');
+            console.error("❌ Error processing file:", err);
+            appendMessageToDOM('assistant', '⚠️ تعذر معالجة الملف. حاول مرة أخرى.');
             return;
         }
     }
@@ -195,16 +213,16 @@ export async function handleSendMessage(renderCallbacks) {
         });
 
         /* ============================================================
-           🛡️ الحقن السيادي الجديد: إرسال full.data خارج الرسالة
+           🛡️ إرسال الملف كـ Base64 في الطلب
            ============================================================ */
-
         let finalMessageForAI = displayMessage || "ممكن تعطيني ملخص عن محتوى الملف؟";
 
         const requestPayload = { 
             message: finalMessageForAI,
             history: formattedHistoryForBackend,
             sessionId: sessionId,
-            fileData: processedFileResult?.data || null,
+            // ✅ إرسال الملف كـ Base64 مع الاسم
+            fileData: fileBase64,
             fileName: fileDisplayName || null
         };
 
@@ -370,4 +388,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     }
 
     chatArea.scrollTop = chatArea.scrollHeight;
-        }
+}
