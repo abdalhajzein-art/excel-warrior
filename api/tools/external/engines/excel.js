@@ -1,13 +1,13 @@
 /**
  * engines/excel.js – Sovereign Excel Gateway & Orchestrator (Absolute Edition)
- * ✅ تم تحديثها لاستخدام office-oxide بدلاً من pandas/openpyxl
+ * ✅ تم تحديثها لاستخدام @aspose/cells بدلاً من office-oxide
  */
 
 import path from "path";
 import fs from "fs";
 import os from "os";
-import { execSync } from "child_process"; // ✅ استيراد مباشر
-import { Document } from "office-oxide";
+import { execSync } from "child_process";
+import { Workbook } from "@aspose/cells";
 
 /* ============================================================
    🟩 واجهات التصدير المباشرة المتوافقة مع البنية الأساسية
@@ -23,19 +23,49 @@ export async function excelRead(filePath, params = {}) {
   }
 
   try {
-    const doc = Document.open(filePath);
+    // ✅ استخدام Aspose.Cells لقراءة الملف
+    const workbook = new Workbook(filePath);
+    const worksheet = workbook.getWorksheets().get(0);
+    const cells = worksheet.getCells();
+
+    // استخراج البيانات
+    const data = [];
+    const rows = cells.getMaxDataRow() + 1;
+    const cols = cells.getMaxDataColumn() + 1;
+
+    for (let i = 0; i < rows; i++) {
+      const row = [];
+      for (let j = 0; j < cols; j++) {
+        const cell = cells.get(i, j);
+        row.push(cell.getValue() || '');
+      }
+      data.push(row);
+    }
+
+    // استخراج الصيغ
+    const formulas = [];
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        const cell = cells.get(i, j);
+        if (cell.getFormula()) {
+          formulas.push(`الخلية ${String.fromCharCode(65 + j)}${i + 1}: ${cell.getFormula()}`);
+        }
+      }
+    }
+
     const result = {
-      text: doc.plainText(),
-      markdown: doc.toMarkdown(),
+      text: data.map(row => row.join(' | ')).join('\n'),
+      markdown: data.map(row => `| ${row.join(' | ')} |`).join('\n'),
       metadata: {
-        sheets: doc.sheetCount ? doc.sheetCount() : 1,
-        rows: doc.rowCount ? doc.rowCount() : 0,
-        columns: doc.columnCount ? doc.columnCount() : 0
+        sheets: workbook.getWorksheets().getCount(),
+        rows: rows,
+        columns: cols,
+        hasFormulas: formulas.length > 0,
+        formulas: formulas.slice(0, 20)
       }
     };
-    doc.close();
     
-    return normalizedReply("📊 تم قراءة ملف Excel بنجاح.", result);
+    return normalizedReply("📊 تم قراءة ملف Excel بنجاح باستخدام Aspose.Cells.", result);
   } catch (err) {
     console.error("❌ خطأ في excelRead:", err);
     return normalizedError("فشل قراءة ملف Excel.", err);
@@ -48,21 +78,32 @@ export async function excelModify(filePath, params = {}) {
   }
 
   try {
-    const doc = Document.open(filePath);
-    const content = doc.plainText();
-    doc.close();
+    // ✅ استخدام Aspose.Cells للتعديل
+    const workbook = new Workbook(filePath);
+    const worksheet = workbook.getWorksheets().get(0);
+    const cells = worksheet.getCells();
 
-    const modifications = params.modifications || [];
-    let modifiedContent = content;
-    
+    // تطبيق التعديلات
     if (params.instruction) {
-      modifiedContent = `[تم التعديل بناءً على طلب: ${params.instruction}]\n\n${content}`;
+      // مثال: إضافة عمود جديد
+      const lastCol = cells.getMaxDataColumn();
+      const newCol = lastCol + 1;
+      
+      // إضافة عنوان العمود
+      const headerCell = cells.get(0, newCol);
+      headerCell.putValue("تم التعديل");
+      
+      // تعبئة البيانات
+      const rows = cells.getMaxDataRow();
+      for (let i = 1; i <= rows; i++) {
+        const cell = cells.get(i, newCol);
+        cell.putValue(`تم التعديل في الصف ${i+1}`);
+      }
     }
 
+    // حفظ الملف المعدل
     const outPath = path.join(os.tmpdir(), `modified_${Date.now()}.xlsx`);
-    const newDoc = Document.create('xlsx');
-    newDoc.save(outPath);
-    newDoc.close();
+    workbook.save(outPath);
 
     const base64 = fs.readFileSync(outPath).toString('base64');
     return normalizedFile("✅ تم تعديل الملف بنجاح.", outPath, "modified.xlsx", base64);
@@ -74,15 +115,29 @@ export async function excelModify(filePath, params = {}) {
 
 export async function excelCreate(params = {}) {
   try {
-    const outPath = path.join(os.tmpdir(), `created_${Date.now()}.xlsx`);
-    const doc = Document.create('xlsx');
-    
-    if (params.data) {
-      // يمكن إضافة البيانات هنا
+    // ✅ استخدام Aspose.Cells لإنشاء ملف جديد
+    const workbook = new Workbook();
+    const worksheet = workbook.getWorksheets().get(0);
+    const cells = worksheet.getCells();
+
+    // كتابة البيانات الأولية
+    const headers = params.headers || ['العمود 1', 'العمود 2', 'العمود 3'];
+    for (let i = 0; i < headers.length; i++) {
+      cells.get(0, i).putValue(headers[i]);
     }
-    
-    doc.save(outPath);
-    doc.close();
+
+    // إضافة بيانات افتراضية
+    if (params.data) {
+      for (let i = 0; i < params.data.length; i++) {
+        const row = params.data[i];
+        for (let j = 0; j < row.length; j++) {
+          cells.get(i + 1, j).putValue(row[j]);
+        }
+      }
+    }
+
+    const outPath = path.join(os.tmpdir(), `created_${Date.now()}.xlsx`);
+    workbook.save(outPath);
 
     const base64 = fs.readFileSync(outPath).toString('base64');
     return normalizedFile("✅ تم إنشاء ملف Excel بنجاح.", outPath, "created.xlsx", base64);
@@ -180,4 +235,4 @@ function normalizedError(reply, err = null) {
     fileName: null,
     filePath: null
   };
-         }
+       }
