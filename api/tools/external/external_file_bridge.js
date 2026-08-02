@@ -1,6 +1,7 @@
 /**
- * external_file_bridge.js – Sovereign Heavy Engine Bridge (Final Clean Edition)
- * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات الـ Engines بنظام آمن بالكامل
+ * external_file_bridge.js – Sovereign Heavy Engine Bridge (Ultimate Edition)
+ * ✅ الجسر السيادي الموحد لمعالجة الملفات باستخدام المحرك الشامل Excel Ultimate Engine
+ * ✅ يدعم: ExcelJS + XLSX معاً، مع تكامل كامل للميتاداتا والتحليل
  */
 
 import fs from "fs";
@@ -17,8 +18,19 @@ import pdfEngine from "./engines/pdf.js";
 import wordEngine from "./engines/docx.js";
 import imageEngine from "./engines/image.js";
 
-// ⚡ محرك Excel السيادي الجديد (Openpyxl Only)
-import excelEngine from "./engines/excel.js";
+// ⚡ المحرك الشامل الجديد (ExcelJS + XLSX)
+import excelEngine, { 
+    excelRead, 
+    excelModify, 
+    excelCreate, 
+    excelFormat,
+    excelAnalyze,
+    excelSearch,
+    excelConditionalFormat,
+    excelPivot,
+    excelConvertToPdf,
+    excelConvertToCsv
+} from "./engines/excel.js";
 
 // ⚠ CSV فقط عبر محرك pandas (اختياري)
 import pandasEngine from "./engines/pandas.js";
@@ -45,6 +57,56 @@ export function extractFileMetadata(filePath) {
   }
 }
 
+/**
+ * 🧠 تحليل طلب المستخدم وتحديد العمليات المناسبة
+ */
+function parseUserOperations(body) {
+    const operations = [];
+    const instruction = body.instruction || body.message || '';
+    
+    // ✅ إضافة عمود
+    if (instruction.includes('إضافة عمود') || instruction.includes('add column')) {
+        const colName = instruction.match(/['"](.*?)['"]/)?.[1] || 'عمود جديد';
+        operations.push({ type: 'add_column', header: colName });
+    }
+    
+    // ✅ تلوين خلايا
+    if (instruction.includes('لون') || instruction.includes('تلوين') || instruction.includes('color')) {
+        const color = instruction.match(/#[0-9A-Fa-f]{6}/)?.[0] || 'FFFFFF00';
+        const range = instruction.match(/[A-Z]+\d+:[A-Z]+\d+/)?.[0] || 'A1:Z100';
+        operations.push({ type: 'color_cells', range, color });
+    }
+    
+    // ✅ إضافة فلتر
+    if (instruction.includes('فلتر') || instruction.includes('filter')) {
+        operations.push({ type: 'add_filter', from: 'A1', to: 'Z100' });
+    }
+    
+    // ✅ إضافة قائمة منسدلة
+    if (instruction.includes('قائمة') || instruction.includes('dropdown') || instruction.includes('منسدلة')) {
+        const options = instruction.match(/\[(.*?)\]/)?.[1]?.split(',') || ['خيار1', 'خيار2', 'خيار3'];
+        operations.push({ 
+            type: 'add_validation', 
+            address: 'B2',
+            formulae: [`"${options.join(',')}"`]
+        });
+    }
+    
+    // ✅ إضافة صيغة
+    if (instruction.includes('صيغة') || instruction.includes('formula')) {
+        const formulaMatch = instruction.match(/=(.*?)(?:\s|$)/);
+        if (formulaMatch) {
+            operations.push({ 
+                type: 'add_formula', 
+                address: 'E2',
+                formula: formulaMatch[1]
+            });
+        }
+    }
+    
+    return operations;
+}
+
 export default async function externalBridge(req, res, fileInfo = null) {
   try {
     // ✅ استقبال الملف من `upload.js` مع الميتاداتا
@@ -55,6 +117,8 @@ export default async function externalBridge(req, res, fileInfo = null) {
 
     const action = req.body.action || "read";
     const metadata = file.metadata || null;
+    const operations = req.body.operations || null;
+    const instruction = req.body.instruction || req.body.message || '';
 
     // 🛡️ حفظ الملف مؤقتاً (إذا لم يكن محفوظاً بالفعل)
     let filePath = file.path;
@@ -136,18 +200,93 @@ export default async function externalBridge(req, res, fileInfo = null) {
       auditExecution({ action: `docx_${action}`, target: file.originalname, isLocal: true });
     }
 
-    // 📊 Excel عبر محرك Openpyxl السيادي (مع دعم الميتاداتا)
-    else if (ext === ".xlsx" || ext === ".xls") {
-      const params = { ...req.body, metadata };
-      result = await excelEngine(filePath, action, params);
-      auditExecution({ action: `excel_${action}`, target: file.originalname, isLocal: true });
-    }
+    /* ============================================================
+       📊 Excel – المحرك الشامل الجديد (ExcelJS + XLSX)
+       ============================================================ */
+    else if (ext === ".xlsx" || ext === ".xls" || ext === ".xlsm" || ext === ".csv") {
+        try {
+            // ✅ تجهيز المعاملات
+            const params = { 
+                ...req.body, 
+                metadata,
+                // ✅ تحليل العمليات من الطلب أو من التعليمات
+                operations: operations || parseUserOperations(req.body),
+                // ✅ تحليل متقدم إذا طُلب
+                analyze: action === 'analyze' || req.body.analyze || false,
+                // ✅ بحث إذا طُلب
+                query: req.body.query || null,
+                // ✅ تنسيق شرطي متقدم
+                complex: req.body.complex || false,
+                instructions: req.body.instructions || instruction
+            };
 
-    // 📄 CSV فقط عبر pandasEngine (اختياري)
-    else if (ext === ".csv") {
-      const params = { ...req.body, metadata };
-      result = await pandasEngine(filePath, action, params);
-      auditExecution({ action: `csv_${action}`, target: file.originalname, isLocal: true });
+            // ✅ تنفيذ العملية المطلوبة
+            switch (action) {
+                case 'read':
+                case 'preview':
+                case 'excel_preview':
+                    result = await excelEngine.execute(filePath, 'read', params);
+                    break;
+                    
+                case 'modify':
+                case 'excel_modify':
+                    result = await excelEngine.execute(filePath, 'modify', params);
+                    break;
+                    
+                case 'create':
+                    result = await excelEngine.execute(null, 'create', params);
+                    break;
+                    
+                case 'format':
+                case 'excel_format':
+                    result = await excelEngine.execute(filePath, 'format', params);
+                    break;
+                    
+                case 'analyze':
+                case 'excel_analyze':
+                    result = await excelEngine.execute(filePath, 'analyze', params);
+                    break;
+                    
+                case 'search':
+                    result = await excelEngine.execute(filePath, 'search', params);
+                    break;
+                    
+                case 'conditional_format':
+                    result = await excelEngine.execute(filePath, 'conditional_format', params);
+                    break;
+                    
+                case 'pivot':
+                    result = await excelEngine.execute(filePath, 'pivot', params);
+                    break;
+                    
+                case 'convert_pdf':
+                case 'to_pdf':
+                    result = await excelEngine.execute(filePath, 'convert_pdf');
+                    break;
+                    
+                case 'convert_csv':
+                    result = await excelEngine.execute(filePath, 'convert_csv');
+                    break;
+                    
+                default:
+                    result = await excelEngine.execute(filePath, 'read', params);
+            }
+
+            // ✅ تسجيل التدقيق
+            auditExecution({ 
+                action: `excel_${action}`, 
+                target: file.originalname, 
+                isLocal: true,
+                engine: result?.data?.metadata?.engines || ['exceljs']
+            });
+
+        } catch (err) {
+            console.error("❌ [Bridge] خطأ في محرك Excel:", err);
+            result = {
+                ok: false,
+                error: err.message || "فشل معالجة ملف Excel"
+            };
+        }
     }
 
     // 🖼 صور
@@ -184,16 +323,20 @@ export default async function externalBridge(req, res, fileInfo = null) {
       return res.status(200).json({
         reply: result.reply || "تمت معالجة وتوليد الملف بنجاح.",
         fileBase64: result.fileBase64,
-        fileName: result.fileName || "output_alatheer"
+        fileName: result.fileName || "output_alatheer",
+        metadata: result.data?.metadata || null
       });
     }
 
     /* ============================================================
-       🟩 إرجاع البيانات النصية
+       🟩 إرجاع البيانات النصية والتحليل
        ============================================================ */
     return res.status(200).json({
       reply: result?.reply || "تمت قراءة الملف بنجاح.",
-      data: result?.data || null
+      data: result?.data || null,
+      metadata: result?.data?.metadata || null,
+      analysis: result?.data?.analysis || null,
+      statistics: result?.data?.statistics || null
     });
 
   } catch (err) {
@@ -202,4 +345,4 @@ export default async function externalBridge(req, res, fileInfo = null) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-        }
+          }
