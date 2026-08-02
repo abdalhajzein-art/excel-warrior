@@ -1,5 +1,6 @@
 /**
  * api/core/kernel.js – Alatheer Sovereign Kernel (Agentic Self-Correction Edition)
+ * مع دعم الميتاداتا والملفات المرفقة مع بياناتها الوصفية
  */
 
 import groqService from "../geminiService.js";
@@ -15,13 +16,11 @@ import { extractFileMetadata } from "../tools/external/external_file_bridge.js";
  */
 function autoFixPythonCode(code) {
   return code
-    // إصلاح مسار openpyxl
     .replace(/openpyxl\.workslet/gi, "openpyxl.worksheet")
     .replace(
       /from openpyxl\.worksheet\.datavalidation import DataValidation/gi,
       "from openpyxl.worksheet.datavalidation import DataValidation"
     )
-    // حقن engine صريح لـ pandas.read_excel
     .replace(
       /pd\.read_excel\(([^)]+)\)/gi,
       "pd.read_excel($1, engine='openpyxl')"
@@ -34,6 +33,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
   /* 🛡️ فحص أولي للملف */
   let fileMetadataPrompt = "";
+  const metadata = ctx.metadata || null; // ✅ استقبال الميتاداتا من orchestrator
 
   if (ctx.filePath) {
     if (!fs.existsSync(ctx.filePath) || fs.statSync(ctx.filePath).size === 0) {
@@ -43,16 +43,26 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       };
     }
 
-    try {
-      const meta = extractFileMetadata(ctx.filePath);
-      if (meta && !meta.error) {
-        fileMetadataPrompt =
-          "\n[بيانات الملف الهيكلية المكتشفة تلقائياً - Universal Metadata]:\n" +
-          JSON.stringify(meta, null, 2) +
-          "\n";
+    // ✅ إذا كانت الميتاداتا موجودة، استخدمها مباشرة (بدون استخراج)
+    if (metadata && metadata.sheet_name) {
+      fileMetadataPrompt =
+        "\n[بيانات الملف الهيكلية (ميتاداتا مرفقة من الواجهة)]:\n" +
+        JSON.stringify(metadata, null, 2) +
+        "\n";
+      console.log(`📋 [Kernel] تم استخدام الميتاداتا المرفقة: ${metadata.sheet_name}`);
+    } else {
+      // ✅ إذا لم تكن الميتاداتا موجودة، حاول استخراجها
+      try {
+        const meta = extractFileMetadata(ctx.filePath);
+        if (meta && !meta.error) {
+          fileMetadataPrompt =
+            "\n[بيانات الملف الهيكلية المكتشفة تلقائياً - Universal Metadata]:\n" +
+            JSON.stringify(meta, null, 2) +
+            "\n";
+        }
+      } catch (mErr) {
+        console.warn("⚠️ تعذّر استخراج Metadata كاملة للملف:", mErr.message);
       }
-    } catch (mErr) {
-      console.warn("⚠️ تعذّر استخراج Metadata كاملة للملف:", mErr.message);
     }
   }
 
@@ -130,7 +140,6 @@ ${fileMetadataPrompt}`;
       if (outMatch) {
         const newFilePath = outMatch[1].trim();
 
-        // فحص أقوى للملف الناتج (حجم معقول > 1KB مثلاً)
         if (
           fs.existsSync(newFilePath) &&
           fs.statSync(newFilePath).size > 1024
@@ -169,7 +178,6 @@ ${fileMetadataPrompt}`;
         break;
       }
 
-      // إعادة تغذية النموذج بالـ Traceback كامل (مش بس message)
       conversationMessages.push({ role: "assistant", content: reply });
       conversationMessages.push({
         role: "user",
@@ -192,4 +200,4 @@ ${err.stack || err.message}
     fileName: returnedFileName,
     fileBase64,
   };
-     }
+    }
