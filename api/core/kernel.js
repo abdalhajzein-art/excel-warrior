@@ -1,6 +1,7 @@
 /**
  * api/core/kernel.js – Alatheer Sovereign Kernel (Agentic Self-Correction Edition)
  * مع دعم الميتاداتا والملفات المرفقة مع بياناتها الوصفية
+ * ✅ تم تحديثها لاستخدام المحتوى المستخرج محلياً (extractedContent) بدلاً من openpyxl
  */
 
 import groqService from "../geminiService.js";
@@ -8,76 +9,70 @@ import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
-import { extractFileMetadata } from "../tools/external/external_file_bridge.js";
-
-/**
- * إصلاح تلقائي سريع للأخطاء الشائعة في كود البايثون
- */
-function autoFixPythonCode(code) {
-  return code
-    .replace(/openpyxl\.workslet/gi, "openpyxl.worksheet")
-    .replace(
-      /from openpyxl\.worksheet\.datavalidation import DataValidation/gi,
-      "from openpyxl.worksheet.datavalidation import DataValidation"
-    )
-    .replace(
-      /pd\.read_excel\(([^)]+)\)/gi,
-      "pd.read_excel($1, engine='openpyxl')"
-    );
-}
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const message = (rawMessage || "").trim();
   if (!message) return "أهلاً بك يا هندسة… كيف يمكنني مساعدتك اليوم؟";
 
-  /* 🛡️ فحص أولي للملف */
-  let fileMetadataPrompt = "";
-  const metadata = ctx.metadata || null; // ✅ استقبال الميتاداتا من orchestrator
+  // ✅ الحصول على المحتوى المستخرج محلياً من office-oxide
+  const extractedContent = ctx.extractedContent || null;
+  const metadata = ctx.metadata || null;
+  const fileName = ctx.fileName || "الملف";
 
-  if (ctx.filePath) {
-    if (!fs.existsSync(ctx.filePath) || fs.statSync(ctx.filePath).size === 0) {
-      return {
-        reply:
-          "⚠️ يا هندسة، الملف المرفوع حالياً تالف أو حجمه 0 بايت. أرجو إعادة رفع الملف الأصلي لنشتغل على نسخة نظيفة.",
-      };
+  /* 🛡️ بناء السياق للمعالج الذكي */
+  let fileContextPrompt = "";
+
+  // ✅ إذا كان هناك محتوى مستخرج، استخدمه مباشرة (بدون استدعاء Python)
+  if (extractedContent && !extractedContent.error) {
+    console.log(`📋 [Kernel] استخدام المحتوى المستخرج محلياً للملف: ${fileName}`);
+    
+    let contentText = "";
+    if (extractedContent.text) {
+      contentText = extractedContent.text;
+    } else if (extractedContent.markdown) {
+      contentText = extractedContent.markdown;
     }
-
-    // ✅ إذا كانت الميتاداتا موجودة، استخدمها مباشرة (بدون استخراج)
+    
+    // ✅ إضافة معلومات الميتاداتا إن وجدت
+    let metadataInfo = "";
     if (metadata && metadata.sheet_name) {
-      fileMetadataPrompt =
-        "\n[بيانات الملف الهيكلية (ميتاداتا مرفقة من الواجهة)]:\n" +
-        JSON.stringify(metadata, null, 2) +
-        "\n";
-      console.log(`📋 [Kernel] تم استخدام الميتاداتا المرفقة: ${metadata.sheet_name}`);
-    } else {
-      // ✅ إذا لم تكن الميتاداتا موجودة، حاول استخراجها
-      try {
-        const meta = extractFileMetadata(ctx.filePath);
-        if (meta && !meta.error) {
-          fileMetadataPrompt =
-            "\n[بيانات الملف الهيكلية المكتشفة تلقائياً - Universal Metadata]:\n" +
-            JSON.stringify(meta, null, 2) +
-            "\n";
-        }
-      } catch (mErr) {
-        console.warn("⚠️ تعذّر استخراج Metadata كاملة للملف:", mErr.message);
-      }
+      metadataInfo = `\n[الميتاداتا المرفقة]:\n- اسم الورقة: ${metadata.sheet_name}\n- عدد الصفوف: ${metadata.total_rows || 'غير معروف'}\n- الأعمدة: ${metadata.headers ? metadata.headers.join(', ') : 'غير معروف'}\n`;
+    }
+    
+    if (extractedContent.metadata) {
+      metadataInfo += `\n[البيانات المستخرجة]:\n${Object.entries(extractedContent.metadata).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`;
+    }
+    
+    fileContextPrompt = `
+📄 **[محتوى الملف "${fileName}" المستخرج محلياً (بدون استهلاك توكنز)]:**
+${contentText.slice(0, 8000)}${contentText.length > 8000 ? '\n... (تم اختصار المحتوى)' : ''}
+${metadataInfo}
+`;
+  } else if (ctx.filePath && fs.existsSync(ctx.filePath)) {
+    // ✅ إذا لم يكن هناك محتوى مستخرج، حاول قراءة الملف كنص عادي
+    try {
+      const content = fs.readFileSync(ctx.filePath, 'utf-8');
+      fileContextPrompt = `
+📄 **[محتوى الملف "${fileName}" (قراءة كنص عادي)]:**
+${content.slice(0, 8000)}${content.length > 8000 ? '\n... (تم اختصار المحتوى)' : ''}
+`;
+    } catch (err) {
+      console.warn(`⚠️ [Kernel] تعذر قراءة الملف كنص: ${err.message}`);
+      fileContextPrompt = `📄 [ملف: ${fileName}] - لا يمكن قراءة المحتوى كنص.`;
     }
   }
 
-  /* 🟩 تعليمات سيادية للملفات */
+  /* 🟩 تعليمات سيادية للمعالج */
   let agenticInstructions = "";
-  if (ctx.filePath) {
+  if (fileContextPrompt) {
     agenticInstructions = `
-[قوانين سيادية إجبارية لمعالجة الملفات عبر Python]:
-1. مسار الملف النشط حالياً: \`${ctx.filePath}\` (قراءة فقط).
-2. ممنوع حفظ التعديلات على نفس المسار الأصلي.
-3. احفظ الناتج في مسار جديد (مثلاً بإضافة "_modified" لاسم الملف).
-4. في نهاية كود البايثون، اطبع:
-   print("OUTPUT_FILE: " + <path_to_output_file>)
-5. ممنوع كتابة روابط تحميل في الرد النصي.
-${fileMetadataPrompt}`;
+[قوانين سيادية للمعالجة]:
+1. أنت تعمل مع محتوى ملف تم استخراجه محلياً.
+2. لا حاجة لكتابة كود Python لقراءة الملف (المحتوى موجود بالفعل).
+3. أجب عن طلب المستخدم بناءً على المحتوى المقدم أعلاه.
+4. إذا طلب المستخدم تعديلاً، قم بوصف التعديل المطلوب.
+5. لا تختلق معلومات غير موجودة في المحتوى.
+${fileContextPrompt}`;
   }
 
   const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
@@ -87,107 +82,42 @@ ${fileMetadataPrompt}`;
     { role: "user", content: message },
   ];
 
-  /* 🔄 حلقة التنفيذ والتصحيح الذاتي */
-  const MAX_ATTEMPTS = 3;
-  let currentAttempt = 0;
+  /* 🤖 التنفيذ المباشر (بدون حلقة Python إلا إذا لزم الأمر) */
   let finalReplyText = "";
   let returnedFileName = ctx.fileName;
   let fileBase64 = null;
-  let executionSuccess = false;
 
-  while (currentAttempt < MAX_ATTEMPTS && !executionSuccess) {
-    currentAttempt++;
-    console.log(
-      `🤖 [Kernel Agentic Loop] المحاولة رقم (${currentAttempt}/${MAX_ATTEMPTS})...`
-    );
+  // ✅ إذا كان هناك محتوى مستخرج، نعطي تعليمات إضافية للنموذج
+  if (extractedContent && !extractedContent.error) {
+    const systemInstruction = `
+⚠️ **تعليمات إضافية:**
+- المحتوى أعلاه مستخرج من ملف "${fileName}" باستخدام معالج محلي.
+- المحتوى دقيق ويعكس محتوى الملف الفعلي.
+- استخدم هذا المحتوى للإجابة على استفسارات المستخدم.
+- إذا طلب المستخدم تعديلاً، صف التعديل المطلوب بناءً على المحتوى.
+`;
+    conversationMessages[0].content += "\n" + systemInstruction;
+  }
 
-    let reply = await groqService.chat(conversationMessages, {
+  try {
+    console.log(`🧠 [Kernel] إرسال الطلب إلى النموذج (بدون استدعاء Python)...`);
+    
+    const reply = await groqService.chat(conversationMessages, {
       fileName: ctx.fileName,
     });
 
-    // تنظيف أي روابط تحميل وهمية
-    reply = reply.replace(/\[.*?تحميل.*?\]\(.*?\)/gi, "");
-
-    const pythonCodeMatch = reply.match(/```python\n([\s\S]*?)```/);
-    const cleanReplyText = reply.replace(/```python[\s\S]*?```/g, "").trim();
-
-    // لو ما في كود بايثون أو ما في ملف، نكتفي بالرد النصي
-    if (!pythonCodeMatch || !ctx.filePath) {
-      finalReplyText = cleanReplyText;
-      executionSuccess = true;
-      break;
+    finalReplyText = reply;
+    
+    // ✅ إذا كان هناك ملف وتعديل، يمكننا محاكاة التعديل (اختياري)
+    // في الإصدارات القادمة، يمكن استخدام office-oxide للتعديل المباشر
+    if (ctx.filePath && extractedContent && !extractedContent.error) {
+      // محاكاة التعديل (للمرحلة القادمة)
+      console.log(`📝 [Kernel] تمت معالجة الملف: ${fileName}`);
     }
 
-    let pythonCode = pythonCodeMatch[1].trim();
-    pythonCode = autoFixPythonCode(pythonCode);
-
-    const scriptName = `agent_task_${Date.now()}_v${currentAttempt}.py`;
-    const scriptPath = path.join(path.dirname(ctx.filePath), scriptName);
-
-    try {
-      fs.writeFileSync(scriptPath, pythonCode, "utf8");
-
-      const stdout = execSync(`python3 "${scriptPath}"`, {
-        encoding: "utf8",
-        timeout: 30000,
-      });
-
-      console.log(`✅ [Kernel Output Attempt ${currentAttempt}]:\n`, stdout);
-
-      if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
-
-      const outMatch = stdout.match(/OUTPUT_FILE:\s*(.+)/);
-      if (outMatch) {
-        const newFilePath = outMatch[1].trim();
-
-        if (
-          fs.existsSync(newFilePath) &&
-          fs.statSync(newFilePath).size > 1024
-        ) {
-          fileBase64 = fs.readFileSync(newFilePath).toString("base64");
-          returnedFileName = path.basename(newFilePath);
-          finalReplyText = cleanReplyText
-            ? `${cleanReplyText}\n\n✅ تمت هندسة وتعديل الملف بنجاح.`
-            : "✅ تمت المعالجة والهندسة البرمجية بنجاح، والملف جاهز للتحميل.";
-        } else {
-          finalReplyText =
-            cleanReplyText +
-            "\n\n⚠️ تم تنفيذ الكود لكن الملف الناتج صغير جداً أو غير صالح (قد يكون تالفاً).";
-        }
-      } else {
-        const outputClean = stdout.replace(/OUTPUT_FILE:.*/g, "").trim();
-        finalReplyText = cleanReplyText;
-        if (outputClean) {
-          finalReplyText += `\n\n📊 **نتائج التحليل البرمجي:**\n\`\`\`text\n${outputClean}\n\`\`\``;
-        }
-      }
-
-      executionSuccess = true;
-    } catch (err) {
-      console.error(
-        `❌ [Execution Failed - Attempt ${currentAttempt}]:`,
-        err.message
-      );
-
-      if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
-
-      if (currentAttempt >= MAX_ATTEMPTS) {
-        finalReplyText =
-          cleanReplyText +
-          `\n\n⚠️ واجهت المنظومة مشكلة أثناء التنفيذ البرمجي بعد ${MAX_ATTEMPTS} محاولات:\n\`\`\`text\n${err.message}\n\`\`\``;
-        break;
-      }
-
-      conversationMessages.push({ role: "assistant", content: reply });
-      conversationMessages.push({
-        role: "user",
-        content: `⚠️ فشل تنفيذ كود بايثون السابق وأنتج الخطأ التالي (Traceback كامل):
-\`\`\`text
-${err.stack || err.message}
-\`\`\`
-حلّل سبب الخطأ بدقة، وأعد كتابة كود بايثون مصحح بالكامل ينفذ المطلوب دون أخطاء.`,
-      });
-    }
+  } catch (error) {
+    console.error("❌ [Kernel] خطأ في المعالجة:", error);
+    finalReplyText = `⚠️ حدث خطأ أثناء معالجة طلبك: ${error.message}`;
   }
 
   memory.appendSovereignHistory(sessionId, {
@@ -200,4 +130,4 @@ ${err.stack || err.message}
     fileName: returnedFileName,
     fileBase64,
   };
-    }
+  }
