@@ -1,7 +1,7 @@
 /**
  * api/core/conversation_orchestrator.js – Sovereign Universal Orchestrator
  * المنسق السيادي العام: حرية مطلقة، لا قيود، لا أكواد صلبة. تمرير نظيف للسياق والملفات.
- * ✅ تم تحديثها لاستخدام المحتوى المستخرج محلياً من office-oxide
+ * ✅ تم تحديثها لاستخدام المحتوى المستخرج محلياً من ExcelJS و XLSX
  */
 
 import memory from "./memory.js";
@@ -35,15 +35,29 @@ export default async function conversationOrchestrator(sessionId, message, extra
     const extractedContent = extraCtx.extractedContent || null; // ✅ المحتوى المستخرج محلياً
     const hasFile = !!fileData || !!filePath;
 
+    // ✅ متغيرات لتخزين البيانات المسترجعة من الجلسة
+    let sessionMetadata = metadata;
+    let sessionExtractedContent = extractedContent;
+
     if (hasFile) {
-      session.activeFile = { fileData, fileName, filePath, metadata, extractedContent };
+      session.activeFile = { 
+        fileData, 
+        fileName, 
+        filePath, 
+        metadata, 
+        extractedContent 
+      };
+      sessionMetadata = metadata;
+      sessionExtractedContent = extractedContent;
     } else if (session.activeFile && !isResetFile) {
+      // ✅ استرجاع البيانات من الجلسة بشكل صحيح
       fileData = session.activeFile.fileData;
       fileName = session.activeFile.fileName;
       filePath = session.activeFile.filePath;
-      // استرجاع الميتاداتا والمحتوى المستخرج من الجلسة
-      const sessionMetadata = session.activeFile.metadata || null;
-      const sessionExtractedContent = session.activeFile.extractedContent || null;
+      sessionMetadata = session.activeFile.metadata || null;
+      sessionExtractedContent = session.activeFile.extractedContent || null;
+      
+      console.log(`🔄 [Orchestrator] استرجاع الملف من الجلسة: ${fileName}`);
     }
 
     // 3. تسجيل رسالة المستخدم في التاريخ
@@ -72,8 +86,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
       fileName,
       filePath,
       activeFile: session.activeFile || null,
-      metadata,
-      extractedContent // ✅ تمرير المحتوى المستخرج محلياً
+      metadata: sessionMetadata, // ✅ استخدام المتغير الصحيح
+      extractedContent: sessionExtractedContent // ✅ استخدام المتغير الصحيح
     };
 
     // 5. تسليم القيادة المطلقة للـ Kernel
@@ -110,4 +124,4 @@ export default async function conversationOrchestrator(sessionId, message, extra
       fileName: null
     };
   }
-}
+        }
