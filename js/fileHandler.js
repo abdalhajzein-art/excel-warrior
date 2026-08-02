@@ -122,16 +122,14 @@ export async function sendSelectedFileToServer() {
     }
 
     const formData = new FormData();
-    
-    // 🟢 التعديل الجوهري: إنشاء اسم آمن للملف لمنع مشاكل الـ Encoding مع اللغة العربية
+
+    // 🟢 اسم آمن فقط
     const fileExtension = selectedFileObject.name.split('.').pop();
     const safeFilename = `upload_${Date.now()}.${fileExtension}`;
-    
-    // إرفاق الملف بالاسم الآمن
+
     formData.append("file", selectedFileObject, safeFilename);
-    
-    // إرسال الاسم الأصلي مشفراً كحقل نصي (Metadata) ليستخدمه الخادم
-    formData.append("originalName", encodeURIComponent(selectedFileObject.name)); 
+
+    // 🚫 لا ترسل الاسم الأصلي إطلاقاً
     formData.append("action", "preview");
 
     try {
@@ -140,12 +138,10 @@ export async function sendSelectedFileToServer() {
             body: formData
         });
 
-        const data = await response.json();
-        return data;
+        return await response.json();
 
     } catch (err) {
         console.error("❌ خطأ أثناء إرسال الملف:", err);
         return { error: "❌ فشل إرسال الملف إلى السيرفر." };
     }
-}
-
+                }
