@@ -1,13 +1,14 @@
 /**
  * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة)
  * ✅ تم تحديثها لاستخدام exceljs لمعالجة ملفات Excel
+ * ✅ تحسين معالجة حفظ الملفات
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import ExcelJS from 'exceljs'; // ✅ المكتبة الجديدة
+import ExcelJS from 'exceljs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,10 +22,18 @@ async function extractExcelContent(filePath) {
       return { error: "⚠️ الملف غير موجود على السيرفر." };
     }
 
+    // ✅ التحقق من حجم الملف
+    const stats = fs.statSync(filePath);
+    if (stats.size === 0) {
+      return { error: "⚠️ الملف فارغ (0 بايت)." };
+    }
+
+    console.log(`📊 [extractExcelContent] حجم الملف: ${stats.size} bytes`);
+
     // تحميل الملف باستخدام exceljs
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
-    const worksheet = workbook.getWorksheet(1); // أول ورقة عمل
+    const worksheet = workbook.getWorksheet(1);
 
     if (!worksheet) {
       return { error: "⚠️ لا توجد أوراق عمل في هذا الملف." };
@@ -58,13 +67,13 @@ async function extractExcelContent(filePath) {
         rows: data.length,
         columns: data[0]?.length || 0,
         hasFormulas: formulas.length > 0,
-        formulas: formulas.slice(0, 20) // أول 20 صيغة
+        formulas: formulas.slice(0, 20)
       }
     };
 
   } catch (error) {
     console.error("❌ خطأ في استخراج محتوى الملف:", error);
-    return { error: error.message };
+    return { error: `فشل قراءة الملف: ${error.message}` };
   }
 }
 
@@ -97,33 +106,68 @@ export default async function handler(req, res) {
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
-        localFilePath = path.join(uploadDir, fileName);
+        
+        // ✅ إنشاء اسم ملف فريد لتجنب التعارض
+        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(7)}-${fileName}`;
+        localFilePath = path.join(uploadDir, uniqueFileName);
 
-        // حفظ الملف
+        let buffer = null;
+
+        // ✅ تحسين معالجة البيانات الواردة
         if (typeof fileData === 'string') {
+          // ✅ التعامل مع Base64
           const cleanBase64 = fileData.replace(/^data:.*;base64,/, '');
-          fs.writeFileSync(localFilePath, Buffer.from(cleanBase64, 'base64'));
+          buffer = Buffer.from(cleanBase64, 'base64');
         } else if (Buffer.isBuffer(fileData)) {
-          fs.writeFileSync(localFilePath, fileData);
+          buffer = fileData;
         } else if (typeof fileData === 'object' && fileData !== null) {
-          const values = Object.values(fileData);
-          fs.writeFileSync(localFilePath, Buffer.from(values));
+          // ✅ إذا كانت البيانات كائن (مثل ArrayBuffer)
+          if (fileData.data && Buffer.isBuffer(fileData.data)) {
+            buffer = fileData.data;
+          } else {
+            // محاولة تحويل الكائن إلى Buffer
+            const jsonStr = JSON.stringify(fileData);
+            buffer = Buffer.from(jsonStr);
+          }
+        } else if (Array.isArray(fileData)) {
+          // ✅ إذا كانت البيانات مصفوفة (مثل Uint8Array)
+          buffer = Buffer.from(fileData);
+        }
+
+        if (!buffer || buffer.length === 0) {
+          throw new Error("البيانات المستلمة فارغة أو غير صالحة");
+        }
+
+        console.log(`📊 [chat.js] حفظ ملف: ${fileName}, الحجم: ${buffer.length} bytes`);
+
+        // ✅ حفظ الملف
+        fs.writeFileSync(localFilePath, buffer);
+
+        // ✅ التحقق من أن الملف تم حفظه بشكل صحيح
+        const savedStats = fs.statSync(localFilePath);
+        if (savedStats.size === 0) {
+          throw new Error("الملف المحفوظ فارغ (0 بايت)");
+        }
+
+        if (savedStats.size !== buffer.length) {
+          console.warn(`⚠️ تحذير: حجم الملف المحفوظ (${savedStats.size}) يختلف عن الحجم الأصلي (${buffer.length})`);
         }
 
         const fileExt = path.extname(fileName).toLowerCase();
         
         // ✅ استخدام exceljs للملفات Excel
         if (['.xlsx', '.xls'].includes(fileExt)) {
-          extractedContent = await extractExcelContent(localFilePath); // ✅ استخدام await
-          console.log(`📄 [chat.js] تم استخراج محتوى Excel باستخدام exceljs: ${fileName}`);
+          extractedContent = await extractExcelContent(localFilePath);
+          if (extractedContent.error) {
+            console.error(`❌ [chat.js] فشل استخراج محتوى Excel: ${extractedContent.error}`);
+          } else {
+            console.log(`📄 [chat.js] تم استخراج محتوى Excel باستخدام exceljs: ${fileName}`);
+          }
         } else if (['.docx', '.doc'].includes(fileExt)) {
-          // TODO: استخدام مكتبة أخرى لـ Word
           extractedContent = { text: `[ملف Word: ${fileName}]`, markdown: '', metadata: {} };
         } else if (['.pdf'].includes(fileExt)) {
-          // TODO: استخدام مكتبة أخرى لـ PDF
           extractedContent = { text: `[ملف PDF: ${fileName}]`, markdown: '', metadata: {} };
         } else if (['.pptx', '.ppt'].includes(fileExt)) {
-          // TODO: استخدام مكتبة أخرى لـ PowerPoint
           extractedContent = { text: `[ملف PowerPoint: ${fileName}]`, markdown: '', metadata: {} };
         } else {
           // ملفات نصية عادية
@@ -133,11 +177,27 @@ export default async function handler(req, res) {
 
       } catch (err) {
         console.error("❌ خطأ في حفظ أو معالجة الملف:", err);
-        extractedContent = { error: err.message };
+        extractedContent = { error: `فشل معالجة الملف: ${err.message}` };
+        
+        // ✅ تنظيف الملف التالف
+        if (localFilePath && fs.existsSync(localFilePath)) {
+          try {
+            fs.unlinkSync(localFilePath);
+            console.log(`🗑️ تم حذف الملف التالف: ${localFilePath}`);
+          } catch (cleanupErr) {
+            console.error(`⚠️ فشل حذف الملف التالف: ${cleanupErr.message}`);
+          }
+        }
       }
     }
 
-    // استدعاء الـ orchestrator
+    // ✅ إذا فشل استخراج المحتوى، نرسل رسالة خطأ للمستخدم
+    if (extractedContent && extractedContent.error) {
+      return res.status(400).json({
+        reply: `⚠️ ${extractedContent.error}`
+      });
+    }
+
     const output = await conversationOrchestrator(sessionKey, userContent, {
       fileData,
       fileName,
@@ -178,4 +238,4 @@ export default async function handler(req, res) {
       reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
     });
   }
-  }
+      }
