@@ -1,72 +1,122 @@
 /**
  * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة بالكامل لتناول الملفات)
- * ✅ تم تحديثها لاستخدام office-oxide في معالجة الملفات محلياً
+ * ✅ تم تحديثها لاستخدام office-oxide مع Fallback إلى openpyxl
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Document } from 'office-oxide'; // ✅ استيراد المكتبة الجديدة
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * ✅ دالة معالجة الملفات محلياً باستخدام office-oxide
- * استخراج النص أو البيانات من أي ملف Office (Excel, Word, PDF, PowerPoint)
+ * ✅ دالة معالجة الملفات محلياً مع Fallback
  */
-function extractFileContent(filePath, fileType = null) {
+function extractFileContent(filePath) {
   try {
     if (!fs.existsSync(filePath)) {
       return { error: "⚠️ الملف غير موجود على السيرفر." };
     }
 
-    const doc = Document.open(filePath);
     let result = {
       text: '',
       markdown: '',
       metadata: {}
     };
 
-    // استخراج المعلومات حسب نوع الملف
-    const ext = path.extname(filePath).toLowerCase();
-    
-    if (ext === '.xlsx' || ext === '.xls') {
-      // Excel: استخراج الجداول كـ Markdown
-      result.markdown = doc.toMarkdown();
-      result.text = doc.plainText();
-      result.metadata = {
-        sheets: doc.sheetCount(),
-        rows: doc.rowCount(),
-        columns: doc.columnCount()
-      };
-    } else if (ext === '.docx' || ext === '.doc') {
-      // Word: استخراج النص
-      result.text = doc.plainText();
-      result.metadata = {
-        paragraphs: doc.paragraphCount()
-      };
-    } else if (ext === '.pdf') {
-      // PDF: استخراج النص
-      result.text = doc.plainText();
-      result.metadata = {
-        pages: doc.pageCount()
-      };
-    } else if (ext === '.pptx' || ext === '.ppt') {
-      // PowerPoint: استخراج النص
-      result.text = doc.plainText();
-      result.metadata = {
-        slides: doc.slideCount()
-      };
-    } else {
-      // ملفات نصية عادية
-      const content = fs.readFileSync(filePath, 'utf-8');
-      result.text = content.slice(0, 10000); // أول 10 آلاف حرف
+    // ✅ المحاولة الأولى: استخدام office-oxide
+    try {
+      const { Document } = await import('office-oxide');
+      const doc = Document.open(filePath);
+      
+      const ext = path.extname(filePath).toLowerCase();
+      if (['.xlsx', '.xls'].includes(ext)) {
+        result.markdown = doc.toMarkdown();
+        result.text = doc.plainText();
+        result.metadata = {
+          sheets: doc.sheetCount ? doc.sheetCount() : 1,
+          rows: doc.rowCount ? doc.rowCount() : 0,
+          columns: doc.columnCount ? doc.columnCount() : 0
+        };
+      } else if (['.docx', '.doc'].includes(ext)) {
+        result.text = doc.plainText();
+        result.metadata = { paragraphs: doc.paragraphCount ? doc.paragraphCount() : 0 };
+      } else if (ext === '.pdf') {
+        result.text = doc.plainText();
+        result.metadata = { pages: doc.pageCount ? doc.pageCount() : 0 };
+      } else if (['.pptx', '.ppt'].includes(ext)) {
+        result.text = doc.plainText();
+        result.metadata = { slides: doc.slideCount ? doc.slideCount() : 0 };
+      } else {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        result.text = content.slice(0, 10000);
+      }
+      
+      doc.close();
+      console.log(`✅ [chat.js] تم استخراج المحتوى باستخدام office-oxide`);
+
+    } catch (officeError) {
+      console.warn(`⚠️ [chat.js] office-oxide فشل: ${officeError.message}`);
+      console.log(`🔄 [chat.js] استخدام Fallback إلى openpyxl...`);
+
+      // ✅ Fallback: استخدام openpyxl عبر Python
+      const ext = path.extname(filePath).toLowerCase();
+      
+      if (['.xlsx', '.xls'].includes(ext)) {
+        const pythonScript = `
+import json
+from openpyxl import load_workbook
+
+file_path = "${filePath}"
+try:
+    wb = load_workbook(file_path, data_only=True)
+    ws = wb.active
+    data = []
+    for row in ws.iter_rows(values_only=True):
+        data.append([str(cell) if cell is not None else "" for cell in row])
+    print(json.dumps({"ok": True, "data": data, "rows": len(data), "cols": len(data[0]) if data else 0}))
+except Exception as e:
+    print(json.dumps({"ok": False, "error": str(e)}))
+`;
+        const scriptPath = path.join('/tmp', `fallback_${Date.now()}.py`);
+        fs.writeFileSync(scriptPath, pythonScript, 'utf8');
+        
+        try {
+          const output = execSync(`python3 "${scriptPath}"`, { encoding: 'utf-8', timeout: 30000 });
+          fs.unlinkSync(scriptPath);
+          const parsed = JSON.parse(output.trim());
+          
+          if (parsed.ok) {
+            result.text = parsed.data.map(row => row.join(' | ')).join('\n');
+            result.metadata = {
+              rows: parsed.rows,
+              columns: parsed.cols,
+              fallback: 'openpyxl'
+            };
+            console.log(`✅ [chat.js] تم استخراج المحتوى باستخدام openpyxl (fallback)`);
+          } else {
+            throw new Error(parsed.error);
+          }
+        } catch (pyError) {
+          console.error(`❌ [chat.js] فشل openpyxl: ${pyError.message}`);
+          // ✅ Fallback النهائي: قراءة كنص عادي
+          const content = fs.readFileSync(filePath, 'utf-8');
+          result.text = content.slice(0, 10000);
+          result.metadata = { fallback: 'raw_text' };
+        }
+      } else {
+        // ✅ Fallback للملفات غير Excel: قراءة كنص عادي
+        const content = fs.readFileSync(filePath, 'utf-8');
+        result.text = content.slice(0, 10000);
+        result.metadata = { fallback: 'raw_text' };
+      }
     }
 
-    doc.close();
     return result;
+
   } catch (error) {
     console.error("❌ خطأ في استخراج محتوى الملف:", error);
     return { error: error.message };
@@ -93,7 +143,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🛡️ الحفظ الفيزيائي للملف المرفق
     let localFilePath = null;
     let extractedContent = null;
 
@@ -115,13 +164,11 @@ export default async function handler(req, res) {
           fs.writeFileSync(localFilePath, Buffer.from(values));
         }
 
-        // ✅ معالجة الملف محلياً باستخدام office-oxide
         const fileExt = path.extname(fileName).toLowerCase();
         if (['.xlsx', '.xls', '.docx', '.doc', '.pdf', '.pptx', '.ppt'].includes(fileExt)) {
-          extractedContent = extractFileContent(localFilePath);
-          console.log(`📄 [chat.js] تم استخراج محتوى الملف محلياً: ${fileName}`);
+          extractedContent = await extractFileContent(localFilePath);
+          console.log(`📄 [chat.js] تم استخراج محتوى الملف: ${fileName}`);
         } else {
-          // ملفات نصية عادية
           const content = fs.readFileSync(localFilePath, 'utf-8');
           extractedContent = { text: content.slice(0, 10000), markdown: '', metadata: {} };
         }
@@ -132,14 +179,13 @@ export default async function handler(req, res) {
       }
     }
 
-    // ✅ تمرير الملف والبيانات المستخرجة إلى الـ Orchestrator
     const output = await conversationOrchestrator(sessionKey, userContent, {
       fileData,
       fileName,
       filePath: localFilePath,
       history,
       metadata,
-      extractedContent // ✅ تمرير المحتوى المستخرج محلياً
+      extractedContent
     });
 
     let reply = "تم إنجاز طلبك بنجاح!";
@@ -173,4 +219,4 @@ export default async function handler(req, res) {
       reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
     });
   }
-        }
+                           }
