@@ -6,6 +6,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { execSync } from "child_process";
 
 // مرصد التدقيق السيادي
 import { auditExecution } from "../../core/execution_monitor.js";
@@ -19,6 +20,28 @@ import { wordCreate } from "../word.js";
 import { pptCreate } from "../ppt.js";
 import { imageConvert } from "../image.js";
 import libreConvert from "./engines/libre.js";
+
+/**
+ * 🔍 دالة استخراج الـ Metadata لأي ملف برمجياً (للاستخدام الداخلي في الكرنل)
+ */
+export function extractFileMetadata(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { error: "الملف غير موجود على السيرفر" };
+    }
+
+    const scriptPath = path.join(process.cwd(), "api/tools/external/engines/metadata_extractor.py");
+    const stdout = execSync(`python3 "${scriptPath}" "${filePath}"`, { 
+      encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024 // 10MB كحد أقصى للمخرجات
+    });
+
+    return JSON.parse(stdout);
+  } catch (err) {
+    console.error("❌ [Metadata Extraction Error]:", err.message);
+    return { error: "فشل استخراج بيانات الملف الهيكلية", details: err.message };
+  }
+}
 
 export default async function externalBridge(req, res) {
   try {
@@ -43,6 +66,18 @@ export default async function externalBridge(req, res) {
 
     const ext = path.extname(fileName).toLowerCase();
     let result = null;
+
+    /* ============================================================
+       🌐 إجراء استخراج الـ Metadata الشامل لكل أنواع الملفات
+       ============================================================ */
+    if (action === "extract_metadata") {
+      result = {
+        reply: "تم استخراج هيكلية البيانات بنجاح.",
+        data: extractFileMetadata(filePath)
+      };
+      auditExecution({ action: `metadata_${ext}`, target: req.file.originalname, isLocal: true });
+      return res.status(200).json(result);
+    }
 
     /* ============================================================
        🟥 التوجيه الذكي للمحركات حسب الامتداد
