@@ -62,6 +62,9 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
   }
 });
 
+// 📂 التصريح الرسمي لمسار التحميلات لضمان تنزيل الملفات بسلاسة
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Frontend Static Files
 app.use(express.static(__dirname));
 
