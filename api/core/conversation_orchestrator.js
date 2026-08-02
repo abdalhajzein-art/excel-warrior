@@ -1,6 +1,5 @@
 /**
- * api/core/conversation_orchestrator.js
- * النسخة السيادية النهائية – معالجة مباشرة عبر عقل جيميني بدون ملخصات جافة
+ * api/core/conversation_orchestrator.js – النسخة السيادية المصححة لتمرير الملفات
  */
 
 import memory from "./memory.js";
@@ -31,32 +30,23 @@ export default async function conversationOrchestrator(sessionId, message, extra
     const hasFile = !!fileData;
 
     if (hasFile) {
-      // حفظ الملف واسمه في ذاكرة الجلسة المؤقتة لتتذكره المحادثة في كل الأسئلة اللاحقة
       session.activeFile = { fileData, fileName };
     } else if (session.activeFile && !isResetFile) {
-      // استرجاع الملف المحفوظ مسبقاً طالما لم يطلب المستخدم تطهير السياق
       fileData = session.activeFile.fileData;
       fileName = session.activeFile.fileName;
     }
 
     const locationContext = extraCtx.locationContext || "";
 
-    // 🟩 إضافة رسالة المستخدم للذاكرة
     memory.appendChatHistory(sessionId, { role: "user", content: message });
 
-    // 🟩 استخراج الذاكرة المدمجة
     const fusedMemory = fusionMemory.apply(sessionId);
-
-    /* ============================================================
-       🟦 مسار المراسلة والمعالجة الذكية عبر الكرنل (جيميني) مباشرة
-       ============================================================ */
 
     let history = memory.getChatHistory(sessionId, 30);
 
-    // فلتر حماية ذكي يمنع ضغط النموذج بالرسائل الطويلة
     history = history.map(msg => ({
       ...msg,
-      content: msg.content.slice(0, 2000)
+      content: (msg.content || "").slice(0, 2000)
     }));
 
     const kernelContext = {
@@ -67,20 +57,34 @@ export default async function conversationOrchestrator(sessionId, message, extra
         lastTopics: fusedMemory.lastTopics || [],
         tags: fusedMemory.tags || []
       },
-      fileData,   // بيانات الملف (سواء جديدة مرفقة الآن أو مسترجعة من الذاكرة المؤقتة)
-      fileName    // اسم الملف
+      fileData,
+      fileName
     };
 
-    // إرسال الطلب لعقل الأثير (جيميني) ليحلل الملف ويصيغ الرد بذكائه الطبيعي
-    const reply = await kernel(sessionId, message, kernelContext);
+    // استدعاء الكرنل للحصول على النتيجة (نص أو كائن يحوي بيانات الملف)
+    const kernelOutput = await kernel(sessionId, message, kernelContext);
+
+    let reply = "تم إنجاز طلبك بنجاح!";
+    let fileBase64 = null;
+    let returnedFileName = null;
+
+    // 🛡️ معالجة ذكية ومضبوطة لمخرجات الكرنل
+    if (typeof kernelOutput === "string") {
+      reply = kernelOutput;
+    } else if (kernelOutput && typeof kernelOutput === "object") {
+      reply = kernelOutput.reply || kernelOutput.message || kernelOutput.response || reply;
+      fileBase64 = kernelOutput.fileBase64 || kernelOutput.file_base64 || null;
+      returnedFileName = kernelOutput.fileName || kernelOutput.file_name || null;
+    }
 
     memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
+    // 🚀 إعادة تمرير الملف واسمه بشكل صحيح للطبقات التالية بدلاً من الـ null!
     return {
       ok: true,
       reply,
-      fileBase64: null,
-      fileName: null
+      fileBase64,
+      fileName: returnedFileName
     };
 
   } catch (err) {
@@ -88,7 +92,9 @@ export default async function conversationOrchestrator(sessionId, message, extra
     return {
       ok: false,
       reply: `⚠️ صار خطأ بالنظام أثناء المعالجة: ${err.message}`,
-      error: err.message
+      error: err.message,
+      fileBase64: null,
+      fileName: null
     };
   }
 }
