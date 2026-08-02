@@ -12,22 +12,14 @@ import { execSync } from 'child_process';
 /* ============================================================
    🟩 طبقة التصحيح التلقائي للكود قبل التنفيذ (Auto‑Fix Layer)
    ============================================================ */
-function autoFixPythonCode(code, filePath) {
+function autoFixPythonCode(code) {
   return code
-    // إصلاح خطأ openpyxl الشائع
     .replace(/openpyxl\.workslet/gi, "openpyxl.worksheet")
-
-    // إصلاح استيراد DataValidation
     .replace(
       /from openpyxl\.worksheet\.datavalidation import DataValidation/gi,
       "from openpyxl.worksheet.datavalidation import DataValidation"
-    )
-
-    // إصلاح أي مسار اخترعه النموذج
-    .replace(/\/app\/uploads\/[^\s'"]+/gi, filePath)
-
-    // إصلاح قراءة pandas
-    .replace(/pd\.read_excel\((.*?)\)/gi, `pd.read_excel("${filePath}")`);
+    );
+    // تم إزالة الاستبدال العشوائي للمسار، لأن النموذج سيكتبه بدقة بناءً على التعليمات
 }
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
@@ -37,21 +29,19 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   let userMessage = message;
 
   /* ============================================================
-     🟩 تمرير المسار الحقيقي للملف داخل الرسالة
+     🟩 حقن التعليمات الحيوية والديناميكية (حسب حالة الملف)
      ============================================================ */
   let agenticInstructions = "";
   if (ctx.filePath) {
     agenticInstructions = `
-[توجيهات النظام الحيوية للتنفيذ]:
-- الملف موجود فعلياً على السيرفر في هذا المسار الحقيقي: ${ctx.filePath}
-- يجب استخدام هذا المسار حصرياً داخل كود البايثون.
-- يُمنع منعاً باتاً اختراع مسار جديد أو استخدام /app/uploads.
-- إذا كان طلب المستخدم يتضمن تعديل أو إضافة أو معالجة، يجب كتابة كود Python فقط.
-- يجب أن يقرأ الكود الملف من المسار أعلاه ويحفظ ملفاً جديداً ويطبع:
-  print("OUTPUT_FILE: " + new_file_name)
+[توجيهات النظام الحيوية للتنفيذ اللحظي]:
+- الملف النشط موجود فعلياً وجاهز للمعالجة في هذا المسار: \`${ctx.filePath}\`
+- استخدم هذا المسار الحرفي كقيمة للمتغير في كود البايثون، مثال: \`file_path = r"${ctx.filePath}"\`
+- إذا كان الطلب استعلاماً أو تحليلاً، استخدم \`print()\` لطباعة النتائج.
+- إذا كان الطلب تعديلاً أو إنشاءً، احفظ الملف الجديد في نفس المسار تقريباً واطبع: \`print("OUTPUT_FILE: " + <مسار_الملف_الجديد>)\`
 `;
     if (ctx.fileData && ctx.fileData.headers) {
-      agenticInstructions += `\n- أعمدة الملف الحالية هي: ${ctx.fileData.headers.join(" , ")}\n`;
+      agenticInstructions += `\n- للتذكير السريع، أعمدة الملف هي: [${ctx.fileData.headers.join(" , ")}]\n`;
     }
   }
 
@@ -70,23 +60,22 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     fileName: ctx.fileName || null
   });
 
-  // إزالة أي كود بايثون من الرسالة قبل عرضها للمستخدم
-  reply = reply.replace(/```python[\s\S]*?```/g, "");
+  const pythonCodeMatch = reply.match(/```python\n([\s\S]*?)```/);
+  
+  // إزالة الكود من الرد حتى لا يظهر للمستخدم ككتلة كود صلبة
+  reply = reply.replace(/```python[\s\S]*?```/g, "").trim();
 
   let returnedFileName = ctx.fileName;
+  let fileBase64 = null; // 🔥 هنا السر الذي كان مفقوداً!
 
   /* ============================================================
-     🟩 التقاط كود البايثون وتنفيذه محلياً
+     🟩 التقاط كود البايثون وتنفيذه محلياً بذكاء
      ============================================================ */
-  const pythonCodeMatch = rawMessage.match(/```python\n([\s\S]*?)```/);
-
   if (pythonCodeMatch && ctx.filePath) {
     let pythonCode = pythonCodeMatch[1].trim();
+    pythonCode = autoFixPythonCode(pythonCode);
 
-    // تطبيق طبقة التصحيح التلقائي
-    pythonCode = autoFixPythonCode(pythonCode, ctx.filePath);
-
-    console.log("🐍 [Kernel] تم اصطياد كود بايثون من جيميني. جاري التنفيذ المحلي...");
+    console.log("🐍 [Kernel] تم اصطياد نية برمجية من الأثير. جاري التنفيذ المحلي...");
 
     try {
       const scriptName = `agent_task_${Date.now()}.py`;
@@ -94,28 +83,45 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
       fs.writeFileSync(scriptPath, pythonCode);
 
+      // تنفيذ الكود
       const stdout = execSync(`python3 "${scriptPath}"`, { encoding: "utf8" });
       console.log("✅ [Kernel Local Execution Output]:", stdout);
 
+      // فحص النتيجة: هل هي تعديل ملف أم استعلام؟
       const outMatch = stdout.match(/OUTPUT_FILE:\s*(.+)/);
       if (outMatch) {
-        returnedFileName = outMatch[1].trim();
-        reply += `\n\n✅ تم تنفيذ طلبك وتعديل الملف بنجاح.`;
+        // حالة التعديل وتصدير الملف
+        const newFilePath = outMatch[1].trim();
+        if (fs.existsSync(newFilePath)) {
+           fileBase64 = fs.readFileSync(newFilePath).toString("base64");
+           returnedFileName = path.basename(newFilePath);
+           reply += `\n\n✅ تفضل يا هندسة، تم تنفيذ التعديلات وتجهيز الملف الجديد بنجاح.`;
+           // اختياري: يمكنك حذف الملف الجديد بعد قراءته لتنظيف السيرفر
+           // fs.unlinkSync(newFilePath);
+        } else {
+           reply += `\n\n⚠️ حاولت أعدل الملف، بس صار خطأ في مسار الحفظ النهائي.`;
+        }
       } else {
-        reply += `\n\n✅ تمت المعالجة البرمجية بنجاح.`;
+        // حالة الاستعلام والتحليل (رد نصي)
+        if (stdout.trim()) {
+           reply += `\n\n📊 **نتيجة التحليل البرمجي المباشر:**\n\`\`\`text\n${stdout.trim()}\n\`\`\``;
+        }
       }
 
       if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
     } catch (err) {
       console.error("❌ [Kernel Local Execution Error]:", err.message);
-      reply += `\n\n⚠️ حدث خطأ أثناء التنفيذ المحلي:\n${err.message}`;
+      reply += `\n\n⚠️ واجهت مشكلة أثناء التنفيذ البرمجي:\n${err.message}`;
     }
   }
 
   memory.appendSovereignHistory(sessionId, { role: "assistant", content: reply });
 
+  // 🔥 الآن الكرنل يُرجع الملف كـ Base64 الحقيقي للـ Orchestrator
   return {
-    reply: reply.trim(),
-    fileName: returnedFileName
+    reply: reply,
+    fileName: returnedFileName,
+    fileBase64: fileBase64 
   };
-      }
+}
+
