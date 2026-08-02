@@ -1,11 +1,14 @@
 /**
- * external_file_bridge.js – Sovereign Heavy Engine Bridge (Secured & Optimized Edition)
- * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات Python/Pandas و Openpyxl
+ * external_file_bridge.js – Sovereign Heavy Engine Bridge (Audited & Secured Edition)
+ * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات Python/Pandas ومحطات التدقيق المحلية
  */
 
 import fs from "fs";
 import path from "path";
 import os from "os";
+
+// مرصد التدقيق السيادي
+import { auditExecution } from "../../core/execution_monitor.js";
 
 // المحركات السيادية
 import excelEngine from "./engines/excel.js";
@@ -40,7 +43,7 @@ export default async function externalBridge(req, res) {
     let result = null;
 
     /* ============================================================
-       🟥 اختيار المحرك المناسب حسب الامتداد
+       🟥 اختيار المحرك المناسب حسب الامتداد وتفعيل التدقيق المحلي
        ============================================================ */
 
     // 📄 PDF
@@ -60,6 +63,7 @@ export default async function externalBridge(req, res) {
       } else if (action === "create") {
         result = await pdfCreate(req.body.text || "");
       }
+      auditExecution({ action: `pdf_${action}`, target: req.file.originalname, isLocal: true });
     }
 
     // 📝 DOCX
@@ -79,12 +83,19 @@ export default async function externalBridge(req, res) {
       } else if (action === "create") {
         result = await wordCreate(req.body.text || "");
       }
+      auditExecution({ action: `docx_${action}`, target: req.file.originalname, isLocal: true });
     }
 
     // 📊 Excel (محرك Pandas & Openpyxl السيادي المطلق)
     else if (ext === ".xlsx" || ext === ".xls") {
-      // توجيه الطلب مباشرة إلى المحرك الماستر مع الحفاظ على عزل البيانات الخام
       result = await excelEngine(filePath, action, req.body);
+      
+      // تسجيل التدقيق السيادي للمعالجة المحلية للإكسل (0 توكنز مضمونة)
+      auditExecution({
+        action: `excel_${action}`,
+        target: req.file.originalname,
+        isLocal: true
+      });
     }
 
     // 🖼 صور
@@ -100,6 +111,7 @@ export default async function externalBridge(req, res) {
       } else {
         result = { reply: "📷 صورة مرفوعة.", data: null };
       }
+      auditExecution({ action: `image_${action}`, target: req.file.originalname, isLocal: true });
     }
 
     // 🎞 PPT
@@ -112,6 +124,7 @@ export default async function externalBridge(req, res) {
           data: { preview: "Preview غير مفعّل بعد للـ PPT." }
         };
       }
+      auditExecution({ action: `ppt_${action}`, target: req.file.originalname, isLocal: true });
     }
 
     // 🟪 fallback عام
@@ -127,6 +140,7 @@ export default async function externalBridge(req, res) {
       } else {
         result = await pdfRead(filePath);
       }
+      auditExecution({ action: `fallback_${action}`, target: req.file.originalname, isLocal: true });
     }
 
     /* ============================================================
