@@ -14,7 +14,7 @@ if (!process.env.GEMINI_API_KEY) {
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // استخدام أحدث نموذج فائق السرعة
-const MODEL_NAME = "gemini-3.5-flash-lite";
+const MODEL_NAME = "gemini-3.6-flash";
 
 /* ============================================================
    🟩 الوضع القديم: رسالة واحدة (prompt)
