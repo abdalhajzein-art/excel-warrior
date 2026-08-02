@@ -1,5 +1,5 @@
 /**
- * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة بالكامل)
+ * api/chat.js – Sovereign Chat Layer (النسخة المعمارية الداعمة للتنفيذ البرمجي)
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -29,9 +29,27 @@ export default async function handler(req, res) {
       });
     }
 
+    // 🛡️ الحفظ الفيزيائي الفوري للملف المرفق لتوفير مسار حقيقي لمكتبات بايثون
+    let localFilePath = null;
+    if (fileData && fileName) {
+      try {
+        const buffer = Buffer.from(fileData, 'base64');
+        const uploadDir = path.join(__dirname, '../uploads');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        localFilePath = path.join(uploadDir, fileName);
+        fs.writeFileSync(localFilePath, buffer);
+      } catch (err) {
+        console.error("❌ خطأ في حفظ الملف الفيزيائي:", err);
+      }
+    }
+
+    // تمرير الطلب + مسار الملف المادي للـ Orchestrator
     const output = await conversationOrchestrator(sessionKey, userContent, {
       fileData,
       fileName,
+      filePath: localFilePath,
       history
     });
 
@@ -39,53 +57,18 @@ export default async function handler(req, res) {
     let fileBase64 = null;
     let returnedFileName = null;
 
-    // 🛡️ معالجة مرنة جداً لجميع أشكال المخرجات (نصوص، كائنات، أو JSON Strings)
-    let parsedOutput = output;
     if (typeof output === "string") {
-      try {
-        parsedOutput = JSON.parse(output);
-      } catch (e) {
-        // إذا لم يكن JSON صالحاً، فهو نص عادي
-        reply = output;
-      }
+      reply = output;
+    } else if (output && typeof output === "object") {
+      reply = output.reply || output.message || "تم إنجاز طلبك بنجاح!";
+      fileBase64 = output.fileBase64 || null;
+      returnedFileName = output.fileName || null;
     }
 
-    if (parsedOutput && typeof parsedOutput === "object") {
-      // دعم جميع المفاتيح المحتملة (reply, message, response)
-      reply = parsedOutput.reply || parsedOutput.message || parsedOutput.response || reply;
-      
-      // دعم جميع مفاتيح الملفات (fileBase64, file_base64)
-      fileBase64 = parsedOutput.fileBase64 || parsedOutput.file_base64 || null;
-      
-      // دعم جميع مفاتيح أسماء الملفات (fileName, file_name)
-      returnedFileName = parsedOutput.fileName || parsedOutput.file_name || null;
-    }
-
-    // 🛡️ التعديل المعماري السيادي: معالجة الملفات وتوليد رابط التحميل المباشر
+    // إذا تم إنتاج ملف جديد نتيجة المعالجة البرمجية
     if (returnedFileName) {
       const realFileUrl = `/uploads/${returnedFileName}`;
-
-      // إذا كان هناك Base64، نقوم بحفظه في مجلد الـ uploads للتأكد من توفره
-      if (fileBase64) {
-        try {
-          const buffer = Buffer.from(fileBase64, 'base64');
-          const uploadDir = path.join(__dirname, '../uploads');
-          if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-          }
-          fs.writeFileSync(path.join(uploadDir, returnedFileName), buffer);
-        } catch (err) {
-          console.error("❌ خطأ في حفظ الملف من الـ Base64:", err);
-        }
-      }
-
-      // تنظيف واستبدال أي روابط وهمية أو علامات هاش (#) بالرابط الحقيقي
-      reply = reply.replace(/sandbox:\/[^\s)]+/g, realFileUrl);
-      reply = reply.replace(/\(sandbox:[^)]+\)/g, `(${realFileUrl})`);
-      reply = reply.replace(/["']download_link["']\s*:\s*["']#["']/g, `"download_link": "${realFileUrl}"`);
-      reply = reply.replace(/href=["']#["']/g, `href="${realFileUrl}"`);
-
-      // إضافة رابط التحميل المباشر بوضوح إذا لم يكن مضمناً في النص
+      
       if (!reply.includes(realFileUrl)) {
         reply += `\n\n📥 **[تحميل الملف المحدث مباشرة](${realFileUrl})**`;
       }
@@ -104,3 +87,4 @@ export default async function handler(req, res) {
     });
   }
 }
+
