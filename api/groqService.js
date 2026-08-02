@@ -36,7 +36,7 @@ export default async function groqService(prompt) {
 }
 
 /* ============================================================
-   🟦 الوضع السيادي الجديد: مصفوفة رسائل كاملة + دعم fileData
+   🟦 الوضع السيادي الجديد: مصفوفة رسائل كاملة + دعم fileData (الحقن المباشر الآمن)
    ============================================================ */
 groqService.chat = async function(messages, extra = {}) {
   try {
@@ -58,41 +58,33 @@ groqService.chat = async function(messages, extra = {}) {
     // استخراج الرسالة الأخيرة للمستخدم لتكون هي الطلب الحالي
     const lastMessage = history.pop();
 
+    // ⭐ الحقن المباشر لبيانات الملف ضمن النص (أكثر استقراراً وأماناً مع جيميني وتوفيراً للتوكنز)
+    if (extra.fileData) {
+      const fileContextSnippet = `\n\n[بيانات الملف المرفق المستخرجة]:\n${JSON.stringify(extra.fileData, null, 2)}`;
+      if (lastMessage) {
+        lastMessage.parts[0].text += fileContextSnippet;
+      } else {
+        history.push({
+          role: "user",
+          parts: [{ text: fileContextSnippet }]
+        });
+      }
+    }
+
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
       ...(systemInstruction ? { systemInstruction: systemInstruction.trim() } : {})
     });
 
-    // ⭐⭐ أهم نقطة: تمرير fileData للنموذج عبر context
     const chat = model.startChat({
       history: history,
       generationConfig: {
         temperature: 0.4,
         maxOutputTokens: 1500,
-      },
-      tools: [
-        {
-          name: "file_context",
-          description: "بيانات ملف مرفق جاهزة للاستخدام.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              fileData: { type: "object" }
-            }
-          }
-        }
-      ]
+      }
     });
 
-    // إذا فيه بيانات ملف، نمرّرها للنموذج
-    if (extra.fileData) {
-      await chat.callTool({
-        toolName: "file_context",
-        input: { fileData: extra.fileData }
-      });
-    }
-
-    // إرسال الرسالة الأخيرة
+    // إرسال الرسالة الأخيرة مع سياق الملف المدمج
     const result = await chat.sendMessage(lastMessage ? lastMessage.parts[0].text : "");
     const response = await result.response;
     return response.text().trim();
@@ -102,3 +94,4 @@ groqService.chat = async function(messages, extra = {}) {
     throw error;
   }
 };
+
