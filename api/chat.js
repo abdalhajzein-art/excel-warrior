@@ -13,7 +13,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * ✅ دالة معالجة الملفات محلياً مع Fallback
+ * ✅ دالة معالجة الملفات محلياً مع Fallback (بدون await import)
  */
 function extractFileContent(filePath) {
   try {
@@ -27,9 +27,10 @@ function extractFileContent(filePath) {
       metadata: {}
     };
 
-    // ✅ المحاولة الأولى: استخدام office-oxide
+    // ✅ المحاولة الأولى: استخدام office-oxide (مع require)
     try {
-      const { Document } = await import('office-oxide');
+      // استيراد المكتبة باستخدام require (يعمل في أي دالة)
+      const { Document } = require('office-oxide');
       const doc = Document.open(filePath);
       
       const ext = path.extname(filePath).toLowerCase();
@@ -102,13 +103,11 @@ except Exception as e:
           }
         } catch (pyError) {
           console.error(`❌ [chat.js] فشل openpyxl: ${pyError.message}`);
-          // ✅ Fallback النهائي: قراءة كنص عادي
           const content = fs.readFileSync(filePath, 'utf-8');
           result.text = content.slice(0, 10000);
           result.metadata = { fallback: 'raw_text' };
         }
       } else {
-        // ✅ Fallback للملفات غير Excel: قراءة كنص عادي
         const content = fs.readFileSync(filePath, 'utf-8');
         result.text = content.slice(0, 10000);
         result.metadata = { fallback: 'raw_text' };
@@ -166,7 +165,7 @@ export default async function handler(req, res) {
 
         const fileExt = path.extname(fileName).toLowerCase();
         if (['.xlsx', '.xls', '.docx', '.doc', '.pdf', '.pptx', '.ppt'].includes(fileExt)) {
-          extractedContent = await extractFileContent(localFilePath);
+          extractedContent = extractFileContent(localFilePath);
           console.log(`📄 [chat.js] تم استخراج محتوى الملف: ${fileName}`);
         } else {
           const content = fs.readFileSync(localFilePath, 'utf-8');
@@ -219,4 +218,4 @@ export default async function handler(req, res) {
       reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
     });
   }
-                           }
+                 }
