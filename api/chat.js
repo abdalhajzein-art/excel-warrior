@@ -45,7 +45,6 @@ export default async function handler(req, res) {
         } else if (Buffer.isBuffer(fileData)) {
           fs.writeFileSync(localFilePath, fileData);
         } else if (typeof fileData === 'object' && fileData !== null) {
-          // تحويل الكائن أو المصفوفة القادمة من الواجهة إلى Buffer بطريقة سليمة وآمنة
           const values = Object.values(fileData);
           fs.writeFileSync(localFilePath, Buffer.from(values));
         }
@@ -76,9 +75,10 @@ export default async function handler(req, res) {
 
     // إذا تم إنتاج ملف جديد نتيجة المعالجة البرمجية
     if (returnedFileName) {
-      const realFileUrl = `/uploads/${returnedFileName}`;
+      // 🛡️ استخدام encodeURI لضمان عمل الرابط حتى لو كان اسم الملف بالعربي أو يحتوي مسافات
+      const realFileUrl = encodeURI(`/uploads/${returnedFileName}`);
       
-      if (!reply.includes(realFileUrl)) {
+      if (!reply.includes(returnedFileName)) {
         reply += `\n\n📥 **[تحميل الملف المحدث مباشرة](${realFileUrl})**`;
       }
     }
