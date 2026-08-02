@@ -11,13 +11,19 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const message = (rawMessage || "").trim();
   if (!message) return "ولا يهمّك… احكيلي أكتر.";
 
+  // ⭐ إذا فيه ملف، نضيف معلومة صغيرة للرسالة فقط
+  let userMessage = message;
+  if (ctx.fileData) {
+    userMessage += `\n\n(📎 تم استلام بيانات ملف — جاهز استخدمها إذا احتجت)`;
+  }
+
   // سياق الجلسة: آخر 40 رسالة للحفاظ على الاستمرارية السلوكية
   const history = Array.isArray(ctx.history) ? ctx.history.slice(-40) : [];
 
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     ...history.map(h => ({ role: h.role, content: h.content })),
-    { role: "user", content: message }
+    { role: "user", content: userMessage }
   ];
 
   const reply = await groqService.chat(messages);
