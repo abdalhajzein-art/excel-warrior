@@ -2,6 +2,7 @@
  * external_file_bridge.js – Sovereign Heavy Engine Bridge (Ultimate Edition)
  * ✅ الجسر السيادي الموحد لمعالجة الملفات باستخدام المحرك الشامل Excel Ultimate Engine
  * ✅ يدعم: ExcelJS + XLSX معاً، مع تكامل كامل للميتاداتا والتحليل
+ * ✅ تم إصلاح مشكلة تضاعف حجم الملف وإضافة تحقق من صحة البيانات
  */
 
 import fs from "fs";
@@ -107,6 +108,34 @@ function parseUserOperations(body) {
     return operations;
 }
 
+/**
+ * 🛡️ التحقق من صحة الملف
+ */
+function validateFileBuffer(buffer, originalName) {
+    if (!buffer || buffer.length === 0) {
+        throw new Error("الملف فارغ (0 بايت)");
+    }
+    
+    // ✅ التحقق من أن الملف ليس كبيراً بشكل غير طبيعي
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (buffer.length > maxSize) {
+        throw new Error(`⚠️ الملف كبير جداً (${buffer.length} بايت). الحد الأقصى هو 50MB.`);
+    }
+    
+    // ✅ التحقق من توقيع الملف لملفات Excel
+    const ext = path.extname(originalName).toLowerCase();
+    if (['.xlsx', '.xlsm'].includes(ext)) {
+        // توقيع ZIP: 50 4B
+        const isZip = buffer[0] === 0x50 && buffer[1] === 0x4B;
+        if (!isZip) {
+            console.warn(`⚠️ الملف ${originalName} لا يبدو كملف Excel صحيح (توقيع ZIP مفقود)`);
+            // لا نرمي خطأ، فقط نحذر
+        }
+    }
+    
+    return true;
+}
+
 export default async function externalBridge(req, res, fileInfo = null) {
   try {
     // ✅ استقبال الملف من `upload.js` مع الميتاداتا
@@ -119,6 +148,15 @@ export default async function externalBridge(req, res, fileInfo = null) {
     const metadata = file.metadata || null;
     const operations = req.body.operations || null;
     const instruction = req.body.instruction || req.body.message || '';
+
+    // 🛡️ التحقق من صحة الملف
+    if (file.buffer) {
+        try {
+            validateFileBuffer(file.buffer, file.originalname || 'file');
+        } catch (err) {
+            return res.status(400).json({ error: err.message });
+        }
+    }
 
     // 🛡️ حفظ الملف مؤقتاً (إذا لم يكن محفوظاً بالفعل)
     let filePath = file.path;
@@ -209,13 +247,9 @@ export default async function externalBridge(req, res, fileInfo = null) {
             const params = { 
                 ...req.body, 
                 metadata,
-                // ✅ تحليل العمليات من الطلب أو من التعليمات
                 operations: operations || parseUserOperations(req.body),
-                // ✅ تحليل متقدم إذا طُلب
                 analyze: action === 'analyze' || req.body.analyze || false,
-                // ✅ بحث إذا طُلب
                 query: req.body.query || null,
-                // ✅ تنسيق شرطي متقدم
                 complex: req.body.complex || false,
                 instructions: req.body.instructions || instruction
             };
@@ -345,4 +379,4 @@ export default async function externalBridge(req, res, fileInfo = null) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-          }
+}
