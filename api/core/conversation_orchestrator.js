@@ -30,14 +30,17 @@ export default async function conversationOrchestrator(sessionId, message, extra
     let fileData = extraCtx.fileData || null;
     let fileName = extraCtx.fileName || null;
     let filePath = extraCtx.filePath || null;
+    const metadata = extraCtx.metadata || null; // ✅ استقبال الميتاداتا
     const hasFile = !!fileData || !!filePath;
 
     if (hasFile) {
-      session.activeFile = { fileData, fileName, filePath };
+      session.activeFile = { fileData, fileName, filePath, metadata };
     } else if (session.activeFile && !isResetFile) {
       fileData = session.activeFile.fileData;
       fileName = session.activeFile.fileName;
       filePath = session.activeFile.filePath;
+      // ✅ استرجاع الميتاداتا من الجلسة إذا كانت موجودة
+      const sessionMetadata = session.activeFile.metadata || null;
     }
 
     // 3. تسجيل رسالة المستخدم في التاريخ
@@ -65,7 +68,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
       fileData,
       fileName,
       filePath, // 🔥 هذا هو الأهم: تمرير المسار الفيزيائي ليتعامل معه الكرنل برمجياً بحرية
-      activeFile: session.activeFile || null
+      activeFile: session.activeFile || null,
+      metadata // ✅ تمرير الميتاداتا إلى kernel
     };
 
     // 5. تسليم القيادة المطلقة للـ Kernel (هنا يتم اتخاذ القرار وتوليد/تنفيذ البايثون ديناميكياً)
@@ -105,4 +109,3 @@ export default async function conversationOrchestrator(sessionId, message, extra
     };
   }
 }
-
