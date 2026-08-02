@@ -1,5 +1,5 @@
 /**
- * api/chat.js – Sovereign Chat Layer (النسخة المعمارية الداعمة للتنفيذ البرمجي)
+ * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة بالكامل لتناول الملفات)
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -29,17 +29,26 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🛡️ الحفظ الفيزيائي الفوري للملف المرفق لتوفير مسار حقيقي لمكتبات بايثون
+    // 🛡️ الحفظ الفيزيائي الفوري الآمن والمحصن للملف المرفق
     let localFilePath = null;
     if (fileData && fileName) {
       try {
-        const buffer = Buffer.from(fileData, 'base64');
         const uploadDir = path.join(__dirname, '../uploads');
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
         localFilePath = path.join(uploadDir, fileName);
-        fs.writeFileSync(localFilePath, buffer);
+
+        if (typeof fileData === 'string') {
+          const cleanBase64 = fileData.replace(/^data:.*;base64,/, '');
+          fs.writeFileSync(localFilePath, Buffer.from(cleanBase64, 'base64'));
+        } else if (Buffer.isBuffer(fileData)) {
+          fs.writeFileSync(localFilePath, fileData);
+        } else if (typeof fileData === 'object' && fileData !== null) {
+          // تحويل الكائن أو المصفوفة القادمة من الواجهة إلى Buffer بطريقة سليمة وآمنة
+          const values = Object.values(fileData);
+          fs.writeFileSync(localFilePath, Buffer.from(values));
+        }
       } catch (err) {
         console.error("❌ خطأ في حفظ الملف الفيزيائي:", err);
       }
@@ -87,4 +96,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
