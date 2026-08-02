@@ -14,6 +14,13 @@ export default async function uploadHandler(req, res) {
       });
     }
 
+    // 🟨 معالجة الاسم الأصلي العربي إن وُجد (تم إرساله من الـ Frontend)
+    if (req.body.originalName) {
+        // فك تشفير الاسم في حال وصوله بتشفير URI لحمايته
+        req.file.originalname = decodeURIComponent(req.body.originalName); 
+        console.log(`✅ [الأثير Intake] تم استلام الملف. الاسم الآمن: ${req.file.filename || 'تم إنشاؤه'}, الاسم الأصلي: ${req.file.originalname}`);
+    }
+
     // 🟦 تمرير الطلب للجسر السيادي مباشرة
     return await externalBridge(req, res);
 
