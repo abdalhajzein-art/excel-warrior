@@ -1,20 +1,19 @@
 /**
  * api/core/conversation_orchestrator.js
- * النسخة السيادية التفيذية – معالجة ذكية + تنفيذ برمجي مباشر عبر بايثون عند طلب التعديل
+ * النسخة السيادية النهائية - الموجه الذكي المعتمد على JSON الصادر من الـ System
  */
 
 import memory from "./memory.js";
 import fusionMemory from "./fusion_memory.js";
 import kernel from "./kernel.js";
-import pandasEngine from "../tools/external/engines/pandas.js"; // 🔥 ربط محرك بايثون التنفيذي
+import pandasEngine from "../tools/external/engines/pandas.js"; // 🔥 محرك بايثون التنفيذي
 
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
   try {
     console.log(`📥 [Orchestrator] جلسة ${sessionId}: "${message}"`);
-
     const session = memory.getSession(sessionId);
 
-    // رصد نية المستخدم لإلغاء أو تطهير الملف الحالي والبدء بصفحة جديدة
+    // 1. رصد نية تطهير الملف
     const lowerMsg = message.toLowerCase();
     const isResetFile = lowerMsg.includes("انسى الملف") || 
                         lowerMsg.includes("اغلق الملف") || 
@@ -23,20 +22,19 @@ export default async function conversationOrchestrator(sessionId, message, extra
                         lowerMsg.includes("سكر الملف");
 
     if (isResetFile && session.activeFile) {
-      console.log(`🗑️ [Orchestrator] تم مسح سياق الملف النشط للجلسة.`);
+      console.log(`🗑️ [Orchestrator] تم مسح سياق الملف النشط.`);
       session.activeFile = null;
     }
 
+    // إدارة السياق والملف النشط
     let fileData = extraCtx.fileData || null;
     let fileName = extraCtx.fileName || null;
     let filePath = extraCtx.filePath || extraCtx.file?.path || null;
     const hasFile = !!fileData;
 
     if (hasFile) {
-      // حفظ الملف ومساره في ذاكرة الجلسة المؤقتة
       session.activeFile = { fileData, fileName, filePath };
     } else if (session.activeFile && !isResetFile) {
-      // استرجاع الملف المحفوظ مسبقاً
       fileData = session.activeFile.fileData;
       fileName = session.activeFile.fileName;
       filePath = session.activeFile.filePath;
@@ -44,74 +42,67 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
     const locationContext = extraCtx.locationContext || "";
 
-    // 🟩 إضافة رسالة المستخدم للذاكرة
+    // 2. تسجيل المحادثة واستخراج الذاكرة
     memory.appendChatHistory(sessionId, { role: "user", content: message });
-
-    // 🟩 استخراج الذاكرة المدمجة
     const fusedMemory = fusionMemory.apply(sessionId);
+    let history = memory.getChatHistory(sessionId, 20);
 
-    /* ============================================================
-       ⚡ فحص نية التعديل التنفيذي (Execution Interception)
-       إذا كان هناك ملف نشط والمستخدم يطلب تعديلاً أو إضافة على الإكسل
-       ============================================================ */
-    const isModificationRequest = session.activeFile && (
-      lowerMsg.includes("أضف") || 
-      lowerMsg.includes("ضيف") || 
-      lowerMsg.includes("عدل") || 
-      lowerMsg.includes("عمود") || 
-      lowerMsg.includes("قائمة") ||
-      lowerMsg.includes("xlsx") ||
-      lowerMsg.includes("حط") ||
-      lowerMsg.includes("تنسيق")
-    );
+    // تجهيز سياق الكرنل
+    const kernelContext = {
+      history,
+      locationContext,
+      fusedMemory: {
+        userProfile: fusedMemory.userProfile || null,
+        lastTopics: fusedMemory.lastTopics || [],
+        tags: fusedMemory.tags || []
+      },
+      fileData,
+      fileName,
+      filePath: filePath ? true : false
+    };
 
-    let reply = "";
+    // 3. استدعاء الكرنل (الذي يستمد توجيهاته حصراً من system.js)
+    const rawKernelResponse = await kernel(sessionId, message, kernelContext);
+
+    // 4. محاولة تحليل الرد (هل هو JSON تنفيذي أم دردشة نصية عادية؟)
+    let decision;
+    try {
+        // تنظيف الرد من أي زوائد إذا وجدت للتأكد من سلامة الـ JSON
+        const cleanJsonStr = rawKernelResponse.trim().replace(/^```json/, '').replace(/```$/, '').trim();
+        decision = JSON.parse(cleanJsonStr);
+    } catch (e) {
+        // إذا لم يكن JSON، نعتبره رداً نصياً عادياً (محادثة طبيعية)
+        decision = {
+            intent: "chat",
+            reply: rawKernelResponse,
+            python_code: ""
+        };
+    }
+
+    let reply = decision.reply || rawKernelResponse;
     let generatedFileBase64 = null;
     let generatedFileName = null;
 
-    if (isModificationRequest && filePath) {
-      console.log(`⚙️ [Orchestrator] رصد طلب تعديل إكسل تنفيذي على الملف: ${fileName}`);
+    /* ============================================================
+       ⚡ التنفيذ البرمجي الأعمى (عندما يقرر العقل تعديل الملف)
+       ============================================================ */
+    if (decision.intent === "modify_file" && filePath && decision.python_code) {
+      console.log(`⚙️ [Orchestrator] الأثير قرر تعديل الملف برمجياً: ${fileName}`);
       
-      // استدعاء محرك بايثون لمعالجة الملف وهندسته برمجياً
-      const toolResult = await pandasEngine(filePath, "openpyxl_manipulate", { 
-        prompt: message,
+      const toolResult = await pandasEngine(filePath, "modify", { 
+        custom_python_code: decision.python_code,
         originalName: fileName 
       });
 
       if (toolResult.ok) {
-        reply = toolResult.reply || "🎨 تم تنفيذ التعديل وهندسة الملف بنجاح عبر محرك بايثون السيادي.";
         generatedFileBase64 = toolResult.fileBase64;
-        generatedFileName = toolResult.fileName || `modified_${fileName || 'file.xlsx'}`;
+        generatedFileName = toolResult.fileName || `alatheer_modified_${fileName || 'file.xlsx'}`;
       } else {
-        reply = `⚠️ فشل تنفيذ التعديل البرمجي على الملف: ${toolResult.error || toolResult.reply}`;
+        reply = `⚠️ واجهت مشكلة بتنفيذ الكود البرمجي: ${toolResult.error || toolResult.reply}`;
       }
-
-    } else {
-      /* ============================================================
-         🟦 مسار المحادثة والتحليل الطبيعي عبر الكرنل (جيميني)
-         ============================================================ */
-      let history = memory.getChatHistory(sessionId, 30);
-
-      history = history.map(msg => ({
-        ...msg,
-        content: msg.content.slice(0, 2000)
-      }));
-
-      const kernelContext = {
-        history,
-        locationContext,
-        fusedMemory: {
-          userProfile: fusedMemory.userProfile || null,
-          lastTopics: fusedMemory.lastTopics || [],
-          tags: fusedMemory.tags || []
-        },
-        fileData,
-        fileName
-      };
-
-      reply = await kernel(sessionId, message, kernelContext);
     }
 
+    // 5. حفظ الرد النهائي بالذاكرة وإرجاعه للواجهة
     memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
     return {
@@ -121,8 +112,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
       fileName: generatedFileName
     };
 
-  } catch (err) {
-    console.err("🔥 [Orchestrator Error]:", err);
+} catch (err) {
+    console.error("🔥 [Orchestrator Error]:", err);
     return {
       ok: false,
       reply: `⚠️ صار خطأ بالنظام أثناء المعالجة: ${err.message}`,
@@ -130,3 +121,4 @@ export default async function conversationOrchestrator(sessionId, message, extra
     };
   }
 }
+
