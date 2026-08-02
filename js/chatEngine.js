@@ -1,4 +1,4 @@
-/*
+/**
  * js/chatEngine.js – النسخة السيادية النهائية (محدثة لدعم حقن معاينة الملفات)
  */
 
@@ -95,7 +95,7 @@ export async function handleSendMessage(renderCallbacks) {
         try {
             const formData = new FormData();
             formData.append("file", currentFileToProcess);
-            formData.append("action", "preview");   // ← مهم جداً للجسر
+            formData.append("action", "preview");
 
             const uploadResponse = await fetch("/api/upload", {
                 method: "POST",
@@ -195,18 +195,16 @@ export async function handleSendMessage(renderCallbacks) {
         });
 
         /* ============================================================
-           🛡️ الحقن السيادي للملف: دمج محتوى الملف داخل رسالة المستخدم
+           🛡️ الحقن السيادي للملف: إرسال البيانات الكاملة للأثير
            ============================================================ */
         let finalMessageForAI = displayMessage || "ممكن تعطيني ملخص عن محتوى الملف؟";
         
-        if (processedFileResult) {
-            if (processedFileResult.data && processedFileResult.data.preview) {
-                finalMessageForAI += `\n\n[محتوى الملف المرفق "${fileDisplayName}":\n${JSON.stringify(processedFileResult.data.preview, null, 2)}\n]`;
-            } else if (processedFileResult.error) {
-                finalMessageForAI += `\n\n[النظام: حاول المستخدم إرفاق ملف ولكن حدث خطأ: ${processedFileResult.error}]`;
-            } else if (processedFileResult.reply) {
-                finalMessageForAI += `\n\n[النظام: رسالة من جسر الملفات: ${processedFileResult.reply}]`;
-            }
+        if (processedFileResult?.data) {
+            finalMessageForAI += `\n\n[محتوى الملف المرفق "${fileDisplayName}":\n${JSON.stringify(processedFileResult.data, null, 2)}\n]`;
+        } else if (processedFileResult?.error) {
+            finalMessageForAI += `\n\n[النظام: حاول المستخدم إرفاق ملف ولكن حدث خطأ: ${processedFileResult.error}]`;
+        } else if (processedFileResult?.reply) {
+            finalMessageForAI += `\n\n[النظام: رسالة من جسر الملفات: ${processedFileResult.reply}]`;
         }
 
         const requestPayload = { 
@@ -377,4 +375,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     }
 
     chatArea.scrollTop = chatArea.scrollHeight;
-}
+        }
