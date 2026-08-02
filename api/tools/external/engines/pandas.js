@@ -1,64 +1,79 @@
 /**
  * engines/pandas.js – Sovereign Excel Engine (Openpyxl + Metadata + CSV + RAW Fallback Edition)
+ * ✅ تم تحديثها لتكون مجرد واجهة تمرير (passthrough) لـ office-oxide
+ * يمكن حذف هذا الملف لاحقاً بعد التأكد من أن excel.js يغطي كل الاحتياجات
  */
 
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 
+/**
+ * ✅ هذا الملف أصبح مجرد واجهة توافقية (مؤقتة)
+ * سيتم استبداله بالكامل بـ office-oxide في الإصدارات القادمة
+ * حالياً يتم استخدامه فقط للتوافق مع الكود القديم
+ */
 export default async function pandasEngine(filePath, action, params = {}) {
+  console.log(`⚠️ [pandasEngine] هذا الملف قديم ويستخدم للتوافق فقط. سيتم استبداله بـ office-oxide.`);
+  
+  // ✅ محاولة قراءة الملف باستخدام office-oxide إذا كانت متوفرة
   try {
-    // ✅ إذا كانت الميتاداتا موجودة، نقرأها مباشرة (تجاوز openpyxl)
-    if (params.metadata && params.metadata.sheet_name) {
-      console.log(`📋 [pandasEngine] تم استخدام الميتاداتا المرفقة: ${params.metadata.sheet_name}`);
-      return {
-        ok: true,
-        reply: "📊 تم قراءة الميتاداتا بنجاح (تجاوز openpyxl).",
-        data: { metadata: params.metadata },
-        fileBase64: null,
-        fileName: null,
-        isMetadata: true
-      };
-    }
-
-    // ✅ التحقق من وجود الملف
+    const { Document } = await import('office-oxide');
+    
     if (!filePath || !fs.existsSync(filePath)) {
       return normalizedError("الملف غير موجود: " + filePath);
     }
 
-    // ✅ التحقق من أن الملف هو Excel حقيقي (ZIP-based)
-    const isRealExcel = await isExcelFile(filePath);
+    // ✅ استخدام office-oxide لقراءة الملف
+    const doc = Document.open(filePath);
+    const content = doc.plainText();
+    const markdown = doc.toMarkdown();
+    doc.close();
+
+    return {
+      ok: true,
+      reply: "📊 تم قراءة الملف بنجاح باستخدام office-oxide.",
+      data: { 
+        text: content,
+        markdown: markdown,
+        metadata: {
+          sheets: doc.sheetCount ? doc.sheetCount() : 1,
+          rows: doc.rowCount ? doc.rowCount() : 0,
+          columns: doc.columnCount ? doc.columnCount() : 0
+        }
+      },
+      fileBase64: null,
+      fileName: null
+    };
+
+  } catch (officeError) {
+    console.warn(`⚠️ [pandasEngine] office-oxide غير متوفرة، استخدام fallback: ${officeError.message}`);
     
-    // ✅ إذا لم يكن Excel حقيقياً، حاول قراءته كنصي أو CSV
-    if (!isRealExcel) {
-      console.log(`📄 [pandasEngine] الملف ليس Excel حقيقياً، محاولة قراءته كنصي/CSV.`);
-      const textResult = await tryReadAsTextOrCsv(filePath);
-      
-      // ✅ إذا فشل CSV والنصي، نرجع النص الخام كحل أخير
-      if (textResult.ok === false) {
-        console.log(`📄 [pandasEngine] فشل قراءة الملف كنصي/CSV، محاولة قراءته كنص خام.`);
-        return await tryReadAsRawText(filePath);
+    // ✅ Fallback إلى الطريقة القديمة (openpyxl)
+    try {
+      if (!filePath || !fs.existsSync(filePath)) {
+        return normalizedError("الملف غير موجود: " + filePath);
       }
-      
-      return textResult;
-    }
 
-    switch (action) {
-      case "preview":
-      case "read":
-      case "excel_preview":
+      const isRealExcel = await isExcelFile(filePath);
+      if (!isRealExcel) {
+        return await tryReadAsTextOrCsv(filePath);
+      }
+
+      if (action === "preview" || action === "read" || action === "excel_preview") {
         return await runOpenpyxlPreview(filePath);
+      }
 
-      case "modify":
-      case "excel_modify":
-      case "openpyxl_manipulate":
+      if (action === "modify" || action === "excel_modify") {
         return await runPythonDynamicExecutor(filePath, params);
+      }
 
-      default:
-        return await runOpenpyxlPreview(filePath);
+      return await runOpenpyxlPreview(filePath);
+
+    } catch (fallbackError) {
+      console.error(`❌ [pandasEngine] فشل الـ fallback: ${fallbackError.message}`);
+      return normalizedError(`فشل قراءة الملف: ${fallbackError.message}`);
     }
-  } catch (err) {
-    return normalizedError("خطأ في محرك Excel السيادي.", err);
   }
 }
 
@@ -76,7 +91,7 @@ async function isExcelFile(filePath) {
 }
 
 /**
- * 📄 محاولة قراءة الملف كنصي أو CSV (إذا فشل openpyxl)
+ * 📄 محاولة قراءة الملف كنصي أو CSV
  */
 async function tryReadAsTextOrCsv(filePath) {
   try {
@@ -96,7 +111,7 @@ async function tryReadAsTextOrCsv(filePath) {
         
         return {
           ok: true,
-          reply: "📊 تم قراءة الملف كنصي/CSV (تم تجاوز openpyxl).",
+          reply: "📊 تم قراءة الملف كنصي/CSV.",
           data: {
             headers: headers,
             rows: rows.slice(0, 100),
@@ -126,36 +141,8 @@ async function tryReadAsTextOrCsv(filePath) {
 }
 
 /**
- * 📄 ✅ الحل الأخير: قراءة الملف كنص خام (RAW) بدون أي معالجة
+ * 🟦 قراءة Excel عبر openpyxl (Fallback)
  */
-async function tryReadAsRawText(filePath) {
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    
-    if (!content || content.trim().length === 0) {
-      return normalizedError("⚠️ الملف فارغ أو لا يحتوي على بيانات.");
-    }
-
-    return {
-      ok: true,
-      reply: "📄 تم قراءة الملف كنص خام (RAW).",
-      data: {
-        raw: content.slice(0, 10000),
-        totalLength: content.length,
-        note: "تم قراءة الملف كنص خام لأن openpyxl و CSV فشلا في قراءته."
-      },
-      fileBase64: null,
-      fileName: null
-    };
-
-  } catch (err) {
-    return normalizedError("فشل قراءة الملف كنص خام: " + err.message);
-  }
-}
-
-/* ============================================================
-   🟦 قراءة Excel عبر openpyxl فقط
-   ============================================================ */
 function runOpenpyxlPreview(filePath) {
   try {
     if (!fs.existsSync(filePath)) {
@@ -205,9 +192,9 @@ print(json.dumps({"ok": True, "reply": "📊 تمت قراءة الملف بنج
   }
 }
 
-/* ============================================================
-   ⚡ التنفيذ الديناميكي عبر openpyxl فقط
-   ============================================================ */
+/**
+ * ⚡ التنفيذ الديناميكي عبر openpyxl (Fallback)
+ */
 function runPythonDynamicExecutor(filePath, params = {}) {
   try {
     if (!fs.existsSync(filePath)) {
@@ -274,4 +261,4 @@ function normalizedFile(reply, filePath, fileName, base64) {
 
 function normalizedError(reply, err = null) {
   return { ok: false, reply, error: err ? err.message : reply };
-      }
+    }
