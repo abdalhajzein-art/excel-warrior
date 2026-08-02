@@ -243,4 +243,4 @@ function normalizedFile(reply, filePath, fileName, base64) {
 
 function normalizedError(reply, err = null) {
   return { ok: false, reply, error: err ? err.message : reply };
-  }
+      }
