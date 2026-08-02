@@ -1,6 +1,6 @@
 /**
- * external_file_bridge.js – Sovereign Heavy Engine Bridge (Pandas Integrated Edition)
- * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات Python/Pandas و LibreOffice
+ * external_file_bridge.js – Sovereign Heavy Engine Bridge (Secured & Optimized Edition)
+ * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات Python/Pandas و Openpyxl
  */
 
 import fs from "fs";
@@ -8,7 +8,7 @@ import path from "path";
 import os from "os";
 
 // المحركات السيادية
-import excelEngine, { excelRead, excelModify, excelCreate } from "./engines/excel.js";
+import excelEngine from "./engines/excel.js";
 import { pdfRead, pdfConvert, pdfCreate } from "../pdf.js";
 import { wordCreate } from "../word.js";
 import { pptCreate } from "../ppt.js";
@@ -81,25 +81,10 @@ export default async function externalBridge(req, res) {
       }
     }
 
-    // 📊 Excel (محرك Pandas السيادي)
+    // 📊 Excel (محرك Pandas & Openpyxl السيادي المطلق)
     else if (ext === ".xlsx" || ext === ".xls") {
-      if (action === "preview" || action === "read") {
-        const full = await excelEngine(filePath, "read");
-
-        // ⭐ النسخة المصحّحة: إرجاع البيانات كاملة وليس preview فقط
-        result = {
-          reply: full.reply || "📊 تم قراءة ملف Excel بنجاح عبر محرك Pandas السيادي.",
-          data: full.data
-        };
-      } else if (action === "modify") {
-        result = await excelEngine(filePath, "modify", req.body);
-      } else if (action === "convert") {
-        result = await excelEngine(filePath, "convert", req.body);
-      } else if (action === "create") {
-        result = await excelCreate(req.body.text || "");
-      } else {
-        result = await excelEngine(filePath, action, req.body);
-      }
+      // توجيه الطلب مباشرة إلى المحرك الماستر مع الحفاظ على عزل البيانات الخام
+      result = await excelEngine(filePath, action, req.body);
     }
 
     // 🖼 صور
@@ -156,7 +141,7 @@ export default async function externalBridge(req, res) {
     }
 
     /* ============================================================
-       🟩 إرجاع البيانات النصية أو الهيكلية
+       🟩 إرجاع البيانات النصية أو الهيكلية الآمنة
        ============================================================ */
     return res.status(200).json({
       reply: result.reply || "تمت معالجة الملف بنجاح.",
@@ -169,4 +154,5 @@ export default async function externalBridge(req, res) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-                                  }
+}
+
