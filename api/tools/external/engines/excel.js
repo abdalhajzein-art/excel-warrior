@@ -6,6 +6,7 @@
 import path from "path";
 import fs from "fs";
 import os from "os";
+import { execSync } from "child_process"; // ✅ استيراد مباشر
 import { Document } from "office-oxide";
 
 /* ============================================================
@@ -16,13 +17,11 @@ export async function excelRead(filePath, params = {}) {
     return normalizedError("الملف غير موجود أو المسار غير صحيح.");
   }
 
-  // ✅ إذا كانت الميتاداتا موجودة، استخدمها مباشرة
   const metadata = params.metadata || null;
   if (metadata && metadata.sheet_name) {
     return normalizedReply("تم قراءة الميتاداتا بنجاح.", { metadata });
   }
 
-  // ✅ استخدام office-oxide لقراءة الملف
   try {
     const doc = Document.open(filePath);
     const result = {
@@ -49,27 +48,19 @@ export async function excelModify(filePath, params = {}) {
   }
 
   try {
-    // ✅ قراءة الملف باستخدام office-oxide
     const doc = Document.open(filePath);
     const content = doc.plainText();
     doc.close();
 
-    // ✅ تطبيق التعديلات (محاكاة - يمكن توسيعها لاحقاً)
     const modifications = params.modifications || [];
     let modifiedContent = content;
     
-    // مثال: إضافة نص أو تعديل
     if (params.instruction) {
       modifiedContent = `[تم التعديل بناءً على طلب: ${params.instruction}]\n\n${content}`;
     }
 
-    // ✅ إنشاء ملف جديد معدل
     const outPath = path.join(os.tmpdir(), `modified_${Date.now()}.xlsx`);
     const newDoc = Document.create('xlsx');
-    // إضافة المحتوى المعدل (هنا يمكن تحسين المنطق)
-    // حالياً نقوم بإنشاء ملف بسيط
-    
-    // حفظ الملف
     newDoc.save(outPath);
     newDoc.close();
 
@@ -86,7 +77,6 @@ export async function excelCreate(params = {}) {
     const outPath = path.join(os.tmpdir(), `created_${Date.now()}.xlsx`);
     const doc = Document.create('xlsx');
     
-    // إضافة بيانات افتراضية أو من params
     if (params.data) {
       // يمكن إضافة البيانات هنا
     }
@@ -134,7 +124,6 @@ export default async function excelEngine(filePath, action, params = {}) {
 function convertExcelToPdf(filePath) {
   try {
     const out = path.join(path.dirname(filePath), `converted_${Date.now()}.pdf`);
-    const { execSync } = await import('child_process');
     execSync(`libreoffice --headless --convert-to pdf "${filePath}" --outdir "${path.dirname(filePath)}"`);
     
     const defaultPdfName = path.basename(filePath, path.extname(filePath)) + ".pdf";
