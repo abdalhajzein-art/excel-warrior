@@ -1,5 +1,5 @@
 /**
- * engines/pandas.js – Sovereign Excel Engine (Openpyxl + Metadata Fallback Edition)
+ * engines/pandas.js – Sovereign Excel Engine (Openpyxl + Metadata + CSV Fallback Edition)
  */
 
 import fs from "fs";
@@ -17,7 +17,7 @@ export default async function pandasEngine(filePath, action, params = {}) {
         data: { metadata: params.metadata },
         fileBase64: null,
         fileName: null,
-        isMetadata: true // ✅ إشارة بأنها ميتاداتا
+        isMetadata: true
       };
     }
 
@@ -28,12 +28,11 @@ export default async function pandasEngine(filePath, action, params = {}) {
 
     // ✅ التحقق من أن الملف هو Excel حقيقي (ZIP-based)
     const isRealExcel = await isExcelFile(filePath);
+    
+    // ✅ إذا لم يكن Excel حقيقياً، حاول قراءته كنصي أو CSV
     if (!isRealExcel) {
-      // ❌ إذا كان الملف ليس Excel حقيقياً، نرجع خطأ واضحاً
-      return normalizedError(
-        "⚠️ الملف المرفق ليس بصيغة Excel حقيقية (ZIP-based). " +
-        "يرجى رفع ملف Excel صحيح، أو استخدام وصف الملف (metadata) بدلاً من الملف الفعلي."
-      );
+      console.log(`📄 [pandasEngine] الملف ليس Excel حقيقياً، محاولة قراءته كنصي/CSV.`);
+      return await tryReadAsTextOrCsv(filePath);
     }
 
     switch (action) {
@@ -61,11 +60,65 @@ export default async function pandasEngine(filePath, action, params = {}) {
 async function isExcelFile(filePath) {
   try {
     const buffer = fs.readFileSync(filePath);
-    // ملفات Excel الحقيقية تبدأ بـ "PK" (ZIP signature)
     const header = buffer.slice(0, 4).toString();
     return header === "PK" || header === "PK\x03\x04";
   } catch {
     return false;
+  }
+}
+
+/**
+ * 📄 محاولة قراءة الملف كنصي أو CSV (إذا فشل openpyxl)
+ */
+async function tryReadAsTextOrCsv(filePath) {
+  try {
+    // ✅ قراءة الملف كنص
+    let content = fs.readFileSync(filePath, 'utf-8');
+    
+    // ✅ إذا كان الملف فارغاً
+    if (!content || content.trim().length === 0) {
+      return normalizedError("⚠️ الملف فارغ أو لا يحتوي على بيانات.");
+    }
+
+    // ✅ محاولة تحليل CSV (إذا كان مفصولاً بفواصل أو علامات تبويب)
+    const lines = content.split('\n').filter(line => line.trim());
+    if (lines.length > 1) {
+      const firstLine = lines[0];
+      const hasDelimiter = /[,\t;|]/.test(firstLine);
+      if (hasDelimiter) {
+        // ✅ استخراج العناوين والصفوف
+        const headers = firstLine.split(/[,\t;|]/).map(h => h.trim());
+        const rows = lines.slice(1).map(line => line.split(/[,\t;|]/).map(cell => cell.trim()));
+        
+        return {
+          ok: true,
+          reply: "📊 تم قراءة الملف كنصي/CSV (تم تجاوز openpyxl).",
+          data: {
+            headers: headers,
+            rows: rows.slice(0, 100), // عرض أول 100 صف فقط
+            totalRows: rows.length,
+            totalColumns: headers.length
+          },
+          fileBase64: null,
+          fileName: null
+        };
+      }
+    }
+
+    // ✅ إذا لم يكن CSV، نعرض النص كاملاً
+    return {
+      ok: true,
+      reply: "📄 تم قراءة الملف كنصي.",
+      data: {
+        text: content.slice(0, 5000), // عرض أول 5000 حرف
+        totalLength: content.length
+      },
+      fileBase64: null,
+      fileName: null
+    };
+
+  } catch (err) {
+    return normalizedError("فشل قراءة الملف كنصي: " + err.message);
   }
 }
 
@@ -190,4 +243,4 @@ function normalizedFile(reply, filePath, fileName, base64) {
 
 function normalizedError(reply, err = null) {
   return { ok: false, reply, error: err ? err.message : reply };
-                              }
+  }
