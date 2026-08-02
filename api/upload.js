@@ -5,6 +5,7 @@
  */
 
 import externalBridge from "./tools/external/external_file_bridge.js";
+import fs from "fs";
 
 export default async function uploadHandler(req, res) {
   try {
@@ -15,14 +16,33 @@ export default async function uploadHandler(req, res) {
       });
     }
 
-    // ✅ التحقق من وجود ميتاداتا (إذا كانت مرسلة من الواجهة)
+    // ✅ تسجيل معلومات الملف الأصلية (للتصحيح)
+    console.log(`📊 [Intake] الملف الأصلي: ${req.file.originalname}`);
+    console.log(`📊 [Intake] الحجم الأصلي: ${req.file.size} bytes`);
+    console.log(`📊 [Intake] المسار المؤقت: ${req.file.path}`);
+    
+    // ✅ قراءة الملف من المسار المؤقت للتأكد من وجوده
+    if (req.file.path && fs.existsSync(req.file.path)) {
+      const stats = fs.statSync(req.file.path);
+      console.log(`📊 [Intake] حجم الملف المؤقت: ${stats.size} bytes`);
+      
+      // ✅ إذا كان الملف صغيراً جداً، قد يكون تالفاً
+      if (stats.size < 10) {
+        console.warn(`⚠️ [Intake] الملف صغير جداً (${stats.size} bytes)، قد يكون تالفاً.`);
+      }
+    } else {
+      console.error(`❌ [Intake] الملف غير موجود في المسار: ${req.file.path}`);
+    }
+
+    // ✅ التحقق من وجود ميتاداتا
     const metadata = req.body?.metadata || null;
     const fileInfo = {
       originalname: req.file.originalname || "unknown_file",
       mimetype: req.file.mimetype || "application/octet-stream",
       size: req.file.size || 0,
       path: req.file.path,
-      metadata: metadata // ✅ تمرير الميتاداتا إن وجدت
+      metadata: metadata,
+      buffer: req.file.buffer || null // ✅ حفظ الـ Buffer إذا كان موجوداً
     };
 
     console.log(`✅ [الأثير Intake] تم استلام الملف الآمن: ${fileInfo.originalname}`);
@@ -39,4 +59,4 @@ export default async function uploadHandler(req, res) {
       error: `⚠️ حدث خطأ غير متوقع أثناء معالجة الملف: ${error.message}`
     });
   }
-                                }
+          }
