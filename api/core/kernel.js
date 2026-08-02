@@ -1,6 +1,5 @@
 /**
  * api/core/kernel.js – Alatheer Sovereign Kernel (Agentic & Code Interpreter Edition)
- * العقل المدبر: يوجه جيميني لكتابة الكود، ويلتقط الكود لينفذه محلياً على سيرفرك بصفر استنزاف.
  */
 
 import groqService from "../groqService.js";
@@ -15,20 +14,23 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   if (!message) return "ولا يهمّك… احكيلي أكتر.";
 
   let userMessage = message;
-  
-  // توجيهات النظام الحيوية لتوجيه جيميني لكتابة الكود إذا وُجد ملف
+
+  /* ============================================================
+     ⭐ أهم تعديل: تمرير المسار الحقيقي داخل الرسالة نفسها
+     ============================================================ */
   let agenticInstructions = "";
   if (ctx.filePath) {
     agenticInstructions = `
 [توجيهات النظام الحيوية للتنفيذ]:
-- المستخدم يتحدث عن ملف موجود فعلياً على السيرفر في هذا المسار: ${ctx.filePath}
-- إذا كان طلب المستخدم يتضمن "تعديل، إضافة عمود، إنشاء قائمة منسدلة، تصفية، أو أي معالجة للبيانات"، **يُمنع منعاً باتاً شرح الخطوات يدوياً للمستخدم**.
-- بدلاً من ذلك، يجب عليك كتابة كود Python كامل باستخدام (pandas أو openpyxl) ليقوم بالمهمة المطلوبة.
-- يجب أن يقرأ الكود الملف من المسار أعلاه، ويحفظ الملف المعدل في نفس المجلد باسم جديد، ويطبع في النهاية: print("OUTPUT_FILE: " + new_file_name)
-- ضع الكود حصرياً داخل كتلة \`\`\`python ... \`\`\`
+- الملف موجود فعلياً على السيرفر في هذا المسار الحقيقي: ${ctx.filePath}
+- يجب استخدام هذا المسار حصرياً داخل كود البايثون.
+- يُمنع منعاً باتاً اختراع مسار جديد أو استخدام /app/uploads.
+- إذا كان طلب المستخدم يتضمن تعديل أو إضافة أو معالجة، يجب كتابة كود Python فقط.
+- يجب أن يقرأ الكود الملف من المسار أعلاه ويحفظ ملفاً جديداً ويطبع:
+  print("OUTPUT_FILE: " + new_file_name)
 `;
     if (ctx.fileData && ctx.fileData.headers) {
-      agenticInstructions += `\n- أعمدة الملف الحالي هي: ${ctx.fileData.headers.join(" , ")}\n`;
+      agenticInstructions += `\n- أعمدة الملف الحالية هي: ${ctx.fileData.headers.join(" , ")}\n`;
     }
   }
 
@@ -47,20 +49,19 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
   let returnedFileName = ctx.fileName;
 
-  // 2. ⚡ التقاط كود البايثون وتنفيذه محلياً (The Agentic Loop)
+  // 2. التقاط كود البايثون وتنفيذه محلياً
   const pythonCodeMatch = reply.match(/```python\n([\s\S]*?)```/);
-  
+
   if (pythonCodeMatch && ctx.filePath) {
     const pythonCode = pythonCodeMatch[1].trim();
     console.log("🐍 [Kernel] تم اصطياد كود بايثون من جيميني. جاري التنفيذ المحلي...");
-    
+
     try {
       const scriptName = `agent_task_${Date.now()}.py`;
       const scriptPath = path.join(path.dirname(ctx.filePath), scriptName);
-      
+
       fs.writeFileSync(scriptPath, pythonCode);
 
-      // تنفيذ الكود محلياً على السيرفر مجاناً
       const stdout = execSync(`python3 "${scriptPath}"`, { encoding: 'utf8' });
       console.log("✅ [Kernel Local Execution Output]:", stdout);
 
@@ -74,7 +75,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         reply += `\n\n✅ **تمت المعالجة بنجاح!**`;
       }
 
-      if(fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
+      if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
     } catch (err) {
       console.error("❌ [Kernel Local Execution Error]:", err.message);
@@ -88,4 +89,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     reply: reply.trim(),
     fileName: returnedFileName
   };
-}
+  }
