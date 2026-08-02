@@ -10,8 +10,10 @@ import os from "os";
 // مرصد التدقيق السيادي
 import { auditExecution } from "../../core/execution_monitor.js";
 
-// المحركات السيادية
-import excelEngine from "./engines/excel.js";
+// 🚀 المحرك السيادي المطلق الذي تم تحديثه (Pandas & Openpyxl)
+import pandasEngine from "./engines/pandas.js";
+
+// المحركات الأخرى
 import { pdfRead, pdfConvert, pdfCreate } from "../pdf.js";
 import { wordCreate } from "../word.js";
 import { pptCreate } from "../ppt.js";
@@ -26,7 +28,7 @@ export default async function externalBridge(req, res) {
 
     const action = req.body.action || "read";
 
-    // 🛡️ حفظ الملف مؤقتًا
+    // 🛡️ حفظ الملف مؤقتاً
     const tmpDir = os.tmpdir();
     const fileName = `${Date.now()}_${req.file.originalname}`;
     const filePath = path.join(tmpDir, fileName);
@@ -43,7 +45,7 @@ export default async function externalBridge(req, res) {
     let result = null;
 
     /* ============================================================
-       🟥 اختيار المحرك المناسب حسب الامتداد وتفعيل التدقيق المحلي
+       🟥 التوجيه الذكي للمحركات حسب الامتداد
        ============================================================ */
 
     // 📄 PDF
@@ -86,13 +88,12 @@ export default async function externalBridge(req, res) {
       auditExecution({ action: `docx_${action}`, target: req.file.originalname, isLocal: true });
     }
 
-    // 📊 Excel (محرك Pandas & Openpyxl السيادي المطلق)
-    else if (ext === ".xlsx" || ext === ".xls") {
-      result = await excelEngine(filePath, action, req.body);
+    // 📊 Excel & CSV (تم توجيهها للمحرك السيادي الجديد)
+    else if (ext === ".xlsx" || ext === ".xls" || ext === ".csv") {
+      result = await pandasEngine(filePath, action, req.body);
       
-      // تسجيل التدقيق السيادي للمعالجة المحلية للإكسل (0 توكنز مضمونة)
       auditExecution({
-        action: `excel_${action}`,
+        action: `pandas_${action}`,
         target: req.file.originalname,
         isLocal: true
       });
@@ -144,26 +145,36 @@ export default async function externalBridge(req, res) {
     }
 
     /* ============================================================
-       🟦 إرجاع الملفات الناتجة (إن وجدت)
+       ⚠️ فلترة الأخطاء من المحركات الداخلية (حماية السيادة)
        ============================================================ */
-    if (result?.fileBase64) {
-      return res.status(200).json({
-        reply: result.reply || "تمت معالجة الملف بنجاح.",
-        fileBase64: result.fileBase64,
-        fileName: result.fileName || "output"
+    if (result && result.ok === false) {
+      console.error("❌ فشل المحرك الداخلي:", result.error);
+      return res.status(500).json({
+        error: result.error || result.reply || "حدث خطأ أثناء معالجة الملف برمجياً."
       });
     }
 
     /* ============================================================
-       🟩 إرجاع البيانات النصية أو الهيكلية الآمنة
+       🟦 إرجاع الملفات الناتجة (في حال التعديل أو التوليد الفعلي فقط)
+       ============================================================ */
+    if (result?.fileBase64) {
+      return res.status(200).json({
+        reply: result.reply || "تمت معالجة وتوليد الملف بنجاح.",
+        fileBase64: result.fileBase64,
+        fileName: result.fileName || "output_alatheer"
+      });
+    }
+
+    /* ============================================================
+       🟩 إرجاع البيانات النصية (للقراءة والاستعلام والتحليل)
        ============================================================ */
     return res.status(200).json({
-      reply: result.reply || "تمت معالجة الملف بنجاح.",
-      data: result.data || null
+      reply: result?.reply || "تمت قراءة الملف بنجاح.",
+      data: result?.data || null
     });
 
   } catch (err) {
-    console.error("❌ خطأ في external_file_bridge:", err);
+    console.error("❌ خطأ حرج في external_file_bridge:", err);
     return res.status(500).json({
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
