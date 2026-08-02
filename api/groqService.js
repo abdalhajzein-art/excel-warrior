@@ -14,6 +14,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // استخدام أحدث نموذج فائق السرعة
 const MODEL_NAME = "gemini-3.5-flash-lite";
+
 /* ============================================================
    🟩 الوضع القديم: رسالة واحدة (prompt)
    ============================================================ */
@@ -35,9 +36,9 @@ export default async function groqService(prompt) {
 }
 
 /* ============================================================
-   🟦 الوضع السيادي الجديد: مصفوفة رسائل كاملة (مربوط بالـ Orchestrator)
+   🟦 الوضع السيادي الجديد: مصفوفة رسائل كاملة + دعم fileData
    ============================================================ */
-groqService.chat = async function(messages) {
+groqService.chat = async function(messages, extra = {}) {
   try {
     let systemInstruction = "";
     const history = [];
@@ -55,28 +56,49 @@ groqService.chat = async function(messages) {
     }
 
     // استخراج الرسالة الأخيرة للمستخدم لتكون هي الطلب الحالي
-    const lastMessage = history.pop(); 
+    const lastMessage = history.pop();
 
-    const model = genAI.getGenerativeModel({ 
+    const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
       ...(systemInstruction ? { systemInstruction: systemInstruction.trim() } : {})
     });
 
-    // بدء محادثة مع تمرير التاريخ السابق لضمان الذاكرة المطلقة
+    // ⭐⭐ أهم نقطة: تمرير fileData للنموذج عبر context
     const chat = model.startChat({
       history: history,
       generationConfig: {
         temperature: 0.4,
         maxOutputTokens: 1500,
-      }
+      },
+      tools: [
+        {
+          name: "file_context",
+          description: "بيانات ملف مرفق جاهزة للاستخدام.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              fileData: { type: "object" }
+            }
+          }
+        }
+      ]
     });
 
+    // إذا فيه بيانات ملف، نمرّرها للنموذج
+    if (extra.fileData) {
+      await chat.callTool({
+        toolName: "file_context",
+        input: { fileData: extra.fileData }
+      });
+    }
+
+    // إرسال الرسالة الأخيرة
     const result = await chat.sendMessage(lastMessage ? lastMessage.parts[0].text : "");
     const response = await result.response;
     return response.text().trim();
 
   } catch (error) {
     console.error("❌ Gemini Chat Error (Sovereign Mode):", error);
-    throw error; // تمرير الخطأ لطبقة الـ Agentic Loop
+    throw error;
   }
 };
