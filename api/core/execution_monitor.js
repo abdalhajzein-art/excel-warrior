@@ -1,9 +1,7 @@
 /**
- * api/core/execution_monitor.js – Sovereign Execution & Token Audit Guard (File-Centric Edition)
- * مراقب سيادي محلي يربط كل عملية تنفيذية واستهلاك توكنز باسم الملف المسؤول بشكل قاطع.
+ * api/core/execution_monitor.js – Sovereign Execution & Token Audit Guard (Standalone Edition)
+ * مراقب سيادي محلي مستقل يسجل حالة كل عملية واسم الملف المسؤول بدقة مطلقة دون تبعات خارجية.
  */
-
-import { trackTokens } from "./token_tracker.js";
 
 export function auditExecution({ action, target = "Unknown File", isLocal = true, usage = null }) {
   const timestamp = new Date().toLocaleTimeString("en-GB");
@@ -19,8 +17,7 @@ export function auditExecution({ action, target = "Unknown File", isLocal = true
     console.log(`   ├─ Action      : \x1b[36m${action}\x1b[0m`);
     
     if (usage) {
-      trackTokens(usage);
-      console.log(`   └─ Cost        : \x1b[31mConsumed via LLM API\x1b[0m\n`);
+      console.log(`   └─ Cost        : \x1b[31mConsumed via LLM API (${usage.total_tokens || usage.totalTokenCount || 'Active'} Tokens)\x1b[0m\n`);
     } else {
       console.log(`   └─ Cost        : \x1b[31mUnknown LLM Cost\x1b[0m\n`);
     }
