@@ -1,6 +1,7 @@
 /**
  * engines/pandas.js – The Absolute Sovereign Pandas & Openpyxl Engine
  * محرك سيادي مطلق يستغل القوة الكاملة والعمياء لمكتبتي Pandas و Openpyxl بلا أي قيود أو تحجيم.
+ * صفر توكنز تنفيذية - تشغيل محلي 100%
  */
 
 import fs from "fs";
@@ -22,6 +23,7 @@ export default async function pandasEngine(filePath, action, params = {}) {
 
       case "style_and_format":
       case "openpyxl_manipulate":
+      case "modify": // أضفنا هذه الحالة لتشمل التعديلات الديناميكية
         return await runPythonOpenpyxlMaster(filePath, params);
 
       case "convert":
@@ -36,7 +38,7 @@ export default async function pandasEngine(filePath, action, params = {}) {
 }
 
 /* ============================================================
-   🐍 المحرك الماستر السيادي (Pandas Powerhouse)
+   🐍 المحرك الماستر السيادي (Pandas Powerhouse - Profiling)
    ============================================================ */
 function runPythonMasterEngine(filePath, mode, params = {}) {
   try {
@@ -53,7 +55,7 @@ try:
     mode = sys.argv[2]
     params = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
 
-    # دعم كامل لجميع الأوراق (Multi-sheet Excel support) أو ملفات CSV
+    # دعم كامل لجميع الأوراق أو ملفات CSV
     if file_path.endswith(('.xlsx', '.xls')):
         xls = pd.ExcelFile(file_path)
         sheet_names = xls.sheet_names
@@ -104,7 +106,7 @@ try:
         reply_msg = f"⚡ تم تحليل الملف الشامل عبر Pandas بنجاح (أوراق العمل: {sheet_names} | الأبعاد: {total_rows} صف × {total_cols} عمود)."
 
     elif mode == "transform":
-        # تنفيذ عمليات متقدمة مثل التجميع، الفلترة، أو الـ Pivot Tables برمجياً
+        # تنفيذ عمليات متقدمة برمجياً
         op = params.get('operation', 'none')
         if op == 'groupby':
             group_col = params.get('group_col')
@@ -144,16 +146,47 @@ except Exception as e:
 }
 
 /* ============================================================
-   🎨 محرك Openpyxl الهيكلي والبصري المطلق (Styling & Formatting)
+   🎨 محرك Openpyxl الهيكلي والبصري الديناميكي المطلق (Agentic Executor)
    ============================================================ */
 function runPythonOpenpyxlMaster(filePath, params = {}) {
   try {
-    const outPath = path.join(path.dirname(filePath), `formatted_${Date.now()}.xlsx`);
-    const paramsJson = JSON.stringify(params);
+    const outPath = path.join(path.dirname(filePath), `modified_${Date.now()}.xlsx`);
+    
+    // 🧠 العصب السيادي: استقبال الكود الديناميكي من العقل (إذا وجد) لتنفيذه حرفياً، وإلا نستخدم التنسيق الافتراضي
+    const dynamicCode = params.custom_python_code || `
+# التنسيق الافتراضي السيادي للترويسات والحدود
+header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
+header_fill = PatternFill(start_color='1F4E78', end_color='1F4E78', fill_type='solid')
+thin_border = Border(
+    left=Side(style='thin', color='D9D9D9'),
+    right=Side(style='thin', color='D9D9D9'),
+    top=Side(style='thin', color='D9D9D9'),
+    bottom=Side(style='thin', color='D9D9D9')
+)
 
+for col_num in range(1, ws.max_column + 1):
+    cell = ws.cell(row=1, column=col_num)
+    cell.font = header_font
+    cell.fill = header_fill
+    cell.alignment = Alignment(horizontal='center', vertical='center')
+
+for col in ws.columns:
+    max_len = 0
+    col_letter = get_column_letter(col[0].column)
+    for cell in col:
+        if cell.value:
+            max_len = max(max_len, len(str(cell.value)))
+        if cell.row > 1:
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal='general', vertical='center')
+    ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+`;
+
+    // سكريبت التنفيذ الذي سيُحقن بداخله الكود
     const pythonScript = `
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils import get_column_letter
 import sys
 import json
@@ -161,59 +194,43 @@ import json
 try:
     file_path = sys.argv[1]
     out_path = sys.argv[2]
-    params = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
-
-    # فتح الملف عبر Openpyxl للتحكم المطلق بالخلايا والتنسيقات
+    
+    # تحميل الملف محلياً بدون أي اتصال خارجي
     wb = openpyxl.load_workbook(file_path)
     ws = wb.active
 
-    # تطبيق التنسيق الاحترافي التلقائي على الجدول (Header Styling, Auto-fit columns, Borders)
-    header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
-    header_fill = PatternFill(start_color='1F4E78', end_color='1F4E78', fill_type='solid')
-    thin_border = Border(
-        left=Side(style='thin', color='D9D9D9'),
-        right=Side(style='thin', color='D9D9D9'),
-        top=Side(style='thin', color='D9D9D9'),
-        bottom=Side(style='thin', color='D9D9D9')
-    )
+    # ==========================================
+    # ⚡ التنفيذ الأعمى والمطلق للكود الديناميكي/الافتراضي
+    # ==========================================
+${dynamicCode.split('\n').map(line => '    ' + line).join('\n')}
+    # ==========================================
 
-    # تنسيق الصف الأول (الترويسة)
-    for col_num in range(1, ws.max_column + 1):
-        cell = ws.cell(row=1, column=col_num)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal='center', vertical='center')
-
-    # تنسيق وبدء تخطيط الخلايا وضبط عرض الأعمدة تلقائياً
-    for col in ws.columns:
-        max_len = 0
-        col_letter = get_column_letter(col[0].column)
-        for cell in col:
-            if cell.value:
-                max_len = max(max_len, len(str(cell.value)))
-            # تطبيق الحدود على كافة خلايا البيانات
-            if cell.row > 1:
-                cell.border = thin_border
-                cell.alignment = Alignment(horizontal='general', vertical='center')
-        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
-
+    # حفظ الملف الناتج
     wb.save(out_path)
-    print(json.dumps({"ok": True, "reply": "🎨 تم إعادة هندسة وتنسيق ملف الإكسل بالكامل عبر Openpyxl (تنسيق ترويسة، حدود، وضبط أعمدة)."}, ensure_ascii=False))
+    print(json.dumps({"ok": True, "reply": "🎨 تم تنفيذ التعديل الديناميكي وهندسة الملف عبر Openpyxl بنجاح."}, ensure_ascii=False))
 
 except Exception as e:
-    print(json.dumps({"ok": False, "reply": "❌ فشل محرك Openpyxl.", "error": str(e)}, ensure_ascii=False))
+    print(json.dumps({"ok": False, "reply": "❌ فشل محرك Openpyxl الديناميكي.", "error": str(e)}, ensure_ascii=False))
 `;
 
-    const scriptPath = path.join(path.dirname(filePath), `opx_${Date.now()}.py`);
+    const scriptPath = path.join(path.dirname(filePath), `opx_agent_${Date.now()}.py`);
     fs.writeFileSync(scriptPath, pythonScript, "utf8");
 
-    execSync(`python3 "${scriptPath}" "${filePath}" "${outPath}" '${paramsJson.replace(/'/g, "\\'")}'`, { encoding: "utf-8" });
+    // تنفيذ محلي معزول
+    const output = execSync(`python3 "${scriptPath}" "${filePath}" "${outPath}"`, { encoding: "utf-8" });
     if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
+    const parsedOutput = JSON.parse(output.trim());
+    
+    if (!parsedOutput.ok) {
+         return normalizedError(parsedOutput.reply, new Error(parsedOutput.error));
+    }
+
+    // قراءة الملف المعدل وتجهيزه للتحميل
     const base64 = fs.readFileSync(outPath).toString("base64");
-    return normalizedFile("تم تنسيق وهندسة الملف بنجاح عبر Openpyxl.", outPath, "formatted.xlsx", base64);
+    return normalizedFile("تم تعديل الملف وهندسته بنجاح.", outPath, "modified_alatheer.xlsx", base64);
   } catch (err) {
-    return normalizedError("فشل تنفيذ هندسة Openpyxl.", err);
+    return normalizedError("فشل تنفيذ المحرك التنفيذي لـ Openpyxl.", err);
   }
 }
 
@@ -273,4 +290,3 @@ function normalizedFile(reply, filePath, fileName, base64) {
 function normalizedError(reply, err = null) {
   return { ok: false, reply, error: err ? err.message : reply, data: null, fileBase64: null, fileName: null, filePath: null };
 }
-
