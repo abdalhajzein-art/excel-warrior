@@ -1,6 +1,6 @@
 /**
- * api/groqService.js – Sovereign Gemini Gateway (Integrated with Execution Monitor)
- * محرك الربط السيادي لـ Google Gemini مع تتبع دقيق لاستهلاك التوكنز
+ * api/groqService.js – Sovereign Gemini Gateway (Optimized for Gemini 3.6 Flash)
+ * محرك الربط السيادي لـ Google Gemini مع إدارة محسنة للنافذة والتوكنز
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -10,32 +10,33 @@ if (!process.env.GEMINI_API_KEY) {
   console.warn("⚠️ WARNING: GEMINI_API_KEY is not defined in environment variables.");
 }
 
-// تهيئة العميل باستخدام المفتاح السيادي الخاص بك
+// تهيئة العميل باستخدام المفتاح السيادي
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// استخدام أحدث نموذج فائق السرعة
+// استخدام النموذج المعتمد
 const MODEL_NAME = "gemini-3.6-flash";
 
 /* ============================================================
-   🟩 الوضع القديم: رسالة واحدة (prompt)
+   🟩 الوضع القديم: رسالة واحدة (Legacy Prompt Mode)
    ============================================================ */
 export default async function groqService(prompt) {
   try {
     const model = genAI.getGenerativeModel({ 
       model: MODEL_NAME,
-      systemInstruction: "أنت الأثير — رد دائماً برد لغوي واضح."
+      systemInstruction: "أنت الأثير — المساعد السيادي الذكي. رد دائماً بدقة واحترافية."
     });
 
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.5,
         maxOutputTokens: 8192,
       }
     });
+    
     const response = await result.response;
 
-    // 🛡️ تسجيل الاستدعاء الخارجي في المرصد السيادي
+    // 🛡️ تسجيل الاستدعاء في المرصد السيادي
     auditExecution({
       action: "llm_inference_legacy",
       target: "General Prompt",
@@ -52,7 +53,7 @@ export default async function groqService(prompt) {
 }
 
 /* ============================================================
-   🟦 الوضع السيادي الجديد: مصفوفة رسائل كاملة + دعم fileData + مراقبة التوكنز
+   🟦 الوضع السيادي المتقدم: معالجة مصفوفة الرسائل + السياق والملفات
    ============================================================ */
 groqService.chat = async function(messages, extra = {}) {
   try {
@@ -71,10 +72,10 @@ groqService.chat = async function(messages, extra = {}) {
       }
     }
 
-    // استخراج الرسالة الأخيرة للمستخدم لتكون هي الطلب الحالي
+    // استخراج الرسالة الأخيرة للمستخدم
     const lastMessage = history.pop();
 
-    // ⭐ الحقن المباشر لبيانات الملف ضمن النص
+    // الحقن البرمجي لبيانات الملف المستخرجة إن وجدت
     if (extra.fileData) {
       const fileContextSnippet = `\n\n[بيانات الملف المرفق المستخرجة]:\n${JSON.stringify(extra.fileData, null, 2)}`;
       if (lastMessage) {
@@ -87,6 +88,7 @@ groqService.chat = async function(messages, extra = {}) {
       }
     }
 
+    // إعداد النموذج مع التعليمات النظامية المحسنة
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
       ...(systemInstruction ? { systemInstruction: systemInstruction.trim() } : {})
@@ -95,16 +97,16 @@ groqService.chat = async function(messages, extra = {}) {
     const chat = model.startChat({
       history: history,
       generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 8192, // تم رفع الحد الأقصى للإخراج لتجنب انقطاع التقارير الاستراتيجية الطويلة
+        temperature: 0.3, // تقليل الـ temperature يضمن دقة أعلى في تنفيذ الأوامر البرمجية والتحليلية
+        maxOutputTokens: 8192,
       }
     });
 
-    // إرسال الرسالة الأخيرة مع سياق الملف المدمج
+    // إرسال الطلب النهائي
     const result = await chat.sendMessage(lastMessage ? lastMessage.parts[0].text : "");
     const response = await result.response;
 
-    // 🛡️ رصد الاستدعاء الخارجي وتوثيق عدد التوكنز المستهلكة بدقة مطلقة
+    // 🛡️ توثيق استهلاك التوكنز في المرصد السيادي
     auditExecution({
       action: "llm_strategic_analysis",
       target: extra.fileName || "Active Chat Session",
@@ -119,3 +121,4 @@ groqService.chat = async function(messages, extra = {}) {
     throw error;
   }
 };
+
