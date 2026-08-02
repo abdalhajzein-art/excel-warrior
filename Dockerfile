@@ -1,6 +1,6 @@
 FROM node:22
 
-# تثبيت الأدوات الأساسية اللازمة لمحركات الملفات
+# تثبيت الأدوات الأساسية للنظام
 RUN apt-get update && apt-get install -y \
     libreoffice \
     ghostscript \
@@ -11,26 +11,22 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# تجاوز قيود PEP 668 لتثبيت مكتبات Python
-RUN pip3 install --break-system-packages \
-    openpyxl \
-    pandas \
-    python-docx \
-    PyPDF2 \
-    pillow
-
-# مجلد التطبيق
+# مجلد العمل الرئيسي
 WORKDIR /app
 
-# تثبيت مكتبات Node
+# 1. نسخ وتثبيت مكتبات Python عبر requirements.txt
+COPY requirements.txt ./
+RUN pip3 install --break-system-packages -r requirements.txt
+
+# 2. نسخ وتثبيت مكتبات Node
 COPY package*.json ./
 RUN npm install
 
-# نسخ باقي الملفات
+# 3. نسخ باقي ملفات التطبيق
 COPY . .
 
 # المنفذ
 EXPOSE 3000
 
-# تشغيل التطبيق
+# تشغيل المنظومة
 CMD ["npm", "start"]
