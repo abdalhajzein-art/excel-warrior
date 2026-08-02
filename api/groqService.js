@@ -26,7 +26,13 @@ export default async function groqService(prompt) {
       systemInstruction: "أنت الأثير — رد دائماً برد لغوي واضح."
     });
 
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+      }
+    });
     const response = await result.response;
 
     // 🛡️ تسجيل الاستدعاء الخارجي في المرصد السيادي
@@ -90,7 +96,7 @@ groqService.chat = async function(messages, extra = {}) {
       history: history,
       generationConfig: {
         temperature: 0.4,
-        maxOutputTokens: 1500,
+        maxOutputTokens: 8192, // تم رفع الحد الأقصى للإخراج لتجنب انقطاع التقارير الاستراتيجية الطويلة
       }
     });
 
