@@ -1,3 +1,8 @@
+/**
+ * js/fileHandler.js – معالج الملفات في الواجهة الأمامية
+ * ✅ تم إصلاح مشكلة إرسال الملفات بشكل صحيح
+ */
+
 let selectedFileObject = null;
 let attachedFileName = null;
 let isFileLoading = false;
@@ -123,13 +128,10 @@ export async function sendSelectedFileToServer() {
 
     const formData = new FormData();
 
-    // 🟢 اسم آمن فقط
-    const fileExtension = selectedFileObject.name.split('.').pop();
-    const safeFilename = `upload_${Date.now()}.${fileExtension}`;
+    // ✅ استخدام الاسم الأصلي للملف
+    const safeFilename = selectedFileObject.name;
 
     formData.append("file", selectedFileObject, safeFilename);
-
-    // 🚫 لا ترسل الاسم الأصلي إطلاقاً
     formData.append("action", "preview");
 
     try {
@@ -144,4 +146,4 @@ export async function sendSelectedFileToServer() {
         console.error("❌ خطأ أثناء إرسال الملف:", err);
         return { error: "❌ فشل إرسال الملف إلى السيرفر." };
     }
-                }
+}
