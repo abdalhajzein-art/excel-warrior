@@ -1,5 +1,5 @@
 /**
- * engines/pandas.js – Sovereign Excel Engine (Openpyxl + Metadata + CSV Fallback Edition)
+ * engines/pandas.js – Sovereign Excel Engine (Openpyxl + Metadata + CSV + RAW Fallback Edition)
  */
 
 import fs from "fs";
@@ -32,7 +32,15 @@ export default async function pandasEngine(filePath, action, params = {}) {
     // ✅ إذا لم يكن Excel حقيقياً، حاول قراءته كنصي أو CSV
     if (!isRealExcel) {
       console.log(`📄 [pandasEngine] الملف ليس Excel حقيقياً، محاولة قراءته كنصي/CSV.`);
-      return await tryReadAsTextOrCsv(filePath);
+      const textResult = await tryReadAsTextOrCsv(filePath);
+      
+      // ✅ إذا فشل CSV والنصي، نرجع النص الخام كحل أخير
+      if (textResult.ok === false) {
+        console.log(`📄 [pandasEngine] فشل قراءة الملف كنصي/CSV، محاولة قراءته كنص خام.`);
+        return await tryReadAsRawText(filePath);
+      }
+      
+      return textResult;
     }
 
     switch (action) {
@@ -72,21 +80,17 @@ async function isExcelFile(filePath) {
  */
 async function tryReadAsTextOrCsv(filePath) {
   try {
-    // ✅ قراءة الملف كنص
     let content = fs.readFileSync(filePath, 'utf-8');
     
-    // ✅ إذا كان الملف فارغاً
     if (!content || content.trim().length === 0) {
       return normalizedError("⚠️ الملف فارغ أو لا يحتوي على بيانات.");
     }
 
-    // ✅ محاولة تحليل CSV (إذا كان مفصولاً بفواصل أو علامات تبويب)
     const lines = content.split('\n').filter(line => line.trim());
     if (lines.length > 1) {
       const firstLine = lines[0];
       const hasDelimiter = /[,\t;|]/.test(firstLine);
       if (hasDelimiter) {
-        // ✅ استخراج العناوين والصفوف
         const headers = firstLine.split(/[,\t;|]/).map(h => h.trim());
         const rows = lines.slice(1).map(line => line.split(/[,\t;|]/).map(cell => cell.trim()));
         
@@ -95,7 +99,7 @@ async function tryReadAsTextOrCsv(filePath) {
           reply: "📊 تم قراءة الملف كنصي/CSV (تم تجاوز openpyxl).",
           data: {
             headers: headers,
-            rows: rows.slice(0, 100), // عرض أول 100 صف فقط
+            rows: rows.slice(0, 100),
             totalRows: rows.length,
             totalColumns: headers.length
           },
@@ -105,12 +109,11 @@ async function tryReadAsTextOrCsv(filePath) {
       }
     }
 
-    // ✅ إذا لم يكن CSV، نعرض النص كاملاً
     return {
       ok: true,
       reply: "📄 تم قراءة الملف كنصي.",
       data: {
-        text: content.slice(0, 5000), // عرض أول 5000 حرف
+        text: content.slice(0, 5000),
         totalLength: content.length
       },
       fileBase64: null,
@@ -119,6 +122,34 @@ async function tryReadAsTextOrCsv(filePath) {
 
   } catch (err) {
     return normalizedError("فشل قراءة الملف كنصي: " + err.message);
+  }
+}
+
+/**
+ * 📄 ✅ الحل الأخير: قراءة الملف كنص خام (RAW) بدون أي معالجة
+ */
+async function tryReadAsRawText(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    
+    if (!content || content.trim().length === 0) {
+      return normalizedError("⚠️ الملف فارغ أو لا يحتوي على بيانات.");
+    }
+
+    return {
+      ok: true,
+      reply: "📄 تم قراءة الملف كنص خام (RAW).",
+      data: {
+        raw: content.slice(0, 10000),
+        totalLength: content.length,
+        note: "تم قراءة الملف كنص خام لأن openpyxl و CSV فشلا في قراءته."
+      },
+      fileBase64: null,
+      fileName: null
+    };
+
+  } catch (err) {
+    return normalizedError("فشل قراءة الملف كنص خام: " + err.message);
   }
 }
 
