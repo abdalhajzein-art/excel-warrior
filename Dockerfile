@@ -1,4 +1,4 @@
-# بيئة Node حديثة مع دعم Rust
+# بيئة Node حديثة
 FROM node:22
 
 # تثبيت الأدوات الأساسية للنظام
@@ -10,13 +10,12 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     python3 \
     python3-pip \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # مجلد العمل الرئيسي
 WORKDIR /app
 
-# 1. نسخ وتثبيت مكتبات Python
+# 1. نسخ وتثبيت مكتبات Python (مع إصدارات محددة)
 COPY requirements.txt /app/requirements.txt
 RUN pip3 install --break-system-packages -r /app/requirements.txt
 
@@ -24,11 +23,7 @@ RUN pip3 install --break-system-packages -r /app/requirements.txt
 COPY package*.json /app/
 RUN npm install
 
-# ✅ 3. تثبيت office-oxide (يتم تثبيته مع npm install أعلاه)
-# ✅ 4. التحقق من تثبيت office-oxide
-RUN node -e "try { require('office-oxide'); console.log('✅ office-oxide installed successfully'); } catch(e) { console.error('❌ office-oxide failed:', e.message); process.exit(1); }"
-
-# 5. نسخ ملفات التطبيق بشكل صريح وواضح
+# 3. نسخ ملفات التطبيق
 COPY api /app/api
 COPY js /app/js
 COPY index.html /app/index.html
