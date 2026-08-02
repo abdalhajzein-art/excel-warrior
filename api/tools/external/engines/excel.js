@@ -2,6 +2,7 @@
  * engines/excel.js – Sovereign Excel Ultimate Engine 
  * 🔥 الإصدار الشامل الذي يجمع كل قدرات ExcelJS و XLSX
  * ✅ يدعم: قراءة، كتابة، تعديل، تنسيق، تحليل، وكل ما تحتاجه
+ * ✅ تم إصلاح مشكلة المراجع الدائرية (circular references)
  */
 
 import path from "path";
@@ -32,55 +33,34 @@ class ExcelUltimateEngine {
             const detection = this.detectEngine(filePath);
             
             switch (action) {
-                // 📖 عمليات القراءة
                 case 'read':
                 case 'preview':
                 case 'excel_preview':
                     return await this.read(filePath, params);
-                
-                // ✏️ عمليات التعديل
                 case 'modify':
                 case 'excel_modify':
                     return await this.modify(filePath, params);
-                
-                // 🆕 عمليات الإنشاء
                 case 'create':
                     return await this.create(params);
-                
-                // 🎨 عمليات التنسيق
                 case 'format':
                 case 'excel_format':
                     return await this.format(filePath, params);
-                
-                // 📊 عمليات التحليل
                 case 'analyze':
                 case 'excel_analyze':
                     return await this.analyze(filePath, params);
-                
-                // 🔄 عمليات التحويل
                 case 'convert_pdf':
                 case 'to_pdf':
                     return await this.convertToPdf(filePath);
-                
                 case 'convert_csv':
                     return await this.convertToCsv(filePath);
-                
-                // 🔍 عمليات البحث
                 case 'search':
                     return await this.search(filePath, params);
-                
-                // 📈 عمليات الإحصاء
                 case 'statistics':
                     return await this.statistics(filePath, params);
-                
-                // 🎯 التنسيق الشرطي المتقدم
                 case 'conditional_format':
                     return await this.conditionalFormat(filePath, params);
-                
-                // 📋 الجداول المحورية
                 case 'pivot':
                     return await this.createPivot(filePath, params);
-                
                 default:
                     return await this.read(filePath, params);
             }
@@ -117,16 +97,12 @@ class ExcelUltimateEngine {
             const detection = this.detectEngine(filePath);
             let result;
 
-            // ✅ قراءة متقدمة باستخدام XLSX (لـ .xls وقراءة سريعة)
             if (detection.isXLS || params.useXLSX) {
                 result = await this.readWithXLSX(filePath, params);
-            } 
-            // ✅ قراءة باستخدام ExcelJS (لـ .xlsx مع دعم الصيغ)
-            else {
+            } else {
                 result = await this.readWithExcelJS(filePath, params);
             }
 
-            // ✅ تحليل إضافي مع Gemini إذا طُلب
             if (params.analyze && params.gemini) {
                 result.analysis = await params.gemini.analyzeData(result);
             }
@@ -140,13 +116,14 @@ class ExcelUltimateEngine {
 
     /**
      * 📖 القراءة باستخدام ExcelJS (مع الصيغ والتنسيق)
+     * ✅ تم إزالة workbook من النتيجة لتجنب المراجع الدائرية
      */
     async readWithExcelJS(filePath, params = {}) {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.readFile(filePath);
         
+        // ✅ لا نضيف workbook إلى النتيجة
         const result = {
-            workbook: workbook,
             sheets: [],
             data: [],
             formulas: [],
@@ -154,7 +131,6 @@ class ExcelUltimateEngine {
             metadata: {}
         };
 
-        // قراءة جميع الأوراق
         workbook.worksheets.forEach((worksheet) => {
             const sheetData = {
                 name: worksheet.name,
@@ -168,10 +144,8 @@ class ExcelUltimateEngine {
                 const rowStyles = [];
                 
                 row.eachCell((cell) => {
-                    // ✅ البيانات
                     rowData.push(cell.value || '');
                     
-                    // ✅ الصيغ
                     if (cell.formula) {
                         sheetData.formulas.push({
                             address: cell.address,
@@ -180,14 +154,13 @@ class ExcelUltimateEngine {
                         });
                     }
                     
-                    // ✅ التنسيق (الألوان، الخطوط، إلخ)
                     if (cell.fill || cell.font || cell.alignment) {
                         rowStyles.push({
                             address: cell.address,
-                            fill: cell.fill,
-                            font: cell.font,
-                            alignment: cell.alignment,
-                            border: cell.border
+                            fill: cell.fill ? JSON.parse(JSON.stringify(cell.fill)) : null,
+                            font: cell.font ? JSON.parse(JSON.stringify(cell.font)) : null,
+                            alignment: cell.alignment ? JSON.parse(JSON.stringify(cell.alignment)) : null,
+                            border: cell.border ? JSON.parse(JSON.stringify(cell.border)) : null
                         });
                     }
                 });
@@ -202,7 +175,6 @@ class ExcelUltimateEngine {
             result.styles.push(sheetData.styles);
         });
 
-        // ✅ ميتاداتا شاملة
         result.metadata = {
             sheets: workbook.worksheets.length,
             totalRows: result.data.reduce((sum, sheet) => sum + sheet.length, 0),
@@ -214,7 +186,6 @@ class ExcelUltimateEngine {
             engines: ['exceljs']
         };
 
-        // ✅ نص قابل للقراءة
         result.text = result.data.map(sheet => 
             sheet.map(row => row.join(' | ')).join('\n')
         ).join('\n\n---\n\n');
@@ -228,11 +199,13 @@ class ExcelUltimateEngine {
 
     /**
      * 📄 القراءة باستخدام XLSX (سريعة، لـ .xls)
+     * ✅ تم إزالة workbook من النتيجة لتجنب المراجع الدائرية
      */
     readWithXLSX(filePath, params = {}) {
         const workbook = XLSX.readFile(filePath);
+        
+        // ✅ لا نضيف workbook إلى النتيجة
         const result = {
-            workbook: workbook,
             sheets: [],
             data: [],
             metadata: {}
@@ -283,12 +256,10 @@ class ExcelUltimateEngine {
         try {
             const detection = this.detectEngine(filePath);
             
-            // ✅ تحويل .xls إلى .xlsx مؤقتاً
             if (detection.isXLS) {
                 return await this.modifyWithConversion(filePath, params);
             }
 
-            // ✅ تعديل مباشر بـ ExcelJS
             const workbook = new ExcelJS.Workbook();
             await workbook.xlsx.readFile(filePath);
             const worksheet = workbook.getWorksheet(1);
@@ -297,12 +268,10 @@ class ExcelUltimateEngine {
                 return this.normalizedError("لا توجد أوراق عمل.");
             }
 
-            // ✅ تطبيق جميع أنواع التعديلات
             if (params.operations) {
                 await this.applyOperations(worksheet, params.operations);
             }
 
-            // ✅ حفظ الملف
             const outPath = path.join(os.tmpdir(), `modified_${Date.now()}.xlsx`);
             await workbook.xlsx.writeFile(outPath);
             
@@ -321,11 +290,9 @@ class ExcelUltimateEngine {
         const xlsData = XLSX.readFile(filePath);
         const tempPath = path.join(os.tmpdir(), `temp_${Date.now()}.xlsx`);
         
-        // إنشاء ملف ExcelJS جديد
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Sheet1');
         
-        // نسخ البيانات
         const sheetName = xlsData.SheetNames[0];
         const data = XLSX.utils.sheet_to_json(xlsData.Sheets[sheetName], { header: 1 });
         
@@ -337,7 +304,6 @@ class ExcelUltimateEngine {
         
         await workbook.xlsx.writeFile(tempPath);
         
-        // تعديل الملف المحول
         return await this.modify(tempPath, params);
     }
 
@@ -384,7 +350,6 @@ class ExcelUltimateEngine {
         const headerCell = worksheet.getCell(1, newCol);
         headerCell.value = op.header || `عمود ${newCol}`;
         
-        // تعبئة البيانات
         const rowCount = worksheet.rowCount || 1;
         for (let i = 2; i <= rowCount; i++) {
             const cell = worksheet.getCell(i, newCol);
@@ -424,20 +389,21 @@ class ExcelUltimateEngine {
      */
     colorCells(worksheet, op) {
         const { range, color, condition } = op;
-        const [start, end] = range.split(':');
-        // تطبيق التلوين حسب الشرط
-        // (تنفيذ مبسط)
-        const cells = worksheet.getCells(range);
-        if (cells) {
-            cells.forEach(cell => {
-                if (!condition || this.evaluateCondition(cell.value, condition)) {
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: color || 'FFFFFF00' }
-                    };
-                }
-            });
+        try {
+            const cells = worksheet.getCells(range);
+            if (cells) {
+                cells.forEach(cell => {
+                    if (!condition || this.evaluateCondition(cell.value, condition)) {
+                        cell.fill = {
+                            type: 'pattern',
+                            pattern: 'solid',
+                            fgColor: { argb: color || 'FFFFFF00' }
+                        };
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('⚠️ تحذير في تلوين الخلايا:', e.message);
         }
     }
 
@@ -446,16 +412,24 @@ class ExcelUltimateEngine {
      */
     formatRange(worksheet, op) {
         const { range, style } = op;
-        const [start, end] = range.split(':');
-        // تطبيق التنسيق
-        for (let row = parseInt(start.match(/\d+/)[0]); row <= parseInt(end.match(/\d+/)[0]); row++) {
-            for (let col = start.charCodeAt(0) - 64; col <= end.charCodeAt(0) - 64; col++) {
-                const cell = worksheet.getCell(row, col);
-                if (style.fill) cell.fill = style.fill;
-                if (style.font) cell.font = style.font;
-                if (style.alignment) cell.alignment = style.alignment;
-                if (style.border) cell.border = style.border;
+        try {
+            const [start, end] = range.split(':');
+            const startRow = parseInt(start.match(/\d+/)[0]);
+            const endRow = parseInt(end.match(/\d+/)[0]);
+            const startCol = start.charCodeAt(0) - 64;
+            const endCol = end.charCodeAt(0) - 64;
+            
+            for (let row = startRow; row <= endRow; row++) {
+                for (let col = startCol; col <= endCol; col++) {
+                    const cell = worksheet.getCell(row, col);
+                    if (style.fill) cell.fill = style.fill;
+                    if (style.font) cell.font = style.font;
+                    if (style.alignment) cell.alignment = style.alignment;
+                    if (style.border) cell.border = style.border;
+                }
             }
+        } catch (e) {
+            console.warn('⚠️ تحذير في تنسيق النطاق:', e.message);
         }
     }
 
@@ -501,14 +475,28 @@ class ExcelUltimateEngine {
     evaluateCondition(value, condition) {
         if (!condition) return true;
         try {
-            const [operator, threshold] = condition.split(' ');
+            const parts = condition.split(' ');
+            if (parts.length !== 2) return false;
+            const [operator, threshold] = parts;
+            const numValue = parseFloat(value);
+            const numThreshold = parseFloat(threshold);
+            
+            if (isNaN(numValue) || isNaN(numThreshold)) {
+                // مقارنة نصية
+                switch(operator) {
+                    case '==': return String(value) === threshold;
+                    case '!=': return String(value) !== threshold;
+                    default: return false;
+                }
+            }
+            
             switch(operator) {
-                case '>': return parseFloat(value) > parseFloat(threshold);
-                case '<': return parseFloat(value) < parseFloat(threshold);
-                case '==': return value == threshold;
-                case '!=': return value != threshold;
-                case '>=': return parseFloat(value) >= parseFloat(threshold);
-                case '<=': return parseFloat(value) <= parseFloat(threshold);
+                case '>': return numValue > numThreshold;
+                case '<': return numValue < numThreshold;
+                case '==': return numValue === numThreshold;
+                case '!=': return numValue !== numThreshold;
+                case '>=': return numValue >= numThreshold;
+                case '<=': return numValue <= numThreshold;
                 default: return false;
             }
         } catch {
@@ -525,14 +513,12 @@ class ExcelUltimateEngine {
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet(params.sheetName || 'Sheet1');
 
-            // ✅ إضافة رؤوس الأعمدة
             if (params.headers) {
                 params.headers.forEach((header, index) => {
                     worksheet.getCell(1, index + 1).value = header;
                 });
             }
 
-            // ✅ إضافة البيانات
             if (params.data) {
                 params.data.forEach((row, rowIndex) => {
                     if (Array.isArray(row)) {
@@ -540,7 +526,6 @@ class ExcelUltimateEngine {
                             worksheet.getCell(rowIndex + 2, colIndex + 1).value = cell;
                         });
                     } else {
-                        // كائن (مفتاح: قيمة)
                         params.headers.forEach((header, colIndex) => {
                             worksheet.getCell(rowIndex + 2, colIndex + 1).value = row[header] || '';
                         });
@@ -548,12 +533,10 @@ class ExcelUltimateEngine {
                 });
             }
 
-            // ✅ تطبيق التنسيق
             if (params.styles) {
                 this.applyStyles(worksheet, params.styles);
             }
 
-            // ✅ إضافة صيغ
             if (params.formulas) {
                 params.formulas.forEach(formula => {
                     const cell = worksheet.getCell(formula.address);
@@ -561,14 +544,12 @@ class ExcelUltimateEngine {
                 });
             }
 
-            // ✅ إضافة تحقق من البيانات
             if (params.validations) {
                 params.validations.forEach(validation => {
                     this.addValidation(worksheet, validation);
                 });
             }
 
-            // ✅ إضافة فلتر
             if (params.filter) {
                 this.addFilter(worksheet, params.filter);
             }
@@ -590,16 +571,24 @@ class ExcelUltimateEngine {
     applyStyles(worksheet, styles) {
         styles.forEach(style => {
             const { range, fill, font, alignment, border } = style;
-            const [start, end] = range.split(':');
-            // تطبيق النمط على النطاق
-            for (let row = parseInt(start.match(/\d+/)[0]); row <= parseInt(end.match(/\d+/)[0]); row++) {
-                for (let col = start.charCodeAt(0) - 64; col <= end.charCodeAt(0) - 64; col++) {
-                    const cell = worksheet.getCell(row, col);
-                    if (fill) cell.fill = fill;
-                    if (font) cell.font = font;
-                    if (alignment) cell.alignment = alignment;
-                    if (border) cell.border = border;
+            try {
+                const [start, end] = range.split(':');
+                const startRow = parseInt(start.match(/\d+/)[0]);
+                const endRow = parseInt(end.match(/\d+/)[0]);
+                const startCol = start.charCodeAt(0) - 64;
+                const endCol = end.charCodeAt(0) - 64;
+                
+                for (let row = startRow; row <= endRow; row++) {
+                    for (let col = startCol; col <= endCol; col++) {
+                        const cell = worksheet.getCell(row, col);
+                        if (fill) cell.fill = fill;
+                        if (font) cell.font = font;
+                        if (alignment) cell.alignment = alignment;
+                        if (border) cell.border = border;
+                    }
                 }
+            } catch (e) {
+                console.warn('⚠️ تحذير في تطبيق الأنماط:', e.message);
             }
         });
     }
@@ -609,8 +598,6 @@ class ExcelUltimateEngine {
        ============================================================ */
 
     async format(filePath, params = {}) {
-        // هذا يمرر المهمة إلى Python إذا كانت متقدمة
-        // أو يستخدم ExcelJS للتنسيق الأساسي
         return await this.modify(filePath, {
             operations: [{
                 type: 'format_range',
@@ -625,12 +612,10 @@ class ExcelUltimateEngine {
        ============================================================ */
 
     async conditionalFormat(filePath, params = {}) {
-        // ✅ للمهام المعقدة، نستدعي Python
         if (params.complex) {
             return await this.callPythonForFormatting(filePath, params);
         }
         
-        // ✅ للمهام البسيطة، نستخدم ExcelJS
         return await this.modify(filePath, {
             operations: [{
                 type: 'color_cells',
@@ -681,20 +666,18 @@ wb.save('${filePath}')
         const data = readResult.data;
         const analysis = {
             summary: {
-                totalRows: data.metadata.totalRows,
-                totalColumns: data.metadata.totalColumns,
-                sheets: data.metadata.sheets
+                totalRows: data.metadata?.totalRows || 0,
+                totalColumns: data.metadata?.totalColumns || 0,
+                sheets: data.metadata?.sheets || 0
             },
             statistics: {},
             patterns: {}
         };
 
-        // ✅ تحليل إحصائي أساسي
         if (data.data && data.data[0]) {
             const firstSheet = data.data[0];
             if (firstSheet.length > 1) {
-                // حساب إحصائيات لكل عمود رقمي
-                const numCols = firstSheet[0].length;
+                const numCols = firstSheet[0]?.length || 0;
                 for (let col = 0; col < numCols; col++) {
                     const values = firstSheet.slice(1).map(row => parseFloat(row[col])).filter(v => !isNaN(v));
                     if (values.length > 0) {
@@ -725,25 +708,32 @@ wb.save('${filePath}')
         const query = params.query || '';
         const caseSensitive = params.caseSensitive || false;
 
-        readResult.data.data.forEach((sheet, sheetIndex) => {
-            sheet.forEach((row, rowIndex) => {
-                row.forEach((cell, colIndex) => {
-                    const cellStr = String(cell);
-                    const match = caseSensitive ? 
-                        cellStr.includes(query) : 
-                        cellStr.toLowerCase().includes(query.toLowerCase());
-                    
-                    if (match) {
-                        results.push({
-                            sheet: readResult.data.sheets[sheetIndex]?.name || `Sheet${sheetIndex+1}`,
-                            row: rowIndex + 1,
-                            col: colIndex + 1,
-                            value: cell
-                        });
-                    }
-                });
+        const data = readResult.data;
+        if (data.data) {
+            data.data.forEach((sheet, sheetIndex) => {
+                if (Array.isArray(sheet)) {
+                    sheet.forEach((row, rowIndex) => {
+                        if (Array.isArray(row)) {
+                            row.forEach((cell, colIndex) => {
+                                const cellStr = String(cell);
+                                const match = caseSensitive ? 
+                                    cellStr.includes(query) : 
+                                    cellStr.toLowerCase().includes(query.toLowerCase());
+                                
+                                if (match) {
+                                    results.push({
+                                        sheet: data.sheets?.[sheetIndex]?.name || `Sheet${sheetIndex+1}`,
+                                        row: rowIndex + 1,
+                                        col: colIndex + 1,
+                                        value: cell
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
             });
-        });
+        }
 
         return this.normalizedReply(`🔍 تم العثور على ${results.length} نتيجة.`, { results });
     }
@@ -795,7 +785,7 @@ pivot.to_excel('${filePath.replace('.xlsx', '_pivot.xlsx')}')
                 fs.renameSync(generatedPdfPath, out);
             }
 
-            const base64 = fs.readFileSync(out).toString("base64");
+            const base64 = fs.readFileSync(out).toString('base64');
             return this.normalizedFile("✅ تم تحويل الملف إلى PDF.", out, "converted.pdf", base64);
         } catch (err) {
             return this.normalizedError("فشل تحويل الملف إلى PDF.", err);
@@ -807,9 +797,14 @@ pivot.to_excel('${filePath.replace('.xlsx', '_pivot.xlsx')}')
         if (!readResult.ok) return readResult;
         
         const outPath = path.join(os.tmpdir(), `converted_${Date.now()}.csv`);
-        const csvData = readResult.data.data.map(sheet => 
-            sheet.map(row => row.join(',')).join('\n')
-        ).join('\n\n');
+        let csvData = '';
+        
+        const data = readResult.data;
+        if (data.data) {
+            csvData = data.data.map(sheet => 
+                sheet.map(row => row.join(',')).join('\n')
+            ).join('\n\n');
+        }
         
         fs.writeFileSync(outPath, csvData, 'utf-8');
         const base64 = fs.readFileSync(outPath).toString('base64');
@@ -859,10 +854,8 @@ pivot.to_excel('${filePath.replace('.xlsx', '_pivot.xlsx')}')
    🚀 إنشاء وتصدير المحرك النهائي
    ============================================================ */
 
-// ✅ تصدير نسخة واحدة من المحرك
 const ultimateEngine = new ExcelUltimateEngine();
 
-// ✅ تصدير الوظائف الرئيسية للتوافق مع النظام القديم
 export const excelRead = (filePath, params) => ultimateEngine.execute(filePath, 'read', params);
 export const excelModify = (filePath, params) => ultimateEngine.execute(filePath, 'modify', params);
 export const excelCreate = (params) => ultimateEngine.execute(null, 'create', params);
@@ -874,8 +867,5 @@ export const excelPivot = (filePath, params) => ultimateEngine.execute(filePath,
 export const excelConvertToPdf = (filePath) => ultimateEngine.execute(filePath, 'convert_pdf');
 export const excelConvertToCsv = (filePath) => ultimateEngine.execute(filePath, 'convert_csv');
 
-// ✅ تصدير المحرك الكامل
 export default ultimateEngine;
-
-// ✅ تصدير الكلاس للاستخدام المباشر
 export { ExcelUltimateEngine };
