@@ -1,9 +1,10 @@
 /**
- * api/groqService.js – Sovereign Gemini Gateway
- * محرك الربط السيادي لـ Google Gemini عبر الحزمة الرسمية والمستقرة
+ * api/groqService.js – Sovereign Gemini Gateway (Integrated with Execution Monitor)
+ * محرك الربط السيادي لـ Google Gemini مع تتبع دقيق لاستهلاك التوكنز
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { auditExecution } from "./core/execution_monitor.js";
 
 if (!process.env.GEMINI_API_KEY) {
   console.warn("⚠️ WARNING: GEMINI_API_KEY is not defined in environment variables.");
@@ -27,6 +28,15 @@ export default async function groqService(prompt) {
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
+
+    // 🛡️ تسجيل الاستدعاء الخارجي في المرصد السيادي
+    auditExecution({
+      action: "llm_inference_legacy",
+      target: "General Prompt",
+      isLocal: false,
+      usage: response.usageMetadata || null
+    });
+
     return response.text().trim();
 
   } catch (error) {
@@ -36,7 +46,7 @@ export default async function groqService(prompt) {
 }
 
 /* ============================================================
-   🟦 الوضع السيادي الجديد: مصفوفة رسائل كاملة + دعم fileData (الحقن المباشر الآمن)
+   🟦 الوضع السيادي الجديد: مصفوفة رسائل كاملة + دعم fileData + مراقبة التوكنز
    ============================================================ */
 groqService.chat = async function(messages, extra = {}) {
   try {
@@ -58,7 +68,7 @@ groqService.chat = async function(messages, extra = {}) {
     // استخراج الرسالة الأخيرة للمستخدم لتكون هي الطلب الحالي
     const lastMessage = history.pop();
 
-    // ⭐ الحقن المباشر لبيانات الملف ضمن النص (أكثر استقراراً وأماناً مع جيميني وتوفيراً للتوكنز)
+    // ⭐ الحقن المباشر لبيانات الملف ضمن النص
     if (extra.fileData) {
       const fileContextSnippet = `\n\n[بيانات الملف المرفق المستخرجة]:\n${JSON.stringify(extra.fileData, null, 2)}`;
       if (lastMessage) {
@@ -87,6 +97,15 @@ groqService.chat = async function(messages, extra = {}) {
     // إرسال الرسالة الأخيرة مع سياق الملف المدمج
     const result = await chat.sendMessage(lastMessage ? lastMessage.parts[0].text : "");
     const response = await result.response;
+
+    // 🛡️ رصد الاستدعاء الخارجي وتوثيق عدد التوكنز المستهلكة بدقة مطلقة
+    auditExecution({
+      action: "llm_strategic_analysis",
+      target: extra.fileName || "Active Chat Session",
+      isLocal: false,
+      usage: response.usageMetadata || null
+    });
+
     return response.text().trim();
 
   } catch (error) {
@@ -94,4 +113,3 @@ groqService.chat = async function(messages, extra = {}) {
     throw error;
   }
 };
-
