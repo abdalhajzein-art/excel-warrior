@@ -7,14 +7,12 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-// المحركات السيادية (توجيه الإكسل حصرياً نحو محرك الجسر السيادي المعتمد على Pandas)
+// المحركات السيادية
 import excelEngine, { excelRead, excelModify, excelCreate } from "./engines/excel.js";
 import { pdfRead, pdfConvert, pdfCreate } from "../pdf.js";
 import { wordCreate } from "../word.js";
 import { pptCreate } from "../ppt.js";
 import { imageConvert } from "../image.js";
-
-// LibreOffice
 import libreConvert from "./engines/libre.js";
 
 export default async function externalBridge(req, res) {
@@ -25,7 +23,7 @@ export default async function externalBridge(req, res) {
 
     const action = req.body.action || "read";
 
-    // 🛡️ حفظ الملف مؤقتًا بذكاء
+    // 🛡️ حفظ الملف مؤقتًا
     const tmpDir = os.tmpdir();
     const fileName = `${Date.now()}_${req.file.originalname}`;
     const filePath = path.join(tmpDir, fileName);
@@ -64,7 +62,7 @@ export default async function externalBridge(req, res) {
       }
     }
 
-    // 📝 DOCX / Word
+    // 📝 DOCX
     else if (ext === ".docx") {
       if (action === "preview") {
         const txt = await libreConvert(filePath, "txt");
@@ -83,17 +81,15 @@ export default async function externalBridge(req, res) {
       }
     }
 
-    // 📊 Excel (متوافق تماماً مع محرك Pandas السيادي ومعالجة الجداول العشوائية)
+    // 📊 Excel (محرك Pandas السيادي)
     else if (ext === ".xlsx" || ext === ".xls") {
       if (action === "preview" || action === "read") {
         const full = await excelEngine(filePath, "read");
+
+        // ⭐ النسخة المصحّحة: إرجاع البيانات كاملة وليس preview فقط
         result = {
           reply: full.reply || "📊 تم قراءة ملف Excel بنجاح عبر محرك Pandas السيادي.",
-          data: {
-            rowsCount: full.data?.rows || 0,
-            columns: full.data?.columns || [],
-            preview: full.data?.preview || []
-          }
+          data: full.data
         };
       } else if (action === "modify") {
         result = await excelEngine(filePath, "modify", req.body);
@@ -173,4 +169,4 @@ export default async function externalBridge(req, res) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-}
+                                  }
