@@ -1,5 +1,5 @@
 /**
- * api/upload.js – Sovereign File Intake + Heavy Processing Bridge (Final Edition)
+ * api/upload.js – Sovereign File Intake (Final Edition)
  * يستقبل الملف ويمرّره مباشرة إلى الجسر السيادي لمعالجة الملفات.
  */
 
@@ -14,12 +14,12 @@ export default async function uploadHandler(req, res) {
       });
     }
 
-    // 🟨 معالجة الاسم الأصلي العربي إن وُجد (تم إرساله من الـ Frontend)
-    if (req.body.originalName) {
-        // فك تشفير الاسم في حال وصوله بتشفير URI لحمايته
-        req.file.originalname = decodeURIComponent(req.body.originalName); 
-        console.log(`✅ [الأثير Intake] تم استلام الملف. الاسم الآمن: ${req.file.filename || 'تم إنشاؤه'}, الاسم الأصلي: ${req.file.originalname}`);
-    }
+    // 🚫 إزالة أي تعامل مع الاسم الأصلي
+    // 🚫 لا decodeURIComponent
+    // 🚫 لا originalName
+    // 🚫 لا ترميز عربي
+
+    console.log(`✅ [الأثير Intake] تم استلام الملف الآمن: ${req.file.originalname}`);
 
     // 🟦 تمرير الطلب للجسر السيادي مباشرة
     return await externalBridge(req, res);
