@@ -1,5 +1,5 @@
 /**
- * external_file_bridge.js – Sovereign Heavy Engine Bridge (Bulletproof Edition)
+ * external_file_bridge.js – Sovereign Heavy Engine Bridge (Final Clean Edition)
  * الجسر السيادي الموحد لمعالجة الملفات والربط المباشر مع محركات الـ Engines بنظام آمن بالكامل
  */
 
@@ -11,19 +11,17 @@ import { execSync } from "child_process";
 // مرصد التدقيق السيادي
 import { auditExecution } from "../../core/execution_monitor.js";
 
-// 🚀 استيراد المحركات بأمان تام وحماية شاملة ضد غياب التصديرات المسماة
-import pandasEngine from "./engines/pandas.js";
+// محركات النظام
 import libreConvert from "./engines/libre.js";
-
 import pdfEngine from "./engines/pdf.js";
-const pdfRead = typeof pdfEngine.pdfRead === 'function' ? pdfEngine.pdfRead : (typeof pdfEngine === 'function' ? pdfEngine : async (p) => ({ reply: "📄 ملف PDF", data: p }));
-const pdfCreate = typeof pdfEngine.pdfCreate === 'function' ? pdfEngine.pdfCreate : async (t) => ({ reply: "📄 تم إنشاء PDF", data: t });
-
 import wordEngine from "./engines/docx.js";
-const wordCreate = typeof wordEngine.wordCreate === 'function' ? wordEngine.wordCreate : (typeof wordEngine === 'function' ? wordEngine : async (t) => ({ reply: "📝 تم إنشاء المستند", data: t }));
-
 import imageEngine from "./engines/image.js";
-const imageConvert = typeof imageEngine === 'function' ? imageEngine : (imageEngine.imageConvert || imageEngine.default || (async () => ({ reply: "📷 تمت معالجة الصورة بنجاح." })));
+
+// ⚡ محرك Excel السيادي الجديد (Openpyxl Only)
+import excelEngine from "./engines/excel.js";
+
+// ⚠ CSV فقط عبر محرك pandas (اختياري)
+import pandasEngine from "./engines/pandas.js";
 
 /**
  * 🔍 دالة استخراج الـ Metadata لأي ملف برمجياً
@@ -37,7 +35,7 @@ export function extractFileMetadata(filePath) {
     const scriptPath = path.join(process.cwd(), "api/tools/external/engines/metadata_extractor.py");
     const stdout = execSync(`python3 "${scriptPath}" "${filePath}"`, { 
       encoding: "utf8",
-      maxBuffer: 10 * 1024 * 1024 // 10MB كحد أقصى للمخرجات
+      maxBuffer: 10 * 1024 * 1024
     });
 
     return JSON.parse(stdout);
@@ -65,14 +63,14 @@ export default async function externalBridge(req, res) {
     } else if (req.file.path) {
       fs.copyFileSync(req.file.path, filePath);
     } else {
-      throw new Error("لم يتم العثور على بيانات الملف (لا buffer ولا path).");
+      throw new Error("لم يتم العثور على بيانات الملف.");
     }
 
     const ext = path.extname(fileName).toLowerCase();
     let result = null;
 
     /* ============================================================
-       🌐 إجراء استخراج الـ Metadata الشامل لكل أنواع الملفات
+       🌐 استخراج Metadata
        ============================================================ */
     if (action === "extract_metadata") {
       result = {
@@ -84,25 +82,22 @@ export default async function externalBridge(req, res) {
     }
 
     /* ============================================================
-       🟥 التوجيه الذكي للمحركات عبر مجلد engines
+       🟥 التوجيه الذكي للمحركات
        ============================================================ */
 
     // 📄 PDF
     if (ext === ".pdf") {
       if (action === "preview") {
-        const full = await pdfRead(filePath);
+        const full = await pdfEngine.pdfRead(filePath);
         const text = (full.data?.text || full.data || "").toString();
         const previewText = text.split("\n").slice(0, 40).join("\n");
-        result = {
-          reply: "📄 لمحة عن محتوى ملف PDF:",
-          data: { preview: previewText }
-        };
+        result = { reply: "📄 لمحة عن محتوى ملف PDF:", data: { preview: previewText } };
       } else if (action === "read") {
-        result = await pdfRead(filePath);
+        result = await pdfEngine.pdfRead(filePath);
       } else if (action === "create") {
-        result = await pdfCreate(req.body.text || "");
+        result = await pdfEngine.pdfCreate(req.body.text || "");
       } else {
-        result = await pdfRead(filePath);
+        result = await pdfEngine.pdfRead(filePath);
       }
       auditExecution({ action: `pdf_${action}`, target: req.file.originalname, isLocal: true });
     }
@@ -113,52 +108,51 @@ export default async function externalBridge(req, res) {
         const txt = await libreConvert(filePath, "txt");
         const text = (txt.data?.text || txt.data || txt || "").toString();
         const previewText = text.split("\n").slice(0, 30).join("\n");
-        result = {
-          reply: "📝 محتوى المستند:",
-          data: { preview: previewText }
-        };
+        result = { reply: "📝 محتوى المستند:", data: { preview: previewText } };
       } else if (action === "create") {
-        result = await wordCreate(req.body.text || "");
+        result = await wordEngine.wordCreate(req.body.text || "");
       } else {
         result = await libreConvert(filePath, "txt");
       }
       auditExecution({ action: `docx_${action}`, target: req.file.originalname, isLocal: true });
     }
 
-    // 📊 Excel & CSV (محرك Pandas السيادي)
-    else if (ext === ".xlsx" || ext === ".xls" || ext === ".csv") {
+    // 📊 Excel عبر محرك Openpyxl السيادي فقط
+    else if (ext === ".xlsx" || ext === ".xls") {
+      result = await excelEngine(filePath, action, req.body);
+      auditExecution({ action: `excel_${action}`, target: req.file.originalname, isLocal: true });
+    }
+
+    // 📄 CSV فقط عبر pandasEngine (اختياري)
+    else if (ext === ".csv") {
       result = await pandasEngine(filePath, action, req.body);
-      auditExecution({
-        action: `pandas_${action}`,
-        target: req.file.originalname,
-        isLocal: true
-      });
+      auditExecution({ action: `csv_${action}`, target: req.file.originalname, isLocal: true });
     }
 
     // 🖼 صور
     else if ([".png", ".jpg", ".jpeg", ".webp", ".tiff", ".avif"].includes(ext)) {
       if (action === "convert") {
         const target = req.body.target || "png";
-        result = await imageConvert(filePath, target);
+        result = await imageEngine.imageConvert(filePath, target);
       } else {
         result = { reply: "📷 صورة مرفوعة بنجاح.", data: null };
       }
       auditExecution({ action: `image_${action}`, target: req.file.originalname, isLocal: true });
     }
 
-    // 🟪 fallback عام
+    // 🟪 fallback
     else {
-      result = await pdfRead(filePath);
+      result = await pdfEngine.pdfRead(filePath);
       auditExecution({ action: `fallback_${action}`, target: req.file.originalname, isLocal: true });
     }
 
     /* ============================================================
-       ⚠️ فلترة الأخطاء من المحركات الداخلية
+       ⚠️ فلترة الأخطاء
        ============================================================ */
     if (result && result.ok === false) {
       console.error("❌ فشل المحرك الداخلي:", result.error);
       return res.status(500).json({
-        error: result.error || result.reply || "حدث خطأ أثناء معالجة الملف برمجياً."
+        error: result.error || result.reply || "حدث خطأ أثناء معالجة الملف."
       });
     }
 
@@ -187,5 +181,4 @@ export default async function externalBridge(req, res) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-}
-
+        }
