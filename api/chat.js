@@ -1,5 +1,5 @@
 /**
- * api/chat.js – Sovereign Chat Layer (النسخة المحصنة لتوليد روابط التحميل المباشر)
+ * api/chat.js – Sovereign Chat Layer (النسخة المعمارية المحصنة بالكامل)
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -39,38 +39,55 @@ export default async function handler(req, res) {
     let fileBase64 = null;
     let returnedFileName = null;
 
+    // 🛡️ معالجة مرنة جداً لجميع أشكال المخرجات (نصوص، كائنات، أو JSON Strings)
+    let parsedOutput = output;
     if (typeof output === "string") {
-      reply = output;
-    } else if (output && typeof output === "object") {
-      reply = output.reply || reply;
-      fileBase64 = output.fileBase64 || null;
-      returnedFileName = output.fileName || null;
+      try {
+        parsedOutput = JSON.parse(output);
+      } catch (e) {
+        // إذا لم يكن JSON صالحاً، فهو نص عادي
+        reply = output;
+      }
     }
 
-    // 🛡️ التعديل المعماري السيادي: تحويل الـ Base64 إلى ملف حقيقي قابل للتحميل الفوري
-    if (fileBase64 && returnedFileName) {
-      try {
-        const buffer = Buffer.from(fileBase64, 'base64');
-        const uploadDir = path.join(__dirname, '../uploads');
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, { recursive: true });
+    if (parsedOutput && typeof parsedOutput === "object") {
+      // دعم جميع المفاتيح المحتملة (reply, message, response)
+      reply = parsedOutput.reply || parsedOutput.message || parsedOutput.response || reply;
+      
+      // دعم جميع مفاتيح الملفات (fileBase64, file_base64)
+      fileBase64 = parsedOutput.fileBase64 || parsedOutput.file_base64 || null;
+      
+      // دعم جميع مفاتيح أسماء الملفات (fileName, file_name)
+      returnedFileName = parsedOutput.fileName || parsedOutput.file_name || null;
+    }
+
+    // 🛡️ التعديل المعماري السيادي: معالجة الملفات وتوليد رابط التحميل المباشر
+    if (returnedFileName) {
+      const realFileUrl = `/uploads/${returnedFileName}`;
+
+      // إذا كان هناك Base64، نقوم بحفظه في مجلد الـ uploads للتأكد من توفره
+      if (fileBase64) {
+        try {
+          const buffer = Buffer.from(fileBase64, 'base64');
+          const uploadDir = path.join(__dirname, '../uploads');
+          if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+          }
+          fs.writeFileSync(path.join(uploadDir, returnedFileName), buffer);
+        } catch (err) {
+          console.error("❌ خطأ في حفظ الملف من الـ Base64:", err);
         }
-        const savedPath = path.join(uploadDir, returnedFileName);
-        fs.writeFileSync(savedPath, buffer);
+      }
 
-        // بناء الرابط الحقيقي المباشر على السيرفر
-        const realFileUrl = `/uploads/${returnedFileName}`;
+      // تنظيف واستبدال أي روابط وهمية أو علامات هاش (#) بالرابط الحقيقي
+      reply = reply.replace(/sandbox:\/[^\s)]+/g, realFileUrl);
+      reply = reply.replace(/\(sandbox:[^)]+\)/g, `(${realFileUrl})`);
+      reply = reply.replace(/["']download_link["']\s*:\s*["']#["']/g, `"download_link": "${realFileUrl}"`);
+      reply = reply.replace(/href=["']#["']/g, `href="${realFileUrl}"`);
 
-        // استبدال أي رابط sandbox وهمي برابط التحميل الحقيقي في رد النموذج
-        reply = reply.replace(/sandbox:\/[^\s)]+/g, realFileUrl);
-        reply = reply.replace(/\(sandbox:[^)]+\)/g, `(${realFileUrl})`);
-
-        // إضافة زر أو رابط واضح إذا لم يكن موجوداً
-        if (!reply.includes(realFileUrl)) {
-          reply += `\n\n📥 **[تحميل الملف المحدث مباشرة](${realFileUrl})**`;
-        }
-      } catch (err) {
-        console.error("❌ خطأ في حفظ الملف المؤقت للتحميل:", err);
+      // إضافة رابط التحميل المباشر بوضوح إذا لم يكن مضمناً في النص
+      if (!reply.includes(realFileUrl)) {
+        reply += `\n\n📥 **[تحميل الملف المحدث مباشرة](${realFileUrl})**`;
       }
     }
 
