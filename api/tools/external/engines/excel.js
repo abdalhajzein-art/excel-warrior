@@ -13,10 +13,25 @@ import pandasEngine from "./pandas.js";
    🟩 واجهات التصدير المباشرة المتوافقة مع البنية الأساسية
    ============================================================ */
 export async function excelRead(filePath, params = {}) {
+  // ✅ التحقق من وجود الملف قبل القراءة
+  if (!filePath || !fs.existsSync(filePath)) {
+    return normalizedError("الملف غير موجود أو المسار غير صحيح.");
+  }
+
+  // ✅ محاولة قراءة الميتاداتا أولاً (إذا كانت موجودة)
+  const metadata = params.metadata || null;
+  if (metadata && metadata.sheet_name) {
+    return normalizedReply("تم قراءة الميتاداتا بنجاح.", { metadata });
+  }
+
+  // ✅ إذا لم توجد ميتاداتا، استخدم pandas
   return await pandasEngine(filePath, "read", params);
 }
 
 export async function excelModify(filePath, params = {}) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return normalizedError("الملف غير موجود أو المسار غير صحيح.");
+  }
   return await pandasEngine(filePath, "modify", params);
 }
 
@@ -40,7 +55,7 @@ export default async function excelEngine(filePath, action, params = {}) {
         return convertExcelToPdf(filePath);
 
       default:
-        // إطلاق حرية تنفيذ أي عملية برمجية ديناميكية دون قيود مسبقة
+        // ✅ تمرير الميتاداتا إن وجدت
         return await pandasEngine(filePath, action, params);
     }
   } catch (err) {
@@ -110,5 +125,4 @@ function normalizedError(reply, err = null) {
     fileName: null,
     filePath: null
   };
-}
-
+    }
