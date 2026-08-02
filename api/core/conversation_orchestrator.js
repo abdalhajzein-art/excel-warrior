@@ -1,31 +1,25 @@
 /**
  * api/core/conversation_orchestrator.js
- * النسخة السيادية النهائية – تربط history + fusedMemory بشكل صحيح
+ * النسخة السيادية العامة – محرك مطلق لأي نوع ملف أو بيانات
  */
 
 import memory from "./memory.js";
 import fusionMemory from "./fusion_memory.js";
 import kernel from "./kernel.js";
 
-/* ============================================================
-   🟩 محركات الملفات
-   ============================================================ */
-import { excelRead, excelModify } from "../tools/excel.js";
-import { pdfRead, pdfConvert } from "../tools/pdf.js";
-import { wordCreate } from "../tools/word.js";
-import { pptCreate } from "../tools/ppt.js";
-import { imageConvert } from "../tools/image.js";
-import { libreConvert } from "../tools/index.js";
-
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
   try {
     console.log(`📥 [Orchestrator] جلسة ${sessionId}: "${message}"`);
 
     const session = memory.getSession(sessionId);
-    const fileResult = extraCtx.fileResult || null;
+
+    // ⭐ الطريقة الجديدة: استقبال full.data مباشرة
+    const fileData = extraCtx.fileData || null;
+    const fileName = extraCtx.fileName || null;
+
     const locationContext = extraCtx.locationContext || "";
 
-    const hasFile = !!(fileResult && fileResult.fileName);
+    const hasFile = !!fileData;
 
     // 🟩 إضافة رسالة المستخدم للذاكرة
     memory.appendChatHistory(sessionId, { role: "user", content: message });
@@ -34,47 +28,25 @@ export default async function conversationOrchestrator(sessionId, message, extra
     const fusedMemory = fusionMemory.apply(sessionId);
 
     /* ============================================================
-       🟧 مسار الملفات
+       🟧 مسار الملفات — عام ومطلق
        ============================================================ */
     if (hasFile) {
-      const fileName = fileResult.fileName.toLowerCase();
-      let result = null;
+      const summary = buildGenericSummary(fileData, fileName);
 
-      if (fileName.endsWith(".pdf")) {
-        const content = await pdfRead(fileResult.filePath);
-        result = buildLocalSummaryResult(content);
-      }
-      else if (fileName.endsWith(".docx")) {
-        const content = await pdfRead(fileResult.filePath);
-        result = buildLocalSummaryResult(content);
-      }
-      else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
-        const content = await excelRead(fileResult.filePath);
-        result = buildLocalSummaryResult(content);
-      }
-      else if (fileName.match(/\.(png|jpg|jpeg|webp|tiff|avif)$/)) {
-        result = {
-          ok: true,
-          reply: "📷 هذا ملف صورة — حالياً ما في استخراج نص منه.",
-          fileBase64: null,
-          fileName: null
-        };
-      }
+      memory.appendChatHistory(sessionId, { role: "assistant", content: summary });
 
-      if (!result) {
-        result = { ok: true, reply: `تم استلام الملف: ${fileResult.fileName}. شو حابب نعمل فيه؟` };
-      }
-
-      memory.appendChatHistory(sessionId, { role: "assistant", content: result.reply });
-
-      return result;
+      return {
+        ok: true,
+        reply: summary,
+        fileBase64: null,
+        fileName: null
+      };
     }
 
     /* ============================================================
        🟦 مسار الدردشة (الكرنل)
        ============================================================ */
 
-    // 🟩 history الحقيقي + فلتر حماية
     let history = memory.getChatHistory(sessionId, 30);
 
     // فلتر حماية ذكي يمنع ضغط النموذج
@@ -90,7 +62,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
         userProfile: fusedMemory.userProfile || null,
         lastTopics: fusedMemory.lastTopics || [],
         tags: fusedMemory.tags || []
-      }
+      },
+      fileData   // ⭐ تمرير full.data للكرنل مباشرة
     };
 
     const reply = await kernel(sessionId, message, kernelContext);
@@ -115,31 +88,69 @@ export default async function conversationOrchestrator(sessionId, message, extra
 }
 
 /* ============================================================
-   🧠 دوال التلخيص والنقاش المحلي
+   🧠 دوال التلخيص العامة لأي نوع بيانات
    ============================================================ */
 
-function buildLocalSummaryResult(content) {
-  const data = content?.data;
-  const reply = content?.reply;
+function buildGenericSummary(fullData, fileName) {
+  try {
+    if (!fullData || typeof fullData !== "object") {
+      return `📄 تم استلام الملف "${fileName}" لكن بدون بيانات قابلة للمعالجة.`;
+    }
 
-  if (data && typeof data.text === "string") {
-    const text = data.text.trim();
-    const preview = text.slice(0, 500);
-    return {
-      ok: true,
-      reply: `ملخص محلي:\n\n${preview}${text.length > 500 ? "..." : ""}`
-    };
+    // ⭐ إذا كان فيه sheets → Excel
+    if (fullData.sheets) {
+      const sheetNames = Object.keys(fullData.sheets);
+      const firstSheet = fullData.sheets[sheetNames[0]];
+
+      return `
+📄 تم استلام الملف "${fileName}" بنجاح.
+
+نوع البيانات: جدول متعدد الشيتات
+عدد الشيتات: ${sheetNames.length}
+أول شيت: ${sheetNames[0]}
+عدد الصفوف: ${firstSheet.rows}
+عدد الأعمدة: ${firstSheet.columns.length}
+
+جاهز أعطيك أي تحليل تريده.
+      `.trim();
+    }
+
+    // ⭐ إذا كان فيه preview → جدول بسيط
+    if (Array.isArray(fullData.preview)) {
+      return `
+📄 تم استلام الملف "${fileName}" بنجاح.
+
+نوع البيانات: جدول بسيط
+عدد الصفوف: ${fullData.rows}
+عدد الأعمدة: ${fullData.columns?.length || 0}
+
+جاهز أعطيك تفاصيل أكثر.
+      `.trim();
+    }
+
+    // ⭐ إذا كان فيه نص
+    if (fullData.text) {
+      const preview = fullData.text.slice(0, 500);
+      return `
+📄 تم استلام الملف "${fileName}" بنجاح.
+
+نوع البيانات: نص
+معاينة:
+${preview}${fullData.text.length > 500 ? "..." : ""}
+
+جاهز أعطيك ملخص أو تحليل.
+      `.trim();
+    }
+
+    // ⭐ fallback عام
+    return `
+📄 تم استلام الملف "${fileName}" بنجاح.
+
+نوع البيانات: غير معروف
+جاهز أعطيك تحليل عام أو استخراج معلومات.
+    `.trim();
+
+  } catch (err) {
+    return `⚠️ خطأ أثناء بناء ملخص الملف: ${err.message}`;
   }
-
-  if (data && Array.isArray(data.preview)) {
-    return {
-      ok: true,
-      reply: `ملخص جدول Excel:\n- صفوف: ${data.rows}\n- ورقة: ${data.sheetName}`
-    };
-  }
-
-  return {
-    ok: true,
-    reply: reply || "ما في محتوى واضح قابل للتلخيص."
-  };
   }
