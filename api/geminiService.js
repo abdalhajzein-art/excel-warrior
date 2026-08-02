@@ -1,6 +1,7 @@
 /**
  * api/groqService.js – Sovereign Gemini Gateway (Optimized & Natural Edition)
  * جسر الاتصال السيادي مع Google Gemini - مصمم لدعم الحوار الطبيعي ومنع عرض الـ JSON الخام
+ * ✅ تم تحديثها لدعم Aspose.Cells ومعالجة Excel الاحترافية
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -69,10 +70,34 @@ groqService.chat = async function(messages, extra = {}) {
 
     const lastMessage = history.pop();
 
-    // 🛡️ حماية التوكنز: حقن ملخص خفيف لبيانات الملف بدلاً من رميها كاملة في كل رسالة
-    if (extra.fileData && lastMessage) {
-      const fileSummarySnippet = `\n\n[ملاحظة نظامية: يوجد ملف نشط مرفق في الجلسة حالياً باسم "${extra.fileName || 'ملف بيانات'}" وتم استلامه بنجاح].`;
-      lastMessage.parts[0].text += fileSummarySnippet;
+    // ✅ تحسين: إضافة ملخص للملف إذا كان موجوداً
+    if (extra.fileName) {
+      const fileSummarySnippet = `\n\n📎 **[ملف مرفق نشط]**\n- الاسم: ${extra.fileName}\n- الحالة: تم استلامه ومعالجته محلياً (بدون استهلاك توكنز)\n`;
+      
+      // ✅ إضافة معلومات إضافية إذا كانت متوفرة من Aspose.Cells
+      if (extra.extractedContent && extra.extractedContent.metadata) {
+        const meta = extra.extractedContent.metadata;
+        fileSummarySnippet += `- عدد الصفوف: ${meta.rows || 'غير معروف'}\n`;
+        fileSummarySnippet += `- عدد الأعمدة: ${meta.columns || 'غير معروف'}\n`;
+        if (meta.hasFormulas) {
+          fileSummarySnippet += `- يحتوي على صيغ Excel: نعم\n`;
+        }
+        if (meta.sheets) {
+          fileSummarySnippet += `- عدد الأوراق: ${meta.sheets}\n`;
+        }
+      }
+      
+      // ✅ إضافة عينة من البيانات إذا كانت متوفرة
+      if (extra.extractedContent && extra.extractedContent.text) {
+        const textSample = extra.extractedContent.text.slice(0, 500);
+        if (textSample) {
+          fileSummarySnippet += `\n📊 **عينة من البيانات:**\n\`\`\`\n${textSample}\n\`\`\`\n`;
+        }
+      }
+      
+      if (lastMessage) {
+        lastMessage.parts[0].text += fileSummarySnippet;
+      }
     }
 
     const model = genAI.getGenerativeModel({
@@ -83,9 +108,8 @@ groqService.chat = async function(messages, extra = {}) {
     const chat = model.startChat({
       history: history,
       generationConfig: {
-        temperature: 0.3, // مرونة موزونة للسياق اللغوي
+        temperature: 0.3,
         maxOutputTokens: 8192,
-        // تم حذف responseMimeType: "application/json" نهائياً ليتمكن النموذج من الرد بشكل نصي طبيعي وجميل
       }
     });
 
@@ -106,4 +130,3 @@ groqService.chat = async function(messages, extra = {}) {
     throw error;
   }
 };
-
