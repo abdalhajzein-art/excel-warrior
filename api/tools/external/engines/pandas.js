@@ -34,7 +34,6 @@ export default async function pandasEngine(filePath, action, params = {}) {
         return await runPythonConvert(filePath, params);
 
       default:
-        // إذا توفر كود مخصص، نفذه فوراً وبحسب الناتج قرر الرد
         if (params.custom_python_code) {
           return await runPythonDynamicExecutor(filePath, params);
         }
@@ -59,7 +58,6 @@ import json
 import sys
 import warnings
 
-# كتم التحذيرات غير الضارة لضمان نظافة المخرجات
 warnings.filterwarnings('ignore')
 
 try:
@@ -67,14 +65,38 @@ try:
     mode = sys.argv[2]
     params = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
 
-    if file_path.endswith(('.xlsx', '.xls')):
-        xls = pd.ExcelFile(file_path)
-        sheet_names = xls.sheet_names
-        target_sheet = params.get('sheet', sheet_names[0])
-        df = pd.read_excel(file_path, sheet_name=target_sheet)
-    else:
+    # === محرك قراءة مرن ومحصن ضد تلاعب الصيغ والترميزات ===
+    df = None
+    try:
+        if file_path.endswith(('.xlsx', '.xls')):
+            try:
+                xls = pd.ExcelFile(file_path)
+                sheet_names = xls.sheet_names
+                target_sheet = params.get('sheet', sheet_names[0])
+                df = pd.read_excel(file_path, sheet_name=target_sheet)
+            except Exception:
+                raise ValueError("Not a real Excel binary, falling back to text parsers.")
+        else:
+            raise ValueError("Not excel format")
+    except Exception:
         sheet_names = ["Sheet1"]
-        df = pd.read_csv(file_path)
+        encodings = ['utf-8-sig', 'utf-8', 'windows-1256', 'latin1']
+        separators = [',', ';', '\t', '|']
+        
+        for enc in encodings:
+            for sep in separators:
+                try:
+                    temp_df = pd.read_csv(file_path, encoding=enc, sep=sep)
+                    if temp_df is not None and len(temp_df.columns) > 1:
+                        df = temp_df
+                        break
+                except Exception:
+                    continue
+            if df is not None:
+                break
+        
+        if df is None:
+            df = pd.read_csv(file_path, encoding='utf-8-sig')
 
     df = df.dropna(how='all', axis=0).dropna(how='all', axis=1)
     df.columns = [str(c).strip() for c in df.columns]
@@ -98,7 +120,6 @@ try:
             numeric_stats = num_df.describe().to_dict()
 
         categorical_summary = {}
-        # إصلاح تحذير Pandas 4 الصريح
         cat_df = df.select_dtypes(include=['object', 'string', 'category'])
         for col in cat_df.columns:
             top_v = df[col].value_counts().head(15).to_dict()
@@ -146,7 +167,6 @@ except Exception as e:
     const parsed = JSON.parse(output.trim());
     if (!parsed.ok) return normalizedError(parsed.reply, new Error(parsed.error));
     
-    // إرجاع رد نصي بحت بدون أي ملفات تحميل
     return normalizedReply(parsed.reply, parsed.data);
   } catch (err) {
     return normalizedError("خطأ في تشغيل محرك القراءة والاستعلام.", err);
@@ -160,7 +180,6 @@ function runPythonDynamicExecutor(filePath, params = {}) {
   try {
     const outPath = path.join(path.dirname(filePath), `modified_${Date.now()}.xlsx`);
     
-    // كود افتراضي للتنسيق في حال لم يتم إرسال كود ديناميكي
     const defaultCode = `
 for col_num in range(1, ws.max_column + 1):
     cell = ws.cell(row=1, column=col_num)
@@ -218,7 +237,6 @@ except Exception as e:
     const parsedOutput = JSON.parse(output.trim());
     if (!parsedOutput.ok) return normalizedError(parsedOutput.reply, new Error(parsedOutput.error));
 
-    // فقط عند التعديل الفعلي والنجاح، نعيد الملف كـ Base64
     if (fs.existsSync(outPath)) {
       const base64 = fs.readFileSync(outPath).toString("base64");
       return normalizedFile("تم تعديل الملف وهندسته بنجاح.", outPath, "modified_alatheer.xlsx", base64);
