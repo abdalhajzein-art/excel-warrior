@@ -22,6 +22,7 @@ export default async function handler(req, res) {
     const fileData = body.fileData || null;
     const fileName = body.fileName || null;
     const history = body.history || [];
+    const metadata = body.metadata || null; // ✅ استقبال الميتاداتا من الواجهة
 
     if (!userContent && !fileData) {
       return res.status(400).json({
@@ -53,12 +54,13 @@ export default async function handler(req, res) {
       }
     }
 
-    // تمرير الطلب + مسار الملف المادي للـ Orchestrator
+    // ✅ تمرير الميتاداتا إلى الـ Orchestrator
     const output = await conversationOrchestrator(sessionKey, userContent, {
       fileData,
       fileName,
       filePath: localFilePath,
-      history
+      history,
+      metadata // ✅ تمرير الميتاداتا
     });
 
     let reply = "تم إنجاز طلبك بنجاح!";
@@ -75,7 +77,6 @@ export default async function handler(req, res) {
 
     // إذا تم إنتاج ملف جديد نتيجة المعالجة البرمجية
     if (returnedFileName) {
-      // 🛡️ استخدام encodeURI لضمان عمل الرابط حتى لو كان اسم الملف بالعربي أو يحتوي مسافات
       const realFileUrl = encodeURI(`/uploads/${returnedFileName}`);
       
       if (!reply.includes(returnedFileName)) {
@@ -95,4 +96,4 @@ export default async function handler(req, res) {
       reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
     });
   }
-}
+          }
