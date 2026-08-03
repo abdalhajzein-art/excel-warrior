@@ -19,23 +19,13 @@ import pdfEngine from "./engines/pdf.js";
 import wordEngine from "./engines/docx.js";
 import imageEngine from "./engines/image.js";
 
-// ⚡ المحرك الشامل الجديد (ExcelJS + XLSX)
-import excelEngine, { 
-    excelRead, 
-    excelModify, 
-    excelCreate, 
-    excelFormat,
-    excelAnalyze,
-    excelSearch,
-    excelConditionalFormat,
-    excelPivot,
-    excelConvertToPdf,
-    excelConvertToCsv
-} from "./engines/excel.js";
+// ⚡ المحرك الشامل الجديد (Excel Ultimate Engine)
+import excelEngine from "./engines/excel/index.js";  // ← التغيير هنا
 
 // ⚠ CSV فقط عبر محرك pandas (اختياري)
 import pandasEngine from "./engines/pandas.js";
 
+// ... باقي الملف كما هو (لا تغيير)
 /**
  * 🔍 دالة استخراج الـ Metadata لأي ملف برمجياً
  */
