@@ -1,27 +1,60 @@
 /**
- * api/geminiService.js – Sovereign Gemini Service
- * ✅ جسر تواصل بسيط، لا يحتوي على تعليمات خاصة
- * ✅ يستقبل التعليمات من kernel الذي يستوردها من system.js
+ * api/geminiService.js – Sovereign Gemini Service (Multi-Key & Native Prompt Edition)
+ * ✅ دعم التدوير الآلي لمفاتيح API (Multi-Key Rotation) لتجاوز قيود Rate Limits 429.
+ * ✅ التمرير المباشر لـ System Instructions بداخل SDK بدلاً من دمجها في نص المستخدم.
+ * ✅ مرونة اسم النموذج واستقرار الاتصال.
+ * ✅ تسجيل سجلات الأداء والأداة عبر auditExecution.
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { auditExecution } from "./core/execution_monitor.js";
 
-if (!process.env.GEMINI_API_KEY) {
-  console.warn("⚠️ WARNING: GEMINI_API_KEY is not defined in environment variables.");
+// 🔑 استخراج المفاتيح ودعم التدوير الآلي (Multi-Key Failover)
+const rawKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";
+const API_KEYS = rawKeys.split(",").map(k => k.trim()).filter(Boolean);
+
+if (API_KEYS.length === 0) {
+  console.warn("⚠️ WARNING: لم يتم العثور على مفاتيح GEMINI_API_KEY في متغيرات البيئة!");
 }
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_NAME = "gemini-3.5-flash-lite";
+let currentKeyIndex = 0;
 
-// ✅ تعليمات أساسية بسيطة جداً، لأن كل التعليمات تأتي من system.js
-const BASE_INSTRUCTION = `أنت "الأثير" — المساعد الذكي.`;
+/**
+ * جلب العميل مع التدوير بين المفاتيح المتاحة
+ */
+function getGenAIClient() {
+  const key = API_KEYS[currentKeyIndex % API_KEYS.length];
+  currentKeyIndex++;
+  return new GoogleGenerativeAI(key);
+}
+
+const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+
+/**
+ * 🛠️ تنفيذ الاستدعاء مع إعادة المحاولة التلقائية عند حدوث ضغط على المفاتيح
+ */
+async function executeWithRetry(fn) {
+  let attempts = 0;
+  const maxAttempts = Math.max(1, API_KEYS.length);
+  let lastError = null;
+
+  while (attempts < maxAttempts) {
+    try {
+      const client = getGenAIClient();
+      return await fn(client);
+    } catch (err) {
+      lastError = err;
+      console.warn(`⚠️ [GeminiService] فشل الطلب بالمفتاح الحالي (المحاولة ${attempts + 1}/${maxAttempts}): ${err.message}`);
+      attempts++;
+    }
+  }
+  throw lastError;
+}
 
 export default async function geminiService(prompt, context = {}) {
-  try {
-    const model = genAI.getGenerativeModel({
+  return executeWithRetry(async (client) => {
+    const model = client.getGenerativeModel({
       model: MODEL_NAME,
-      systemInstruction: BASE_INSTRUCTION,
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 4096,
@@ -42,72 +75,70 @@ export default async function geminiService(prompt, context = {}) {
     });
 
     return response.text().trim();
-
-  } catch (error) {
-    console.error("❌ Gemini Service Error:", error);
-    return "⚠️ حدث خطأ أثناء توليد الرد.";
-  }
+  });
 }
 
-// ✅ دالة chat
+// ✅ دالة المحادثة التفاعلية (Chat Mode)
 geminiService.chat = async function(messages, extra = {}) {
-  try {
-    const model = genAI.getGenerativeModel({
+  return executeWithRetry(async (client) => {
+    // 1. استخراج رسائل النظام وتمريرها أصلياً لـ systemInstruction
+    const systemMessages = messages.filter(m => m.role === "system");
+    const systemInstructionText = systemMessages.map(m => m.content).join('\n\n') || `أنت "الأثير" — المساعد الذكي.`;
+
+    const model = client.getGenerativeModel({
       model: MODEL_NAME,
-      systemInstruction: BASE_INSTRUCTION,
+      systemInstruction: systemInstructionText,
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 4096,
       }
     });
 
+    // 2. بناء تاريخ المحادثة دون خلط رسائل النظام مع رسائل المستخدم
     const history = [];
     let lastUserMessage = "";
 
-    for (const msg of messages) {
-      if (msg.role === "system") {
-        // ✅ رسائل النظام تمرر كسياق، لا نتجاهلها
-        continue;
-      }
+    const conversationMsgs = messages.filter(m => m.role !== "system");
+
+    for (let i = 0; i < conversationMsgs.length; i++) {
+      const msg = conversationMsgs[i];
+      const isLast = i === conversationMsgs.length - 1;
+
       if (msg.role === "user") {
-        lastUserMessage = msg.content;
-        history.push({ role: "user", parts: [{ text: msg.content }] });
+        if (isLast) {
+          lastUserMessage = msg.content;
+        } else {
+          history.push({ role: "user", parts: [{ text: msg.content }] });
+        }
       } else if (msg.role === "assistant" || msg.role === "model") {
-        history.push({ role: "model", parts: [{ text: msg.content }] });
+        if (!isLast) {
+          history.push({ role: "model", parts: [{ text: msg.content }] });
+        }
       }
     }
 
-    // ✅ نضيف رسائل النظام كسياق في بداية آخر رسالة
-    const systemMessages = messages.filter(m => m.role === "system");
-    if (systemMessages.length > 0) {
-      const systemContent = systemMessages.map(m => m.content).join('\n');
-      if (lastUserMessage) {
-        lastUserMessage = `${systemContent}\n\n[المستخدم]:\n${lastUserMessage}`;
-      }
-    }
-
-    // ✅ إضافة معلومات الملف
-    if (extra.fileName && extra.extractedContent?.metadata) {
+    // 3. إضافة معلومات وصفيّة للملف المرفق بداخل الرسالة الأخيرة فقط
+    if (extra.fileName && extra.extractedContent?.metadata && lastUserMessage) {
       const meta = extra.extractedContent.metadata;
       const fileInfo = `
-📎 [ملف مرفق]: ${extra.fileName}
-- الصفوف: ${meta.rows || 'غير معروف'}
-- الأعمدة: ${meta.columns || 'غير معروف'}
+📎 [الملف المرفق النشط]: ${extra.fileName}
+- الأبعاد: ${meta.rows || 'غير محدد'} صف | ${meta.columns || 'غير محدد'} عمود
 `;
-      if (lastUserMessage) {
+      if (!lastUserMessage.includes(extra.fileName)) {
         lastUserMessage += "\n\n" + fileInfo;
       }
     }
 
+    // 4. بدء جلسة المحادثة وإرسال الطلب
     const chat = model.startChat({
-      history: history.slice(0, -1),
+      history: history,
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 4096,
       }
     });
 
-    const result = await chat.sendMessage(lastUserMessage);
+    const result = await chat.sendMessage(lastUserMessage || "مرحباً");
     const response = await result.response;
 
     auditExecution({
@@ -118,9 +149,5 @@ geminiService.chat = async function(messages, extra = {}) {
     });
 
     return response.text().trim();
-
-  } catch (error) {
-    console.error("❌ Gemini Chat Error:", error);
-    throw error;
-  }
+  });
 };
