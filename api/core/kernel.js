@@ -1,7 +1,8 @@
 /**
- * api/core/kernel.js – Alatheer Sovereign Kernel (Advanced Edition)
+ * api/core/kernel.js – Alatheer Sovereign Kernel (Advanced Architecture)
  * ✅ تنظيف الرد وإخفاء كتلة الـ JSON عن الواجهة نهائياً باحترافية.
- * ✅ توسيع استيعاب البيانات (رفع سقف القراءة لدعم الجداول الكبيرة).
+ * ✅ توافق كامل مع مخرجات Orchestrator (سواء مرت بـ ctx المباشر أو عبر activeFile).
+ * ✅ تزويد Gemini بمخطط العمليات المدعومة (Operations Schema) لمنع الهلوسة.
  * ✅ دعم اللهجة السورية وتأكيد شخصية "الزميل المعماري".
  */
 
@@ -14,22 +15,21 @@ import { SYSTEM_PROMPT } from "../agent/system.js";
  */
 function parseAndCleanReply(reply) {
     let operations = [];
-    let cleanReply = reply;
+    let cleanReply = reply || "";
 
     try {
-        // البحث عن الـ JSON بصيغة ```json ... ``` أو مجرد ``` ... ```
-        const jsonMatch = reply.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+        // 1. البحث عن الـ JSON في كتل الماركداون ```json ... ```
+        const jsonMatch = cleanReply.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
         
         if (jsonMatch) {
             const data = JSON.parse(jsonMatch[1].trim());
             if (data.operations && Array.isArray(data.operations)) {
                 operations = data.operations;
             }
-            // إزالة كتلة الـ JSON تماماً من النص الذي يراه المستخدم
             cleanReply = cleanReply.replace(jsonMatch[0], '').trim();
         } else {
-            // محاولة ثانية للبحث عن كتل JSON عارية تبدأ بـ { وتنتهي بـ } وتتضمن operations
-            const jsonMatch2 = reply.match(/\{[\s\S]*?"operations"[\s\S]*?\}/);
+            // 2. البحث عن JSON عارٍ يحتوي على operations
+            const jsonMatch2 = cleanReply.match(/\{[\s\S]*?"operations"[\s\S]*?\}/);
             if (jsonMatch2) {
                 const data = JSON.parse(jsonMatch2[0]);
                 if (data.operations && Array.isArray(data.operations)) {
@@ -39,10 +39,9 @@ function parseAndCleanReply(reply) {
             }
         }
     } catch (e) {
-        console.warn('⚠️ [Kernel] فشل تحليل العمليات (إما لا يوجد عمليات أو الصيغة غير مكتملة):', e.message);
+        console.warn('⚠️ [Kernel] لم يتم استخراج عمليات من الرد (إما لا يوجد أو الصيغة غير مكتملة):', e.message);
     }
 
-    // تنظيف أي أسطر فارغة زائدة نتجت عن عملية القص
     return { 
         operations, 
         cleanReply: cleanReply.replace(/\n{3,}/g, '\n\n').trim() 
@@ -60,16 +59,18 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         };
     }
 
-    const extractedContent = ctx.extractedContent || null;
-    const fileName = ctx.fileName || "الملف النشط";
+    // 🎯 إصلاح الربط: التوافق التام مع سياق Orchestrator
+    const activeFile = ctx.activeFile || null;
+    const extractedContent = ctx.extractedContent || activeFile?.extractedContent || null;
+    const fileName = ctx.fileName || activeFile?.fileName || "الملف النشط";
 
-    // ✅ بناء سياق الملف مع توسيع استيعاب البيانات (من 3000 إلى 25000 حرف)
-    let fileContext = "";
-    if (extractedContent && !extractedContent.error) {
+    // ✅ بناء سياق الملف مع توسيع استيعاب البيانات
+    let fileContext = ctx.activeFileSummary || "";
+    if (!fileContext && extractedContent && !extractedContent.error) {
         const meta = extractedContent.metadata || {};
         const text = extractedContent.text || '';
         
-        const MAX_CHARS = 25000; // مساحة ضخمة لتمرير بيانات كافية للنموذج
+        const MAX_CHARS = 25000;
         fileContext = `
 📄 **معلومات الملف النشط:** [${fileName}]
 📊 **الأبعاد:** ${meta.rows || 0} صف، ${meta.columns || 0} عمود، ${meta.sheets || 1} أوراق عمل.
@@ -81,7 +82,7 @@ ${text.slice(0, MAX_CHARS)}${text.length > MAX_CHARS ? '\n... (تم اختصار
 
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
     
-    // 🛡️ هندسة الأوامر السيادية (Sovereign Prompt Engineering)
+    // 🛡️ هندسة الأوامر السيادية - المخطط القياسي للعمليات المدعومة
     let systemContent = `
 ${SYSTEM_PROMPT}
 
@@ -89,17 +90,19 @@ ${SYSTEM_PROMPT}
 - أنت زميل ومهندس معماري لمنصة "الأثير". خاطب المستخدم دائماً بروح الزميل باللهجة السورية المهنية المحببة (يا شريكي، يا هندسة، تكرم عينك، إلخ).
 - إياك أن تظهر للمستخدم أي كود JSON أو تفاصيل برمجية تخص العمليات في نصك المرئي. الرد النصي يجب أن يكون طبيعياً يخبره بما فعلت.
 
-[تعليمات التحكم في الملفات - Structured JSON]:
-إذا طلب المستخدم تعديلاً على الملف المرفق أو تحليله، يجب عليك توليد كتلة JSON مخفية في نهاية ردك كالتالي:
+[تعليمات التحكم في الملفات - Structured JSON Schema]:
+إذا طلب المستخدم تعديلاً على الملف، قم بتذييل ردك بكتلة JSON بالصيغة التالية حصراً:
 \`\`\`json
 {
     "operations": [
-        {"type": "add_column", "header": "اسم العمود"},
-        {"type": "add_validation", "address": "A1:A10", "formulae": ["\\"خيار1,خيار2\\""]}
+        {"type": "add_column", "header": "اسم العمود", "after": "اسم عمود سابق (اختياري)"},
+        {"type": "add_validation", "address": "A2:A100", "formulae": ["\\"خيار1,خيار2\\""]},
+        {"type": "add_row", "data": {"الاسم": "أحمد", "العنوان": "دمشق"}},
+        {"type": "highlight", "range": "A1:Z1", "color": "#FFD700"}
     ]
 }
 \`\`\`
-(ملاحظة: استبدل العمليات بما يتناسب مع الطلب. إذا لم يطلب تعديلاً، اجعل المصفوفة فارغة: {"operations": []}).
+(إذا لم يطلب المستخدم أي تعديل عملي على الملف، أرجع المصفوفة فارغة: {"operations": []}).
 `;
 
     if (fileContext) {
@@ -121,8 +124,8 @@ ${SYSTEM_PROMPT}
         console.log(`🧠 [Kernel] يتم الآن العصف الذهني ومعالجة الطلب في جيميني...`);
 
         const rawReply = await geminiService.chat(conversationMessages, {
-            fileName: ctx.fileName,
-            extractedContent: ctx.extractedContent
+            fileName,
+            extractedContent
         });
 
         // تنظيف الرد وفصل الـ JSON عن النص المرئي
@@ -135,7 +138,6 @@ ${SYSTEM_PROMPT}
             returnedFileName = fileName; 
         }
 
-        // إذا كان النص فارغاً تماماً بعد التنظيف (نادر الحدوث)، نضع رداً افتراضياً ذكياً
         if (!finalReplyText) {
             finalReplyText = "تم يا شريكي، جهزتلك التعديلات المطلوبة على الملف.";
         }
@@ -145,7 +147,6 @@ ${SYSTEM_PROMPT}
         finalReplyText = `معليش يا شريكي، صار في خطأ تقني بالاتصال: ${error.message}`;
     }
 
-    // حفظ رد المساعد السيادي في الذاكرة (يجب حفظ النص النظيف فقط بدون الـ JSON)
     memory.appendSovereignHistory(sessionId, {
         role: "assistant",
         content: finalReplyText,
@@ -158,3 +159,4 @@ ${SYSTEM_PROMPT}
         operations: operations
     };
 }
+
