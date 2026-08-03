@@ -2,7 +2,7 @@
  * api/core/conversation_orchestrator.js – Sovereign Universal Orchestrator (Multi-Turn State Sync & Execution Edition)
  * ✅ يمرر العمليات من kernel إلى محرك التعديل الفعلي (ExcelModifier)
  * ✅ يدير حالة الملفات بشكل ذكي ويحافظ على الذاكرة العميقة (Deep Memory)
- * 🔄 يدعم التعديل المتتابع المترابط ويولد الملف المعدل للتحميل
+ * 🔄 يدعم التعديل المتتابع المترابط ويولد الملف المعدل للتحميل مع حماية ضد ضياع المسارات المؤقتة
  */
 
 import memory from "./memory.js";
@@ -145,22 +145,25 @@ export default async function conversationOrchestrator(sessionId, message, extra
         // ⚡ 8. التنفيذ البرمجي السيادي: تطبيق العمليات المستخرجة عبر محرك الإكسل الفعلي
         if (operations.length > 0 && session.activeFile && session.activeFile.filePath) {
             try {
-                console.log(`🛠️ [Orchestrator] بدء تنفيذ ${operations.length} عملية على الملف الفعلي: ${session.activeFile.filePath}`);
-                
                 const adapter = new ExcelJSAdapter();
                 const modifier = new ExcelModifier(adapter);
                 
-                // تنفيذ التعديلات مع نسخة احتياطية
-                const modifyResult = await modifier.modifyWithBackup(session.activeFile.filePath, operations);
+                // 🛡️ فحص سيادي وحل مسار الملف (يضمن الرجوع لـ persistent_uploads تلقائياً إذا تم حذف الملف المؤقت)
+                const targetFilePath = modifier.resolveFilePath(session.activeFile.filePath);
+                
+                console.log(`🛠️ [Orchestrator] بدء تنفيذ ${operations.length} عملية على الملف الفعلي: ${targetFilePath}`);
+                
+                // تنفيذ التعديلات مع نسخة احتياطية بالمسار الموثوق
+                const modifyResult = await modifier.modifyWithBackup(targetFilePath, operations);
                 
                 // ✅ التحقق السيادي المتسامح مع شكل النتيجة
                 const isSuccess = modifyResult && (modifyResult.success === true || modifyResult.ok === true || modifyResult.filePath || modifyResult.fileBase64);
                 
                 if (isSuccess) {
-                    const targetPath = modifyResult.filePath || session.activeFile.filePath;
-                    session.activeFile.filePath = targetPath;
+                    const finalPath = modifyResult.filePath || targetFilePath;
+                    session.activeFile.filePath = finalPath;
                     
-                    const fileBuffer = await FileUtils.readFile(targetPath);
+                    const fileBuffer = await FileUtils.readFile(finalPath);
                     fileBase64 = fileBuffer.toString('base64');
                     returnedFileName = session.activeFile.fileName;
                     
@@ -168,7 +171,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
                     reply += `\n\n📥 جاهز يا شريكي! تم تطبيق كافة التعديلات المطلوبة على الملف، وصار بإمكانك تحميله الآن.`;
                 } else {
                     console.warn(`⚠️ [Orchestrator] لم يرجع محرك التعديل حالة نجاح صريحة، لكن العملية اكتملت.`);
-                    const fileBuffer = await FileUtils.readFile(session.activeFile.filePath);
+                    const fileBuffer = await FileUtils.readFile(targetFilePath);
                     fileBase64 = fileBuffer.toString('base64');
                     returnedFileName = session.activeFile.fileName;
                     reply += `\n\n📥 تم تنفيذ العمليات على الملف، وصار جاهزاً للتحميل.`;
