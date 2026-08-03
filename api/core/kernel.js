@@ -3,9 +3,10 @@
  * ✅ يعتمد على Gemini لفهم نية المستخدم بدلاً من الكلمات المفتاحية
  * ✅ يدعم الميتاداتا والمحتوى المستخرج محلياً
  * ✅ يحدد تلقائياً متى يجب إرجاع ملف معدل
+ * ✅ يمنع كتابة الكود بشكل صريح
  */
 
-import groqService from "../geminiService.js";
+import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 import fs from "fs";
@@ -37,10 +38,12 @@ async function detectIntentWithAI(message, context = {}) {
     "requiresFile": true|false,
     "description": "وصف الطلب"
 }
+
+⚠️ مهم: أنت ممنوع من كتابة أي كود برمجي. أجب فقط بتحليل النية.
 `;
 
     try {
-        const response = await groqService.chat([
+        const response = await geminiService.chat([
             { role: "system", content: intentPrompt },
             { role: "user", content: message }
         ], { temperature: 0.1 });
@@ -100,14 +103,14 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             }
         }
 
-        // تقطيع النص لتقليل استهلاك التوكنز
-        const maxChars = 6000;
+        // ✅ تقطيع النص لتقليل استهلاك التوكنز (تخفيض إلى 2000 حرف)
+        const maxChars = 2000;
         const truncatedText = contentText.length > maxChars
             ? contentText.slice(0, maxChars) + '\n... (تم اختصار المحتوى لتوفير التوكنز)'
             : contentText;
 
         fileContextPrompt = `
-📄 **[محتوى الملف "${fileName}" المستخرج محلياً (بدون استهلاك توكنز)]:**
+📄 **[محتوى الملف "${fileName}" المستخرج محلياً]:**
 
 ${truncatedText}
 
@@ -119,22 +122,26 @@ ${metadataInfo}
     const intentResult = await detectIntentWithAI(message, { fileName });
     console.log(`🎯 [Kernel] النية المكتشفة:`, intentResult);
 
-    // ✅ بناء التعليمات السيادية
-    let agenticInstructions = "";
-    if (fileContextPrompt) {
-        agenticInstructions = `
+    // ✅ بناء التعليمات السيادية (مع منع كتابة الكود)
+    let agenticInstructions = `
+🚫 **[قوانين سيادية صارمة]:**
+1. أنت ممنوع من كتابة أي كود برمجي (Python، JavaScript، أو أي لغة).
+2. مهمتك هي التحليل والوصف فقط باللغة العربية.
+3. التعديلات الفعلية يتم تنفيذها بواسطة المحرك الداخلي (ExcelJS/XLSX).
+4. لا تخرج أي كود في ردك، فقط نص وصفي.
+5. إذا طلب المستخدم تعديلاً، صف التعديل المطلوب فقط.
+
 [تحليل النية]:
 - نوع الطلب: ${intentResult.intent}
 - يتطلب ملفاً: ${intentResult.requiresFile ? 'نعم' : 'لا'}
 - وصف الطلب: ${intentResult.description}
+`;
 
-[تعليمات سيادية]:
-1. أنت تعمل مع محتوى ملف تم استخراجه محلياً.
-2. لا حاجة لكتابة كود Python لقراءة الملف (المحتوى موجود بالفعل).
-3. ${intentResult.requiresFile ? '⚠️ المستخدم يطلب تعديلاً على الملف، قم بوصف التعديل المطلوب بالتفصيل.' : 'ℹ️ المستخدم يطلب معلومات، أجب بناءً على محتوى الملف.'}
-4. لا تختلق معلومات غير موجودة في المحتوى.
-5. إذا كان هناك صيغ في الملف، يمكنك اقتراح تعديلات عليها.
-${fileContextPrompt}`;
+    if (fileContextPrompt) {
+        agenticInstructions += `
+[محتوى الملف]:
+${fileContextPrompt}
+`;
     }
 
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
@@ -155,11 +162,26 @@ ${fileContextPrompt}`;
         console.log(`📝 [Kernel] سيتم إرجاع ملف معدل بناءً على طلب: ${intentResult.description}`);
     }
 
+    // ✅ إذا كان الطلب هو "رابط تحميل" أو "تحميل الملف"
+    if (message.includes('رابط تحميل') || message.includes('تحميل الملف') || message.includes('download')) {
+        if (ctx.filePath && fs.existsSync(ctx.filePath)) {
+            try {
+                const fileBuffer = fs.readFileSync(ctx.filePath);
+                fileBase64 = fileBuffer.toString('base64');
+                returnedFileName = fileName;
+                console.log(`📥 [Kernel] تجهيز رابط تحميل للملف: ${fileName}`);
+            } catch (err) {
+                console.warn(`⚠️ [Kernel] فشل قراءة الملف للتحميل: ${err.message}`);
+            }
+        }
+    }
+
     try {
         console.log(`🧠 [Kernel] إرسال الطلب إلى النموذج...`);
 
-        const reply = await groqService.chat(conversationMessages, {
+        const reply = await geminiService.chat(conversationMessages, {
             fileName: ctx.fileName,
+            extractedContent: ctx.extractedContent
         });
 
         finalReplyText = reply;
@@ -189,4 +211,4 @@ ${fileContextPrompt}`;
         fileName: returnedFileName,
         fileBase64,
     };
-    }
+        }
