@@ -95,7 +95,7 @@ async function modifyExcelContent(filePath, operations) {
 
 export default async function handler(req, res) {
     let localFilePath = null;
-    let newModifiedFilePath = null; // لتتبع مسار الملف المعدل ومسحه لاحقاً
+    let newModifiedFilePath = null;
 
     try {
         const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
@@ -118,7 +118,6 @@ export default async function handler(req, res) {
             const uniqueFileName = `${Date.now()}-ALATHEER-${fileName}`;
             localFilePath = path.join(uploadDir, uniqueFileName);
 
-            // معالجة الـ Base64 بأمان
             let buffer = null;
             if (typeof fileData === 'string') {
                 let cleanBase64 = fileData.includes('base64,') ? fileData.split('base64,')[1] : fileData;
@@ -134,14 +133,13 @@ export default async function handler(req, res) {
             const fileExt = path.extname(fileName).toLowerCase();
 
             if (['.xlsx', '.xls', '.csv'].includes(fileExt)) {
-                // استخراج فوري للمحتوى
                 extractedContent = await extractExcelContent(localFilePath, { analyze: true });
             } else {
                 extractedContent = { text: `[نوع الملف غير مدعوم للتحليل العميق: ${fileName}]`, metadata: {} };
             }
 
             if (extractedContent?.error) {
-                cleanupTempFiles([localFilePath]); // مسح فوري إذا كان الملف تالفاً
+                cleanupTempFiles([localFilePath]);
                 return res.status(400).json({ reply: `⚠️ عذراً، واجهنا مشكلة: ${extractedContent.error}` });
             }
         }
@@ -169,36 +167,44 @@ export default async function handler(req, res) {
             }
 
             fileBase64 = modifiedResult.fileBase64;
-            returnedFileName = modifiedResult.fileName;
+            returnedFileName = modifiedResult.fileName || fileName;
             newModifiedFilePath = modifiedResult.filePath;
+        }
+
+        // ⚡ إذا لم يرجع المحرك Base64 لكنه حفظ الملف في المسار الجديد، نقرأه يدوياً قبل المسح
+        if (!fileBase64 && newModifiedFilePath && fs.existsSync(newModifiedFilePath)) {
+            try {
+                const fileBuffer = fs.readFileSync(newModifiedFilePath);
+                fileBase64 = fileBuffer.toString('base64');
+                console.log(`📦 [Chat Layer] تمت قراءة الملف المعدل من القرص بنجاح وتحويله لـ Base64.`);
+            } catch (readErr) {
+                console.error(`⚠️ فشل قراءة الملف المعدل من القرص:`, readErr.message);
+            }
         }
 
         // 5. هندسة رابط التحميل الذكي
         if (fileBase64 && returnedFileName) {
-            // نتحقق أولاً إذا كان الرابط قد أُضيف مسبقاً في النص
             if (!reply.includes(returnedFileName) && !reply.includes("تحميل")) {
-                // ننشئ مسار وهمي آمن للواجهة الأمامية
                 const realFileUrl = encodeURI(`/uploads/${returnedFileName}`);
                 reply += `\n\n📥 **[اضغط هنا لتحميل ملفك المعدل يا هندسة](${realFileUrl})**`;
             }
         }
 
-        // 6. التنظيف السيادي للملفات المؤقتة من الخادم 
-        // (إذا تم تحويل الملف لـ Base64 فلا حاجة لبقائه على الـ Disk)
+        // 6. التنظيف السيادي للملفات المؤقتة بعد ضمان استخراج الـ Base64
         cleanupTempFiles([localFilePath, newModifiedFilePath]);
 
         return res.status(200).json({
             reply,
             fileBase64,
-            fileName: returnedFileName,
+            fileName: returnedFileName || "modified_file.xlsx",
             metadata: extractedContent?.metadata || null
         });
 
     } catch (error) {
         console.error("❌ [Chat Layer Fatal Error]:", error);
+        cleanupTempFiles([localFilePath, newModifiedFilePath]);
         return res.status(500).json({
             reply: `⚠️ معليش يا شريكي، صار خطأ داخلي أثناء المعالجة: ${error.message}`
         });
     }
 }
-
