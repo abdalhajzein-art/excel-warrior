@@ -1,6 +1,7 @@
 /**
  * api/geminiService.js – Sovereign Gemini Service
- * ✅ تم تحديثها لمنع كتابة الكود وتقليل استهلاك التوكنز
+ * ✅ جسر تواصل بسيط، لا يحتوي على تعليمات خاصة
+ * ✅ يستقبل التعليمات من kernel الذي يستوردها من system.js
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -13,42 +14,22 @@ if (!process.env.GEMINI_API_KEY) {
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const MODEL_NAME = "gemini-3.5-flash-lite";
 
-const SYSTEM_INSTRUCTION = `أنت الأثير — المساعد السيادي الذكي.
-
-🚫 أنت ممنوع من كتابة أي كود برمجي (Python، JavaScript، أو أي لغة برمجة).
-✅ مهمتك هي التحليل والوصف فقط.
-📝 استخدم المحتوى المستخرج من الملف للإجابة.
-❌ لا تخرج أي كود في ردك، فقط نص وصفي بالعربية.
-📊 إذا طلب المستخدم تعديلاً، صف التعديل المطلوب فقط.
-🔧 التعديلات الفعلية يتم تنفيذها بواسطة المحرك الداخلي.
-🎯 ركز على تقديم تحليل دقيق ومفيد للمستخدم.`;
+// ✅ تعليمات أساسية بسيطة جداً، لأن كل التعليمات تأتي من system.js
+const BASE_INSTRUCTION = `أنت "الأثير" — المساعد الذكي.`;
 
 export default async function geminiService(prompt, context = {}) {
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction: BASE_INSTRUCTION,
       generationConfig: {
-        temperature: 0.2,
+        temperature: 0.3,
         maxOutputTokens: 4096,
       }
     });
 
-    // ✅ بناء السياق مع معلومات الملف إذا كانت موجودة
-    let fullPrompt = prompt;
-    if (context.fileName && context.extractedContent?.metadata) {
-      const meta = context.extractedContent.metadata;
-      fullPrompt += `
-📎 **[ملف مرفق]**: ${context.fileName}
-- الصفوف: ${meta.rows || 'غير معروف'}
-- الأعمدة: ${meta.columns || 'غير معروف'}
-- الصيغ: ${meta.hasFormulas ? 'نعم' : 'لا'}
-- الأوراق: ${meta.sheets || 1}
-`;
-    }
-
     const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: fullPrompt }] }]
+      contents: [{ role: "user", parts: [{ text: prompt }] }]
     });
 
     const response = await result.response;
@@ -64,54 +45,54 @@ export default async function geminiService(prompt, context = {}) {
 
   } catch (error) {
     console.error("❌ Gemini Service Error:", error);
-    return "⚠️ حدث خطأ أثناء توليد الرد من محرك Gemini.";
+    return "⚠️ حدث خطأ أثناء توليد الرد.";
   }
 }
 
-// ✅ دالة chat للتوافق مع الاستخدام القديم
+// ✅ دالة chat
 geminiService.chat = async function(messages, extra = {}) {
   try {
     const model = genAI.getGenerativeModel({
       model: MODEL_NAME,
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction: BASE_INSTRUCTION,
       generationConfig: {
-        temperature: 0.2,
+        temperature: 0.3,
         maxOutputTokens: 4096,
       }
     });
 
-    // تحويل الرسائل إلى صيغة Gemini
     const history = [];
     let lastUserMessage = "";
 
     for (const msg of messages) {
       if (msg.role === "system") {
-        // تجاهل رسائل النظام لأننا نستخدم systemInstruction
+        // ✅ رسائل النظام تمرر كسياق، لا نتجاهلها
         continue;
       }
       if (msg.role === "user") {
         lastUserMessage = msg.content;
-        history.push({
-          role: "user",
-          parts: [{ text: msg.content }]
-        });
+        history.push({ role: "user", parts: [{ text: msg.content }] });
       } else if (msg.role === "assistant" || msg.role === "model") {
-        history.push({
-          role: "model",
-          parts: [{ text: msg.content }]
-        });
+        history.push({ role: "model", parts: [{ text: msg.content }] });
       }
     }
 
-    // ✅ إضافة معلومات الملف إذا كانت موجودة
+    // ✅ نضيف رسائل النظام كسياق في بداية آخر رسالة
+    const systemMessages = messages.filter(m => m.role === "system");
+    if (systemMessages.length > 0) {
+      const systemContent = systemMessages.map(m => m.content).join('\n');
+      if (lastUserMessage) {
+        lastUserMessage = `${systemContent}\n\n[المستخدم]:\n${lastUserMessage}`;
+      }
+    }
+
+    // ✅ إضافة معلومات الملف
     if (extra.fileName && extra.extractedContent?.metadata) {
       const meta = extra.extractedContent.metadata;
       const fileInfo = `
-📎 **[ملف مرفق]**: ${extra.fileName}
+📎 [ملف مرفق]: ${extra.fileName}
 - الصفوف: ${meta.rows || 'غير معروف'}
 - الأعمدة: ${meta.columns || 'غير معروف'}
-- الصيغ: ${meta.hasFormulas ? 'نعم' : 'لا'}
-- الأوراق: ${meta.sheets || 1}
 `;
       if (lastUserMessage) {
         lastUserMessage += "\n\n" + fileInfo;
@@ -119,9 +100,9 @@ geminiService.chat = async function(messages, extra = {}) {
     }
 
     const chat = model.startChat({
-      history: history.slice(0, -1), // آخر رسالة نرسلها كـ sendMessage
+      history: history.slice(0, -1),
       generationConfig: {
-        temperature: 0.2,
+        temperature: 0.3,
         maxOutputTokens: 4096,
       }
     });
