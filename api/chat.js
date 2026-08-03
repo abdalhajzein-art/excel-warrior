@@ -5,6 +5,7 @@
  * ✅ تم إصلاح مشكلة تضاعف حجم الملف
  * ✅ تم إصلاح مشكلة رابط التحميل (يعمل مع التعديل وطلب التحميل)
  * ✅ يستقبل العمليات من orchestrator وينفذها
+ * ✅ إضافة تفاصيل الخطأ لقراءة الملف
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -33,14 +34,25 @@ async function extractExcelContent(filePath, options = {}) {
         console.log(`📊 [extractExcelContent] حجم الملف: ${stats.size} bytes`);
         console.log(`📊 [extractExcelContent] نوع الملف: ${path.extname(filePath)}`);
 
-        const result = await excelRead(filePath, {
-            analyze: options.analyze || false,
-            includeFormulas: true,
-            includeStyles: true
-        });
+        // ✅ محاولة قراءة الملف مع تفاصيل الخطأ
+        let result;
+        try {
+            console.log(`📖 [extractExcelContent] محاولة قراءة الملف: ${filePath}`);
+            result = await excelRead(filePath, {
+                analyze: options.analyze || false,
+                includeFormulas: true,
+                includeStyles: true
+            });
+            console.log(`📖 [extractExcelContent] نتيجة القراءة:`, JSON.stringify(result, null, 2).slice(0, 500));
+        } catch (readErr) {
+            console.error(`❌ [extractExcelContent] استثناء في القراءة:`, readErr.message);
+            console.error(`❌ [extractExcelContent] Stack:`, readErr.stack);
+            return { error: `فشل قراءة الملف: ${readErr.message}` };
+        }
 
-        if (!result.ok) {
-            return { error: result.error || "فشل قراءة الملف" };
+        if (!result || !result.ok) {
+            console.error(`❌ [extractExcelContent] فشل نتيجة:`, result?.error || 'unknown error');
+            return { error: result?.error || "فشل قراءة الملف" };
         }
 
         const data = result.data;
@@ -300,4 +312,4 @@ export default async function handler(req, res) {
             reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
         });
     }
-            }
+                    }
