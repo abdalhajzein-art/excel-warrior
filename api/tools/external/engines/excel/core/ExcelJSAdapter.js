@@ -1,6 +1,6 @@
 /**
- * excel/core/ExcelJSAdapter.js – تطبيق ExcelJS
- * ✅ محرك ذكي يعمل مع أي ملف وأي عمود
+ * excel/core/ExcelJSAdapter.js – تطبيق ExcelJS السيادي
+ * ✅ محرك ذكي يعمل مع أي ملف وأي عمود مع كشف ديناميكي لصفوف العناوين
  */
 
 import ExcelJS from 'exceljs';
@@ -166,38 +166,61 @@ export class ExcelJSAdapter extends BaseAdapter {
         }
     }
     
+    /**
+     * 🔍 البحث الذكي عن رقم صف العناوين ورقم العمود بناءً على اسم العمود
+     */
+    findColumnAndHeaderRow(worksheet, columnName) {
+        if (!columnName) return { headerRowNum: HEADER_ROW || 1, colNumber: null };
+        
+        let foundHeaderRow = HEADER_ROW || 1;
+        let foundCol = null;
+        
+        // فحص أول 6 صفوف لاكتشاف مكان رأس الجدول الحقيقي ديناميكياً
+        for (let r = 1; r <= 6; r++) {
+            const row = worksheet.getRow(r);
+            let matchedInThisRow = false;
+            
+            row.eachCell((cell, colNumber) => {
+                const cellVal = String(cell.value || '').trim();
+                if (cellVal === String(columnName).trim()) {
+                    foundCol = colNumber;
+                    foundHeaderRow = r;
+                    matchedInThisRow = true;
+                }
+            });
+            
+            if (matchedInThisRow) break;
+        }
+        
+        return { headerRowNum: foundHeaderRow, colNumber: foundCol };
+    }
+    
     addColumn(worksheet, op) {
         try {
-            const headerRowNum = HEADER_ROW || 3;
             let insertIndex = worksheet.columnCount + 1;
+            let headerRowNum = HEADER_ROW || 1;
             
-            // ✅ البحث عن العمود المطلوب للإضافة بعده
+            // ✅ البحث الديناميكي عن العمود المستهدف بدقة مطلقة
             if (op.afterColumn) {
-                const headerRow = worksheet.getRow(headerRowNum);
-                let foundCol = null;
+                const searchResult = this.findColumnAndHeaderRow(worksheet, op.afterColumn);
+                headerRowNum = searchResult.headerRowNum;
                 
-                headerRow.eachCell((cell, colNumber) => {
-                    if (String(cell.value || '').trim() === String(op.afterColumn).trim()) {
-                        foundCol = colNumber;
-                    }
-                });
-                
-                if (foundCol) {
-                    insertIndex = foundCol + 1;
-                    console.log(`📊 [ExcelJSAdapter] إضافة عمود بعد "${op.afterColumn}" (العمود ${insertIndex})`);
+                if (searchResult.colNumber) {
+                    insertIndex = searchResult.colNumber + 1;
+                    console.log(`📊 [ExcelJSAdapter] تم رصد العمود "${op.afterColumn}" في الصف ${headerRowNum}، العمود رقم ${searchResult.colNumber}. الإدراج بعده مباشرة في العمود ${insertIndex}`);
                 } else {
-                    console.warn(`⚠️ [ExcelJSAdapter] العمود "${op.afterColumn}" غير موجود، الإضافة في النهاية`);
+                    console.warn(`⚠️ [ExcelJSAdapter] العمود "${op.afterColumn}" غير موجود، سيتم الإضافة في نهاية الجدول.`);
                 }
             }
             
             // ✅ إدراج العمود باستخدام spliceColumns
             worksheet.spliceColumns(insertIndex, 0, []);
             
-            // ✅ تعيين عنوان العمود
+            // ✅ تعيين عنوان العمود في صف العناوين الصحيح
             const headerCell = worksheet.getCell(headerRowNum, insertIndex);
-            headerCell.value = op.header || `عمود ${insertIndex}`;
+            headerCell.value = op.header || op.columnName || `عمود ${insertIndex}`;
             
-            // ✅ نسخ التنسيق من العمود المجاور
+            // ✅ نسخ التنسيق من العمود المجاور للحفاظ على الهوية البصرية
             const sourceCol = insertIndex - 1;
             if (sourceCol >= 1) {
                 const maxRow = worksheet.rowCount || 1;
@@ -205,24 +228,16 @@ export class ExcelJSAdapter extends BaseAdapter {
                     const sourceCell = worksheet.getCell(row, sourceCol);
                     const newCell = worksheet.getCell(row, insertIndex);
                     
-                    if (sourceCell.font) {
-                        newCell.font = this.deepCopy(sourceCell.font);
-                    }
-                    if (sourceCell.fill) {
-                        newCell.fill = this.deepCopy(sourceCell.fill);
-                    }
-                    if (sourceCell.alignment) {
-                        newCell.alignment = this.deepCopy(sourceCell.alignment);
-                    }
-                    if (sourceCell.border) {
-                        newCell.border = this.deepCopy(sourceCell.border);
-                    }
+                    if (sourceCell.font) newCell.font = this.deepCopy(sourceCell.font);
+                    if (sourceCell.fill) newCell.fill = this.deepCopy(sourceCell.fill);
+                    if (sourceCell.alignment) newCell.alignment = this.deepCopy(sourceCell.alignment);
+                    if (sourceCell.border) newCell.border = this.deepCopy(sourceCell.border);
                 }
             }
             
-            console.log(`✅ [ExcelJSAdapter] تم إضافة العمود "${op.header}"`);
+            console.log(`✅ [ExcelJSAdapter] تم إضافة العمود "${op.header || op.columnName}" بنجاح.`);
         } catch (err) {
-            console.error('❌ [ExcelJSAdapter] خطأ في addColumn:', err);
+            console.error('❌ [ExcelJSAdapter] خطأ حرج في addColumn:', err);
             throw err;
         }
     }
@@ -305,10 +320,8 @@ export class ExcelJSAdapter extends BaseAdapter {
             const { address, formulae, afterColumn } = op;
             const options = formulae || ['"خيار1,خيار2,خيار3"'];
             
-            // ✅ 1. إذا كان address موجود (نطاق أو خلية)
             if (address) {
                 if (address.includes(':')) {
-                    // نطاق
                     const [start, end] = address.split(':');
                     const startRow = parseInt(start.match(/\d+/)[0]);
                     const endRow = parseInt(end.match(/\d+/)[0]);
@@ -328,7 +341,6 @@ export class ExcelJSAdapter extends BaseAdapter {
                         }
                     }
                 } else {
-                    // خلية واحدة
                     const cell = worksheet.getCell(address);
                     cell.dataValidation = {
                         type: 'list',
@@ -342,19 +354,12 @@ export class ExcelJSAdapter extends BaseAdapter {
                 return;
             }
             
-            // ✅ 2. إذا كان afterColumn موجود (بعد عمود معين)
             if (afterColumn) {
-                const headerRow = worksheet.getRow(HEADER_ROW || 3);
-                let targetCol = null;
-                
-                headerRow.eachCell((cell, colNumber) => {
-                    if (String(cell.value || '').trim() === String(afterColumn).trim()) {
-                        targetCol = colNumber + 1; // العمود المضاف بعد هذا العمود
-                    }
-                });
+                const searchResult = this.findColumnAndHeaderRow(worksheet, afterColumn);
+                const targetCol = searchResult.colNumber ? searchResult.colNumber + 1 : null;
                 
                 if (targetCol) {
-                    const startRow = HEADER_ROW + 1 || 4;
+                    const startRow = searchResult.headerRowNum + 1;
                     const endRow = worksheet.rowCount || 10;
                     
                     for (let row = startRow; row <= endRow; row++) {
@@ -372,9 +377,8 @@ export class ExcelJSAdapter extends BaseAdapter {
                 }
             }
             
-            // ✅ 3. إذا لم يوجد address ولا afterColumn، نبحث عن آخر عمود مضاف
             const lastCol = worksheet.columnCount;
-            const startRow = HEADER_ROW + 1 || 4;
+            const startRow = (HEADER_ROW || 1) + 1;
             const endRow = worksheet.rowCount || 10;
             
             for (let row = startRow; row <= endRow; row++) {
@@ -444,4 +448,5 @@ export class ExcelJSAdapter extends BaseAdapter {
             sheet.map(row => `| ${row.join(' | ')} |`).join('\n')
         ).join('\n\n---\n\n');
     }
-                }
+}
+
