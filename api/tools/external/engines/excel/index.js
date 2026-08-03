@@ -6,6 +6,7 @@
  * - ExcelAnalyzer: تحليل ذكي
  * - ExcelFormatter: تنسيق تلقائي
  * - ExcelPivot: جداول محورية
+ * ✅ تم إضافة conditionalFormat لدعم التعديلات
  */
 
 import { ExcelAdapter } from './core/ExcelAdapter.js';
@@ -125,7 +126,19 @@ class ExcelUltimateEngine {
     }
 
     /* ============================================================
-       🆕 6. عمليات الإنشاء (عبر Adapter)
+       🎯 6. التنسيق الشرطي (للتعديلات)
+       ============================================================ */
+
+    async conditionalFormat(filePath, params = {}) {
+        await this.initialize();
+        // تمرير الطلب إلى الـ formatter أو modifier
+        return this.formatter.conditionalFormat ? 
+            await this.formatter.conditionalFormat(filePath, params) : 
+            await this.modify(filePath, params);
+    }
+
+    /* ============================================================
+       🆕 7. عمليات الإنشاء (عبر Adapter)
        ============================================================ */
 
     async create(params = {}) {
@@ -134,7 +147,7 @@ class ExcelUltimateEngine {
     }
 
     /* ============================================================
-       🔄 7. عمليات التحويل (عبر Adapter)
+       🔄 8. عمليات التحويل (عبر Adapter)
        ============================================================ */
 
     async convertToPdf(filePath) {
@@ -148,7 +161,7 @@ class ExcelUltimateEngine {
     }
 
     /* ============================================================
-       ⚙️ 8. إدارة المحرك
+       ⚙️ 9. إدارة المحرك
        ============================================================ */
 
     async setEngine(engineType) {
@@ -171,7 +184,7 @@ class ExcelUltimateEngine {
     }
 
     /* ============================================================
-       🧹 9. الصيانة والتنظيف
+       🧹 10. الصيانة والتنظيف
        ============================================================ */
 
     async cleanup() {
@@ -227,13 +240,13 @@ export const excelAnalyze = (filePath, params) => ultimateEngine.analyze(filePat
 export const excelAutoFormat = (filePath, params) => ultimateEngine.autoFormat(filePath, params);
 export const excelApplyTemplate = (filePath, templateName, params) => ultimateEngine.applyTemplate(filePath, templateName, params);
 
-// ✅ ✅ ✅ أضف هذه التصديرات الإضافية لتوافق مع external_file_bridge.js
+// ✅ تصديرات إضافية للتوافق مع external_file_bridge.js
 export const excelFormat = (filePath, params) => ultimateEngine.autoFormat(filePath, params);
 export const excelConditionalFormat = (filePath, params) => ultimateEngine.conditionalFormat(filePath, params);
 export const excelPivot = (filePath, params) => ultimateEngine.pivot(filePath, params);
 
 // 📋 الجداول المحورية (تصدير إضافي)
-// export const excelPivot = (filePath, params) => ultimateEngine.pivot(filePath, params);  // ملاحظة: هذا مكرر، احذف السطر الزائد
+// export const excelPivot = (filePath, params) => ultimateEngine.pivot(filePath, params);  // مكرر، محذوف
 
 // 🆕 الإنشاء
 export const excelCreate = (params) => ultimateEngine.create(params);
