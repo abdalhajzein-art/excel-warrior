@@ -2,6 +2,7 @@
  * api/core/kernel.js – Alatheer Sovereign Kernel
  * ✅ تنظيف الرد وإخفاء كتلة الـ JSON عن الواجهة نهائياً.
  * ✅ دعم اللهجة السورية والردود المختصرة.
+ * ✅ تمرير البيانات الفعلية للملف إلى Gemini
  */
 
 import geminiService from "../geminiService.js";
@@ -57,6 +58,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const extractedContent = ctx.extractedContent || null;
     const fileName = ctx.fileName || "الملف";
 
+    // ✅ بناء سياق الملف مع البيانات الفعلية
     let fileContext = "";
     if (extractedContent && !extractedContent.error) {
         const meta = extractedContent.metadata || {};
@@ -65,6 +67,9 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         fileContext = `
 📄 **الملف المرفق:** ${fileName}
 📊 **معلومات:** ${meta.rows || 0} صف، ${meta.columns || 0} عمود
+
+📝 **البيانات:**
+${text.slice(0, 3000)}${text.length > 3000 ? '\n... (تم اختصار المحتوى)' : ''}
 `;
     }
 
@@ -136,5 +141,4 @@ ${SYSTEM_PROMPT}
         fileBase64,
         operations: operations
     };
-}
-
+  }
