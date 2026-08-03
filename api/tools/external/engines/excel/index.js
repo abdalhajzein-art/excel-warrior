@@ -227,8 +227,13 @@ export const excelAnalyze = (filePath, params) => ultimateEngine.analyze(filePat
 export const excelAutoFormat = (filePath, params) => ultimateEngine.autoFormat(filePath, params);
 export const excelApplyTemplate = (filePath, templateName, params) => ultimateEngine.applyTemplate(filePath, templateName, params);
 
-// 📋 الجداول المحورية
+// ✅ ✅ ✅ أضف هذه التصديرات الإضافية لتوافق مع external_file_bridge.js
+export const excelFormat = (filePath, params) => ultimateEngine.autoFormat(filePath, params);
+export const excelConditionalFormat = (filePath, params) => ultimateEngine.conditionalFormat(filePath, params);
 export const excelPivot = (filePath, params) => ultimateEngine.pivot(filePath, params);
+
+// 📋 الجداول المحورية (تصدير إضافي)
+// export const excelPivot = (filePath, params) => ultimateEngine.pivot(filePath, params);  // ملاحظة: هذا مكرر، احذف السطر الزائد
 
 // 🆕 الإنشاء
 export const excelCreate = (params) => ultimateEngine.create(params);
