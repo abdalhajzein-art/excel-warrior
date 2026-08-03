@@ -1,7 +1,6 @@
 /**
  * api/core/conversation_orchestrator.js – Sovereign Universal Orchestrator
- * المنسق السيادي العام: حرية مطلقة، لا قيود، لا أكواد صلبة.
- * ✅ يعتمد على AI Intent Detection من Kernel
+ * ✅ يمرر العمليات من kernel إلى chat.js
  * ✅ يدير حالة الملفات بشكل ذكي
  */
 
@@ -26,7 +25,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
         if (isResetFile && session.activeFile) {
             console.log(`🗑️ [Orchestrator] تم مسح سياق الملف النشط للجلسة.`);
             session.activeFile = null;
-            // حذف ذاكرة التخزين المؤقت للنية
             if (session.intentCache) {
                 delete session.intentCache;
             }
@@ -44,7 +42,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
         let sessionMetadata = metadata;
         let sessionExtractedContent = extractedContent;
 
-        // تخزين الملف في الجلسة إذا كان جديداً
         if (hasFile && !session.activeFile) {
             session.activeFile = {
                 fileData,
@@ -57,17 +54,14 @@ export default async function conversationOrchestrator(sessionId, message, extra
             sessionMetadata = metadata;
             sessionExtractedContent = extractedContent;
         } else if (session.activeFile && !isResetFile) {
-            // استرجاع الملف من الجلسة فقط إذا لم يكن هناك ملف جديد
             if (!hasFile) {
                 fileData = session.activeFile.fileData;
                 fileName = session.activeFile.fileName;
                 filePath = session.activeFile.filePath;
                 sessionMetadata = session.activeFile.metadata || null;
                 sessionExtractedContent = session.activeFile.extractedContent || null;
-
                 console.log(`🔄 [Orchestrator] استرجاع الملف من الجلسة: ${fileName}`);
             } else {
-                // تحديث الملف في الجلسة إذا كان هناك ملف جديد
                 session.activeFile = {
                     fileData,
                     fileName,
@@ -76,7 +70,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
                     extractedContent,
                     modifiedResult
                 };
-                // حذف ذاكرة التخزين المؤقت للنية عند رفع ملف جديد
                 if (session.intentCache) {
                     delete session.intentCache;
                 }
@@ -119,6 +112,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
         let reply = "تم إنجاز طلبك بنجاح!";
         let fileBase64 = null;
         let returnedFileName = null;
+        let operations = [];
 
         if (typeof kernelOutput === "string") {
             reply = kernelOutput;
@@ -126,6 +120,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
             reply = kernelOutput.reply || kernelOutput.message || reply;
             fileBase64 = kernelOutput.fileBase64 || null;
             returnedFileName = kernelOutput.fileName || null;
+            operations = kernelOutput.operations || [];  // ✅ استقبال العمليات
         }
 
         memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
@@ -134,7 +129,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
             ok: true,
             reply,
             fileBase64,
-            fileName: returnedFileName
+            fileName: returnedFileName,
+            operations: operations  // ✅ تمرير العمليات
         };
 
     } catch (err) {
@@ -144,7 +140,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
             reply: `⚠️ صار خطأ بالنظام أثناء المعالجة: ${err.message}`,
             error: err.message,
             fileBase64: null,
-            fileName: null
+            fileName: null,
+            operations: []
         };
     }
-                  }
+                    }
