@@ -1,7 +1,7 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Advanced Engine Edition)
  * ✅ يدعم محركات Excel المدمجة وبايثون.
- * ✅ بروتوكول "التنظيف الذاتي" لمنع امتلاء مساحة السيرفر السحابي.
+ * ✅ تخزين مستدام وثابت للملفات طوال الجلسة (بدون حذف فوري).
  * ✅ معالجة الـ Base64 بكفاءة عالية وبدون تسريب للذاكرة.
  */
 
@@ -14,13 +14,13 @@ import { excelRead, excelModify } from './tools/external/engines/excel/index.js'
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 🧹 دالة سيادية لتنظيف الملفات المؤقتة وتجنب اختناق السيرفر
+// 🧹 دالة سيادية لتنظيف الملفات فقط عند الحاجة القصوى (مثل انتهاء الجلسة أو طلب الإغلاق)
 function cleanupTempFiles(filePaths) {
     filePaths.forEach(filePath => {
         if (filePath && fs.existsSync(filePath)) {
             try {
                 fs.unlinkSync(filePath);
-                console.log(`🧹 [Garbage Collection] تم مسح الملف المؤقت بنجاح: ${path.basename(filePath)}`);
+                console.log(`🧹 [Garbage Collection] تم مسح الملف بنجاح: ${path.basename(filePath)}`);
             } catch (err) {
                 console.error(`⚠️ [Garbage Collection] فشل مسح الملف: ${filePath}`, err.message);
             }
@@ -94,7 +94,7 @@ async function modifyExcelContent(filePath, operations) {
 }
 
 export default async function handler(req, res) {
-    let localFilePath = null;
+    let sovereignFilePath = null;
     let newModifiedFilePath = null;
 
     try {
@@ -110,13 +110,13 @@ export default async function handler(req, res) {
         let extractedContent = null;
         let modifiedResult = null;
 
-        // 1. التعامل مع الملفات المرفوعة
+        // 1. التعامل مع الملفات المرفوعة (تخزين مستدام وآمن طوال الجلسة)
         if (fileData && fileName) {
-            const uploadDir = path.join(__dirname, '../uploads');
-            if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+            const persistentDir = path.join(__dirname, '../persistent_uploads');
+            if (!fs.existsSync(persistentDir)) fs.mkdirSync(persistentDir, { recursive: true });
 
-            const uniqueFileName = `${Date.now()}-ALATHEER-${fileName}`;
-            localFilePath = path.join(uploadDir, uniqueFileName);
+            const uniqueFileName = `${Date.now()}-${fileName}`;
+            sovereignFilePath = path.join(persistentDir, uniqueFileName);
 
             let buffer = null;
             if (typeof fileData === 'string') {
@@ -128,25 +128,25 @@ export default async function handler(req, res) {
             }
 
             if (!buffer || buffer.length === 0) throw new Error("البيانات المستلمة فارغة أو غير صالحة.");
-            fs.writeFileSync(localFilePath, buffer);
+            fs.writeFileSync(sovereignFilePath, buffer);
+            console.log(`🛡️ [الأثير Intake] تم حفظ الملف في التخزين المستدام بنجاح: ${sovereignFilePath}`);
 
             const fileExt = path.extname(fileName).toLowerCase();
 
             if (['.xlsx', '.xls', '.csv'].includes(fileExt)) {
-                extractedContent = await extractExcelContent(localFilePath, { analyze: true });
+                extractedContent = await extractExcelContent(sovereignFilePath, { analyze: true });
             } else {
                 extractedContent = { text: `[نوع الملف غير مدعوم للتحليل العميق: ${fileName}]`, metadata: {} };
             }
 
             if (extractedContent?.error) {
-                cleanupTempFiles([localFilePath]);
                 return res.status(400).json({ reply: `⚠️ عذراً، واجهنا مشكلة: ${extractedContent.error}` });
             }
         }
 
         // 2. إعداد السياق للموجه السيادي
         const orchestratorInput = {
-            fileData, fileName, filePath: localFilePath, history, metadata, extractedContent, operations
+            fileData, fileName, filePath: sovereignFilePath, history, metadata, extractedContent, operations
         };
 
         // 3. تسليم القيادة للعقل المدبر
@@ -157,10 +157,10 @@ export default async function handler(req, res) {
         let returnedFileName = output?.fileName || null;
         let operationsFromOrchestrator = output?.operations || [];
 
-        // 4. تنفيذ العمليات (إن وُجدت) على الملف
-        if (operationsFromOrchestrator.length > 0 && localFilePath) {
-            console.log(`⚙️ [Chat Layer] جاري تنفيذ عمليات التعديل من العقل المدبر...`);
-            modifiedResult = await modifyExcelContent(localFilePath, operationsFromOrchestrator);
+        // 4. تنفيذ العمليات (إن وُجدت) على الملف المستدام
+        if (operationsFromOrchestrator.length > 0 && sovereignFilePath) {
+            console.log(`⚙️ [Chat Layer] جاري تنفيذ عمليات التعديل من العقل المدبر على الملف المستدام...`);
+            modifiedResult = await modifyExcelContent(sovereignFilePath, operationsFromOrchestrator);
             
             if (modifiedResult.error) {
                 throw new Error(modifiedResult.error);
@@ -171,7 +171,7 @@ export default async function handler(req, res) {
             newModifiedFilePath = modifiedResult.filePath;
         }
 
-        // ⚡ إذا لم يرجع المحرك Base64 لكنه حفظ الملف في المسار الجديد، نقرأه يدوياً قبل المسح
+        // ⚡ إذا لم يرجع المحرك Base64 لكنه حفظ الملف في المسار الجديد، نقرأه يدوياً
         if (!fileBase64 && newModifiedFilePath && fs.existsSync(newModifiedFilePath)) {
             try {
                 const fileBuffer = fs.readFileSync(newModifiedFilePath);
@@ -185,13 +185,12 @@ export default async function handler(req, res) {
         // 5. هندسة رابط التحميل الذكي
         if (fileBase64 && returnedFileName) {
             if (!reply.includes(returnedFileName) && !reply.includes("تحميل")) {
-                const realFileUrl = encodeURI(`/uploads/${returnedFileName}`);
+                const realFileUrl = encodeURI(`/persistent_uploads/${returnedFileName}`);
                 reply += `\n\n📥 **[اضغط هنا لتحميل ملفك المعدل يا هندسة](${realFileUrl})**`;
             }
         }
 
-        // 6. التنظيف السيادي للملفات المؤقتة بعد ضمان استخراج الـ Base64
-        cleanupTempFiles([localFilePath, newModifiedFilePath]);
+        // 🛑 تم إيقاف الحذف الفوري (Garbage Collection) للملفات لضمان بقاء "الشريك" حياً ومتاحاً لأي تعديلات لاحقة في الجلسة.
 
         return res.status(200).json({
             reply,
@@ -202,9 +201,9 @@ export default async function handler(req, res) {
 
     } catch (error) {
         console.error("❌ [Chat Layer Fatal Error]:", error);
-        cleanupTempFiles([localFilePath, newModifiedFilePath]);
         return res.status(500).json({
             reply: `⚠️ معليش يا شريكي، صار خطأ داخلي أثناء المعالجة: ${error.message}`
         });
     }
 }
+
