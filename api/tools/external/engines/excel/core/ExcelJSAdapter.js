@@ -1,11 +1,11 @@
 /**
  * excel/core/ExcelJSAdapter.js – تطبيق ExcelJS
+ * ✅ تم إصلاح مشكلة insertColumns
  */
 
 import ExcelJS from 'exceljs';
 import { HEADER_ROW } from '../types/ExcelTypes.js';
 import { FileUtils } from '../utils/FileUtils.js';
-import { ErrorHandler } from '../utils/ErrorHandler.js';
 import { BaseAdapter } from './BaseAdapter.js';
 
 export class ExcelJSAdapter extends BaseAdapter {
@@ -98,7 +98,6 @@ export class ExcelJSAdapter extends BaseAdapter {
         if (obj instanceof Date) return new Date(obj);
         if (Array.isArray(obj)) return obj.map(item => this.deepCopy(item));
         
-        // نسخ آمن باستخدام Object.assign
         const copy = Object.assign({}, obj);
         for (const key in copy) {
             if (copy[key] && typeof copy[key] === 'object') {
@@ -114,10 +113,11 @@ export class ExcelJSAdapter extends BaseAdapter {
         const worksheet = workbook.getWorksheet(1);
         
         if (!worksheet) {
-            throw new Error('لا توجد أوراق عمل');
+            throw new Error('لا توجد أوراق عمل في الملف');
         }
         
         if (params.operations) {
+            console.log(`🔧 [ExcelJSAdapter] تنفيذ ${params.operations.length} عملية`);
             await this.applyOperations(worksheet, params.operations);
         }
         
@@ -125,11 +125,16 @@ export class ExcelJSAdapter extends BaseAdapter {
         await workbook.xlsx.writeFile(outPath);
         const base64 = await FileUtils.fileToBase64(outPath);
         
-        return { outPath, base64 };
+        return { 
+            filePath: outPath, 
+            fileBase64: base64, 
+            fileName: 'modified.xlsx' 
+        };
     }
     
     async applyOperations(worksheet, operations) {
         for (const op of operations) {
+            console.log(`🔧 [ExcelJSAdapter] تنفيذ عملية: ${op.type}`);
             switch(op.type) {
                 case 'add_column':
                     this.addColumn(worksheet, op);
@@ -162,48 +167,66 @@ export class ExcelJSAdapter extends BaseAdapter {
     }
     
     addColumn(worksheet, op) {
-        let insertIndex = worksheet.columnCount + 1;
-        
-        if (op.afterColumn) {
-            const headerRow = worksheet.getRow(HEADER_ROW);
-            let foundCol = null;
+        try {
+            const headerRowNum = HEADER_ROW || 3;
+            let insertIndex = worksheet.columnCount + 1;
             
-            headerRow.eachCell((cell, colNumber) => {
-                if (String(cell.value || '').trim() === String(op.afterColumn).trim()) {
-                    foundCol = colNumber;
-                }
-            });
-            
-            if (foundCol) {
-                insertIndex = foundCol + 1;
-            }
-        }
-        
-        worksheet.insertColumns(insertIndex, 1);
-        
-        const headerCell = worksheet.getCell(HEADER_ROW, insertIndex);
-        headerCell.value = op.header || `عمود ${insertIndex}`;
-        
-        // نسخ التنسيق من العمود المجاور
-        const sourceCol = insertIndex - 1;
-        if (sourceCol >= 1) {
-            for (let row = 1; row <= worksheet.rowCount; row++) {
-                const sourceCell = worksheet.getCell(row, sourceCol);
-                const newCell = worksheet.getCell(row, insertIndex);
+            // ✅ البحث عن عمود "الغياب" للإضافة بعده
+            if (op.afterColumn) {
+                const headerRow = worksheet.getRow(headerRowNum);
+                let foundCol = null;
                 
-                if (sourceCell.font) {
-                    newCell.font = this.deepCopy(sourceCell.font);
-                }
-                if (sourceCell.fill) {
-                    newCell.fill = this.deepCopy(sourceCell.fill);
-                }
-                if (sourceCell.alignment) {
-                    newCell.alignment = this.deepCopy(sourceCell.alignment);
-                }
-                if (sourceCell.border) {
-                    newCell.border = this.deepCopy(sourceCell.border);
+                headerRow.eachCell((cell, colNumber) => {
+                    const cellValue = String(cell.value || '').trim();
+                    const targetValue = String(op.afterColumn).trim();
+                    if (cellValue === targetValue) {
+                        foundCol = colNumber;
+                    }
+                });
+                
+                if (foundCol) {
+                    insertIndex = foundCol + 1;
+                    console.log(`📊 [ExcelJSAdapter] إضافة عمود بعد "${op.afterColumn}" (العمود ${insertIndex})`);
+                } else {
+                    console.warn(`⚠️ [ExcelJSAdapter] العمود "${op.afterColumn}" غير موجود`);
                 }
             }
+            
+            // ✅ إدراج العمود
+            worksheet.insertColumns(insertIndex, 1);
+            
+            // ✅ تعيين عنوان العمود
+            const headerCell = worksheet.getCell(headerRowNum, insertIndex);
+            headerCell.value = op.header || `عمود ${insertIndex}`;
+            
+            // ✅ نسخ التنسيق من العمود المجاور (الأيمن)
+            const sourceCol = insertIndex - 1;
+            if (sourceCol >= 1) {
+                const maxRow = worksheet.rowCount || 1;
+                for (let row = 1; row <= maxRow; row++) {
+                    const sourceCell = worksheet.getCell(row, sourceCol);
+                    const newCell = worksheet.getCell(row, insertIndex);
+                    
+                    if (sourceCell.font) {
+                        newCell.font = this.deepCopy(sourceCell.font);
+                    }
+                    if (sourceCell.fill) {
+                        newCell.fill = this.deepCopy(sourceCell.fill);
+                    }
+                    if (sourceCell.alignment) {
+                        newCell.alignment = this.deepCopy(sourceCell.alignment);
+                    }
+                    if (sourceCell.border) {
+                        newCell.border = this.deepCopy(sourceCell.border);
+                    }
+                }
+            }
+            
+            console.log(`✅ [ExcelJSAdapter] تم إضافة العمود "${op.header}"`);
+            
+        } catch (err) {
+            console.error('❌ [ExcelJSAdapter] خطأ في addColumn:', err);
+            throw err;
         }
     }
     
@@ -364,4 +387,4 @@ export class ExcelJSAdapter extends BaseAdapter {
             sheet.map(row => `| ${row.join(' | ')} |`).join('\n')
         ).join('\n\n---\n\n');
     }
-}
+                        }
