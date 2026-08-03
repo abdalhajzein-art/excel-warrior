@@ -1,6 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية (محدثة لدعم حقن معاينة الملفات)
- * ✅ تم إصلاح مشكلة إرسال الملفات بشكل صحيح
+ * js/chatEngine.js – النسخة السيادية النهائية (محدثة لدعم حقن معاينة الملفات وتوليد زر التحميل)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -90,23 +89,14 @@ export async function handleSendMessage(renderCallbacks) {
     let fileDisplayName = null;
     let fileBase64 = null;
 
-    /* ============================================================
-       ⭐ رفع الملف إلى /api/upload مع action=preview
-       ✅ تحسين: قراءة الملف كـ Base64 بشكل صحيح
-       ============================================================ */
     if (currentFileToProcess) {
         try {
-            // ✅ قراءة الملف كـ Base64 بشكل صحيح
             const fileBuffer = await currentFileToProcess.arrayBuffer();
             const base64Data = btoa(String.fromCharCode(...new Uint8Array(fileBuffer)));
             
-            // ✅ تخزين الملف في الذاكرة المحلية
             fileBase64 = base64Data;
             fileDisplayName = currentFileName;
             
-            console.log(`📊 [chatEngine] تم تحويل الملف إلى Base64، الحجم: ${base64Data.length} حرف`);
-            
-            // ✅ إرسال الملف إلى السيرفر عبر /api/upload للحصول على المعاينة
             const formData = new FormData();
             formData.append("file", currentFileToProcess);
             formData.append("action", "preview");
@@ -117,12 +107,6 @@ export async function handleSendMessage(renderCallbacks) {
             });
 
             processedFileResult = await uploadResponse.json();
-            
-            if (processedFileResult.error) {
-                console.warn(`⚠️ تحذير من السيرفر: ${processedFileResult.error}`);
-                // نستمر حتى لو فشلت المعاينة
-            }
-
         } catch (err) {
             console.error("❌ Error processing file:", err);
             appendMessageToDOM('assistant', '⚠️ تعذر معالجة الملف. حاول مرة أخرى.');
@@ -212,16 +196,12 @@ export async function handleSendMessage(renderCallbacks) {
             };
         });
 
-        /* ============================================================
-           🛡️ إرسال الملف كـ Base64 في الطلب
-           ============================================================ */
         let finalMessageForAI = displayMessage || "ممكن تعطيني ملخص عن محتوى الملف؟";
 
         const requestPayload = { 
             message: finalMessageForAI,
             history: formattedHistoryForBackend,
             sessionId: sessionId,
-            // ✅ إرسال الملف كـ Base64 مع الاسم
             fileData: fileBase64,
             fileName: fileDisplayName || null
         };
@@ -257,18 +237,20 @@ export async function handleSendMessage(renderCallbacks) {
         let savedFileData = null;
 
         if (data.fileBase64) {
-            const fileDownloadUrl = `data:application/octet-stream;base64,${data.fileBase64}`;
+            const safeFileName = data.fileName || 'modified_file.xlsx';
+            const fileDownloadUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${data.fileBase64}`;
+            
             savedFileData = {
                 downloadUrl: fileDownloadUrl,
                 base64: data.fileBase64,
-                name: data.fileName || 'generated_file'
+                name: safeFileName
             };
 
             const downloadBtn = document.createElement('a');
             downloadBtn.href = fileDownloadUrl;
-            downloadBtn.download = savedFileData.name;
+            downloadBtn.download = safeFileName;
             downloadBtn.className = 'alatheer-download-btn';
-            downloadBtn.innerHTML = `📥 اضغط هنا لتحميل الملف الناتج (${savedFileData.name})`;
+            downloadBtn.innerHTML = `📥 اضغط هنا لتحميل ملفك المعدل (${safeFileName})`;
             assistantMsgDiv.appendChild(downloadBtn);
         }
 
@@ -375,15 +357,15 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     }
 
     const downloadUrl = fileData?.downloadUrl || (fileData?.base64
-        ? `data:application/octet-stream;base64,${fileData.base64}`
+        ? `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${fileData.base64}`
         : null);
     
     if (downloadUrl) {
         const downloadBtn = document.createElement('a');
         downloadBtn.href = downloadUrl;
-        downloadBtn.download = fileData.name || 'generated_file';
+        downloadBtn.download = fileData.name || 'modified_file.xlsx';
         downloadBtn.className = 'alatheer-download-btn';
-        downloadBtn.innerHTML = `📥 اضغط هنا لتحميل الملف الناتج (${fileData.name || 'generated_file'})`;
+        downloadBtn.innerHTML = `📥 اضغط هنا لتحميل الملف الناتج (${fileData.name || 'modified_file.xlsx'})`;
         messageDiv.appendChild(downloadBtn);
     }
 
