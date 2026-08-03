@@ -1,6 +1,7 @@
 /**
  * excel/readers/ExcelReader.js – القراءة السيادية المتقدمة
  * 🔥 تدعم: صيغ، تنسيق، ميتاداتا، تحليل أولي
+ * ✅ تم إصلاح مشكلة الـ ok:true في النجاح
  */
 
 import { ErrorHandler } from '../utils/ErrorHandler.js';
@@ -15,72 +16,129 @@ export class ExcelReader {
      * 📖 قراءة كاملة للملف
      */
     async readFull(filePath, params = {}) {
-        return ErrorHandler.execute('readFull', async () => {
+        try {
+            console.log(`📖 [ExcelReader] بدء قراءة الملف: ${filePath}`);
+            
             const data = await this.adapter.read(filePath, params);
+            
+            console.log(`📖 [ExcelReader] تمت قراءة الملف بنجاح`);
             
             // ✅ تحليل أولي
             const analysis = this.initialAnalysis(data);
             
+            // ✅ إرجاع البيانات مع ok: true
             return {
-                ...data,
-                analysis,
-                summary: this.generateSummary(data)
+                ok: true,
+                data: {
+                    ...data,
+                    analysis,
+                    summary: this.generateSummary(data)
+                }
             };
-        }, { filePath });
+        } catch (err) {
+            console.error(`❌ [ExcelReader] خطأ في readFull:`, err.message);
+            console.error(`❌ [ExcelReader] Stack:`, err.stack);
+            return {
+                ok: false,
+                error: err.message || 'فشل قراءة الملف',
+                data: null
+            };
+        }
     }
     
     /**
      * 📊 قراءة سريعة (بدون صيغ وتنسيق)
      */
     async readFast(filePath, params = {}) {
-        return ErrorHandler.execute('readFast', async () => {
+        try {
             // استخدام XLSX للسرعة
             const XLSXAdapter = (await import('../core/XLSXAdapter.js')).XLSXAdapter;
             const fastAdapter = new XLSXAdapter();
-            return await fastAdapter.read(filePath, params);
-        }, { filePath });
+            const data = await fastAdapter.read(filePath, params);
+            return {
+                ok: true,
+                data: data
+            };
+        } catch (err) {
+            console.error(`❌ [ExcelReader] خطأ في readFast:`, err.message);
+            return {
+                ok: false,
+                error: err.message || 'فشل القراءة السريعة',
+                data: null
+            };
+        }
     }
     
     /**
      * 🔍 قراءة ميتاداتا فقط
      */
     async readMetadata(filePath) {
-        return ErrorHandler.execute('readMetadata', async () => {
+        try {
             const data = await this.adapter.read(filePath);
             return {
-                sheets: data.metadata.sheets,
-                totalRows: data.metadata.totalRows,
-                totalColumns: data.metadata.totalColumns,
-                hasFormulas: data.metadata.hasFormulas,
-                engines: data.metadata.engines
+                ok: true,
+                data: {
+                    sheets: data.metadata.sheets,
+                    totalRows: data.metadata.totalRows,
+                    totalColumns: data.metadata.totalColumns,
+                    hasFormulas: data.metadata.hasFormulas,
+                    engines: data.metadata.engines
+                }
             };
-        }, { filePath });
+        } catch (err) {
+            console.error(`❌ [ExcelReader] خطأ في readMetadata:`, err.message);
+            return {
+                ok: false,
+                error: err.message || 'فشل قراءة الميتاداتا',
+                data: null
+            };
+        }
     }
     
     /**
      * 🎯 قراءة نطاق محدد
      */
     async readRange(filePath, range, params = {}) {
-        return ErrorHandler.execute('readRange', async () => {
+        try {
             const data = await this.adapter.read(filePath, params);
-            // استخراج النطاق المطلوب
-            return this.extractRange(data, range);
-        }, { filePath, range });
+            const extracted = this.extractRange(data, range);
+            return {
+                ok: true,
+                data: extracted
+            };
+        } catch (err) {
+            console.error(`❌ [ExcelReader] خطأ في readRange:`, err.message);
+            return {
+                ok: false,
+                error: err.message || 'فشل قراءة النطاق',
+                data: null
+            };
+        }
     }
     
     /**
      * 📋 قراءة أوراق محددة
      */
     async readSheets(filePath, sheetNames, params = {}) {
-        return ErrorHandler.execute('readSheets', async () => {
+        try {
             const data = await this.adapter.read(filePath, params);
             const filteredSheets = data.sheets.filter(s => sheetNames.includes(s.name));
             return {
-                ...data,
-                sheets: filteredSheets,
-                data: filteredSheets.map(s => s.data)
+                ok: true,
+                data: {
+                    ...data,
+                    sheets: filteredSheets,
+                    data: filteredSheets.map(s => s.data)
+                }
             };
-        }, { filePath, sheetNames });
+        } catch (err) {
+            console.error(`❌ [ExcelReader] خطأ في readSheets:`, err.message);
+            return {
+                ok: false,
+                error: err.message || 'فشل قراءة الأوراق',
+                data: null
+            };
+        }
     }
     
     /**
@@ -186,3 +244,5 @@ export class ExcelReader {
         return extracted;
     }
 }
+
+export default ExcelReader;
