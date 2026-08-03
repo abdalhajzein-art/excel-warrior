@@ -1,14 +1,14 @@
 /**
  * api/core/kernel.js – Alatheer Sovereign Kernel
- * ✅ يستورد SYSTEM_PROMPT من system.js كمصدر وحيد
- * ✅ يستخرج العمليات من رد Gemini لتنفيذها
- * ✅ يعالج طلب التحميل مباشرة دون الذهاب إلى Gemini
+ * ✅ النسخة المعمارية النقية: تعتمد كلياً على ذكاء Gemini في فهم النوايا (Intent Routing).
+ * ✅ خالية من الشروط الصلبة (No Hardcoded Keywords).
+ * ✅ تستورد SYSTEM_PROMPT من system.js كمصدر وحيد للتعليمات.
+ * ✅ تستخرج العمليات من الرد لتمريرها لمحرك التعديل الشامل.
  */
 
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
-import fs from "fs";
 
 /**
  * 🛠️ استخراج العمليات من رد Gemini
@@ -51,28 +51,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const extractedContent = ctx.extractedContent || null;
     const fileName = ctx.fileName || "الملف";
 
-    // ✅ معالجة طلب التحميل مباشرة (قبل أي شيء آخر)
-    if (message.includes('رابط') || message.includes('تحميل') || 
-        message.includes('الملف') || message.includes('download')) {
-        if (ctx.filePath && fs.existsSync(ctx.filePath)) {
-            try {
-                const fileBuffer = fs.readFileSync(ctx.filePath);
-                const fileBase64 = fileBuffer.toString('base64');
-                console.log(`📥 [Kernel] تجهيز تحميل للملف: ${fileName}`);
-                
-                return {
-                    reply: `📥 **تم تجهيز الملف "${fileName}" للتحميل.**\n\nيمكنك تنزيله من الرابط أدناه.`,
-                    fileName: fileName,
-                    fileBase64: fileBase64,
-                    operations: []
-                };
-            } catch (err) {
-                console.warn(`⚠️ [Kernel] فشل قراءة الملف: ${err.message}`);
-            }
-        }
-    }
-
-    // ✅ بناء سياق الملف
+    // ✅ بناء سياق الملف (إن وجد)
     let fileContext = "";
     if (extractedContent && !extractedContent.error) {
         const meta = extractedContent.metadata || {};
@@ -88,7 +67,7 @@ ${text.slice(0, 1500)}${text.length > 1500 ? '\n... (مختصر)' : ''}
 `;
     }
 
-    // ✅ بناء قائمة المحادثة مع تعليمات لاستخراج العمليات
+    // ✅ بناء قائمة المحادثة مع تعليمات صارمة لاستخراج العمليات
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
     
     let systemContent = `
@@ -141,7 +120,7 @@ ${SYSTEM_PROMPT}
         // ✅ استخراج العمليات من الرد
         operations = extractOperationsFromReply(reply);
         if (operations.length > 0) {
-            console.log(`📝 [Kernel] تم استخراج ${operations.length} عملية من الرد`);
+            console.log(`📝 [Kernel] تم استخراج ${operations.length} عملية من الرد للعمل على الملف: ${fileName}`);
             returnedFileName = fileName;
         }
 
@@ -150,15 +129,17 @@ ${SYSTEM_PROMPT}
         finalReplyText = `⚠️ حدث خطأ: ${error.message}`;
     }
 
+    // حفظ المحادثة في الذاكرة
     memory.appendSovereignHistory(sessionId, {
         role: "assistant",
         content: finalReplyText,
     });
 
+    // إرجاع المخرجات للـ Orchestrator أو Chat.js
     return {
         reply: finalReplyText.trim(),
         fileName: returnedFileName,
         fileBase64,
-        operations: operations  // ✅ تمرير العمليات
+        operations: operations
     };
-        }
+}
