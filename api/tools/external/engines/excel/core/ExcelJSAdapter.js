@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import { HEADER_ROW } from '../types/ExcelTypes.js';
 import { FileUtils } from '../utils/FileUtils.js';
 import { BaseAdapter } from './BaseAdapter.js';
+import { ExcelTableDetector } from './ExcelTableDetector.js';
 
 export class ExcelJSAdapter extends BaseAdapter {
     constructor() {
@@ -133,14 +134,20 @@ export class ExcelJSAdapter extends BaseAdapter {
     }
     
     async applyOperations(worksheet, operations) {
+        // ✅ كشف الجدول الرئيسي ديناميكياً لأي نوع ملف إكسل
+        const tableInfo = ExcelTableDetector.detectMainTable(worksheet);
+        const { headerRowNum, dataStartRow, dataEndRow } = tableInfo;
+        
+        console.log(`📊 [ExcelJSAdapter] جدول رئيسي: هيدر في الصف ${headerRowNum}, بيانات من ${dataStartRow} إلى ${dataEndRow}`);
+        
         for (const op of operations) {
             console.log(`🔧 [ExcelJSAdapter] تنفيذ عملية: ${op.type}`);
             switch(op.type) {
                 case 'add_column':
-                    this.addColumn(worksheet, op);
+                    this.addColumn(worksheet, op, tableInfo);
                     break;
                 case 'add_row':
-                    this.addRow(worksheet, op);
+                    this.addRow(worksheet, op, tableInfo);
                     break;
                 case 'update_cell':
                     this.updateCell(worksheet, op);
@@ -155,10 +162,10 @@ export class ExcelJSAdapter extends BaseAdapter {
                     this.addFormula(worksheet, op);
                     break;
                 case 'add_validation':
-                    this.addValidation(worksheet, op);
+                    this.addValidation(worksheet, op, tableInfo);
                     break;
                 case 'add_filter':
-                    this.addFilter(worksheet, op);
+                    this.addFilter(worksheet, op, tableInfo);
                     break;
                 default:
                     console.warn(`⚠️ عملية غير معروفة: ${op.type}`);
@@ -168,6 +175,7 @@ export class ExcelJSAdapter extends BaseAdapter {
     
     /**
      * 🔍 البحث الذكي عن رقم صف العناوين ورقم العمود بناءً على اسم العمود
+     * ⚠️ تم الإبقاء عليها، لكن الآن نعتمد أكثر على ExcelTableDetector
      */
     findColumnAndHeaderRow(worksheet, columnName) {
         if (!columnName) return { headerRowNum: HEADER_ROW || 1, colNumber: null };
@@ -175,8 +183,8 @@ export class ExcelJSAdapter extends BaseAdapter {
         let foundHeaderRow = HEADER_ROW || 1;
         let foundCol = null;
         
-        // فحص أول 6 صفوف لاكتشاف مكان رأس الجدول الحقيقي ديناميكياً
-        for (let r = 1; r <= 6; r++) {
+        // ✅ بدلاً من حصرها بأول 6 صفوف، نستخدم كل الصفوف لزيادة الذكاء
+        for (let r = 1; r <= worksheet.rowCount; r++) {
             const row = worksheet.getRow(r);
             let matchedInThisRow = false;
             
@@ -195,19 +203,28 @@ export class ExcelJSAdapter extends BaseAdapter {
         return { headerRowNum: foundHeaderRow, colNumber: foundCol };
     }
     
-    addColumn(worksheet, op) {
+    addColumn(worksheet, op, tableInfo) {
         try {
+            // نستخدم الهيدر المكتشف من TableDetector كمرجع أساسي
+            let headerRowNum = tableInfo.headerRowNum || HEADER_ROW || 1;
             let insertIndex = worksheet.columnCount + 1;
-            let headerRowNum = HEADER_ROW || 1;
             
             // ✅ البحث الديناميكي عن العمود المستهدف بدقة مطلقة
             if (op.afterColumn) {
-                const searchResult = this.findColumnAndHeaderRow(worksheet, op.afterColumn);
-                headerRowNum = searchResult.headerRowNum;
+                // أولاً نحاول عبر TableDetector
+                const colByDetector = ExcelTableDetector.findColumnByHeader(worksheet, headerRowNum, op.afterColumn);
+                let targetCol = colByDetector;
                 
-                if (searchResult.colNumber) {
-                    insertIndex = searchResult.colNumber + 1;
-                    console.log(`📊 [ExcelJSAdapter] تم رصد العمود "${op.afterColumn}" في الصف ${headerRowNum}، العمود رقم ${searchResult.colNumber}. الإدراج بعده مباشرة في العمود ${insertIndex}`);
+                // إذا ما لقيه، نرجع للمنطق القديم كـ fallback
+                if (!targetCol) {
+                    const searchResult = this.findColumnAndHeaderRow(worksheet, op.afterColumn);
+                    headerRowNum = searchResult.headerRowNum;
+                    targetCol = searchResult.colNumber;
+                }
+                
+                if (targetCol) {
+                    insertIndex = targetCol + 1;
+                    console.log(`📊 [ExcelJSAdapter] تم رصد العمود "${op.afterColumn}" في الصف ${headerRowNum}، العمود رقم ${targetCol}. الإدراج بعده مباشرة في العمود ${insertIndex}`);
                 } else {
                     console.warn(`⚠️ [ExcelJSAdapter] العمود "${op.afterColumn}" غير موجود، سيتم الإضافة في نهاية الجدول.`);
                 }
@@ -315,10 +332,13 @@ export class ExcelJSAdapter extends BaseAdapter {
         }
     }
     
-    addValidation(worksheet, op) {
+    addValidation(worksheet, op, tableInfo) {
         try {
             const { address, formulae, afterColumn } = op;
             const options = formulae || ['"خيار1,خيار2,خيار3"'];
+            
+            // نستخدم معلومات الجدول المكتشفة
+            const { headerRowNum, dataStartRow, dataEndRow } = tableInfo;
             
             if (address) {
                 if (address.includes(':')) {
@@ -355,12 +375,19 @@ export class ExcelJSAdapter extends BaseAdapter {
             }
             
             if (afterColumn) {
-                const searchResult = this.findColumnAndHeaderRow(worksheet, afterColumn);
-                const targetCol = searchResult.colNumber ? searchResult.colNumber + 1 : null;
+                // أولاً نحاول عبر TableDetector
+                const colByDetector = ExcelTableDetector.findColumnByHeader(worksheet, headerRowNum, afterColumn);
+                let targetCol = colByDetector ? colByDetector + 1 : null;
+                
+                // إذا فشل، نستخدم المنطق القديم كـ fallback
+                if (!targetCol) {
+                    const searchResult = this.findColumnAndHeaderRow(worksheet, afterColumn);
+                    targetCol = searchResult.colNumber ? searchResult.colNumber + 1 : null;
+                }
                 
                 if (targetCol) {
-                    const startRow = searchResult.headerRowNum + 1;
-                    const endRow = worksheet.rowCount || 10;
+                    const startRow = dataStartRow;
+                    const endRow = dataEndRow;
                     
                     for (let row = startRow; row <= endRow; row++) {
                         const cell = worksheet.getCell(row, targetCol);
@@ -372,14 +399,14 @@ export class ExcelJSAdapter extends BaseAdapter {
                             error: 'الرجاء اختيار قيمة من القائمة'
                         };
                     }
-                    console.log(`✅ [ExcelJSAdapter] تم إضافة القائمة المنسدلة بعد عمود: ${afterColumn}`);
+                    console.log(`✅ [ExcelJSAdapter] تم إضافة القائمة المنسدلة بعد عمود: ${afterColumn} ضمن نطاق بيانات الجدول`);
                     return;
                 }
             }
             
             const lastCol = worksheet.columnCount;
-            const startRow = (HEADER_ROW || 1) + 1;
-            const endRow = worksheet.rowCount || 10;
+            const startRow = dataStartRow;
+            const endRow = dataEndRow;
             
             for (let row = startRow; row <= endRow; row++) {
                 const cell = worksheet.getCell(row, lastCol);
@@ -391,7 +418,7 @@ export class ExcelJSAdapter extends BaseAdapter {
                     error: 'الرجاء اختيار قيمة من القائمة'
                 };
             }
-            console.log(`✅ [ExcelJSAdapter] تم إضافة القائمة المنسدلة في آخر عمود`);
+            console.log(`✅ [ExcelJSAdapter] تم إضافة القائمة المنسدلة في آخر عمود ضمن نطاق بيانات الجدول`);
             
         } catch (err) {
             console.error('❌ [ExcelJSAdapter] خطأ في addValidation:', err);
@@ -399,10 +426,11 @@ export class ExcelJSAdapter extends BaseAdapter {
         }
     }
     
-    addFilter(worksheet, op) {
+    addFilter(worksheet, op, tableInfo) {
+        const { headerRowNum, dataEndRow } = tableInfo;
         worksheet.autoFilter = {
-            from: op.from || 'A1',
-            to: op.to || 'Z100'
+            from: op.from || `A${headerRowNum}`,
+            to: op.to || `Z${dataEndRow}`
         };
     }
     
@@ -427,7 +455,7 @@ export class ExcelJSAdapter extends BaseAdapter {
                 case '>': return numValue > numThreshold;
                 case '<': return numValue < numThreshold;
                 case '==': return numValue === numThreshold;
-                case '!=': return numValue !== numThreshold;
+                case '!='': return numValue !== numThreshold;
                 case '>=': return numValue >= numThreshold;
                 case '<=': return numValue <= numThreshold;
                 default: return false;
@@ -448,5 +476,4 @@ export class ExcelJSAdapter extends BaseAdapter {
             sheet.map(row => `| ${row.join(' | ')} |`).join('\n')
         ).join('\n\n---\n\n');
     }
-}
-
+            }
