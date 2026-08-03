@@ -1,8 +1,7 @@
 /**
  * api/core/kernel.js – Alatheer Sovereign Kernel
  * ✅ يستورد SYSTEM_PROMPT من system.js كمصدر وحيد
- * ✅ يضيف سياق الملف فقط
- * ✅ يثق بذكاء Gemini في فهم النية
+ * ✅ يعالج طلب التحميل مباشرة دون الذهاب إلى Gemini
  */
 
 import geminiService from "../geminiService.js";
@@ -23,7 +22,29 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const extractedContent = ctx.extractedContent || null;
     const fileName = ctx.fileName || "الملف";
 
-    // ✅ بناء سياق الملف (مضاف إلى SYSTEM_PROMPT)
+    // ✅ معالجة طلب التحميل مباشرة (قبل أي شيء آخر)
+    if (message.includes('رابط') || message.includes('تحميل') || 
+        message.includes('الملف') || message.includes('download')) {
+        if (ctx.filePath && fs.existsSync(ctx.filePath)) {
+            try {
+                const fileBuffer = fs.readFileSync(ctx.filePath);
+                const fileBase64 = fileBuffer.toString('base64');
+                console.log(`📥 [Kernel] تجهيز تحميل للملف: ${fileName}`);
+                
+                // ✅ نعيد الرد مباشرة، ولا نذهب إلى Gemini
+                return {
+                    reply: `📥 **تم تجهيز الملف "${fileName}" للتحميل.**\n\nيمكنك تنزيله من الرابط أدناه.`,
+                    fileName: fileName,
+                    fileBase64: fileBase64
+                };
+            } catch (err) {
+                console.warn(`⚠️ [Kernel] فشل قراءة الملف: ${err.message}`);
+                // نكمل إلى Gemini إذا فشل التحميل
+            }
+        }
+    }
+
+    // ✅ بناء سياق الملف
     let fileContext = "";
     if (extractedContent && !extractedContent.error) {
         const meta = extractedContent.metadata || {};
@@ -42,7 +63,6 @@ ${text.slice(0, 1500)}${text.length > 1500 ? '\n... (مختصر)' : ''}
     // ✅ بناء قائمة المحادثة
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
     
-    // ✅ SYSTEM_PROMPT هو المصدر الوحيد، نضيف له سياق الملف فقط
     let systemContent = SYSTEM_PROMPT;
     if (fileContext) {
         systemContent += `\n\n[محتوى الملف]:\n${fileContext}`;
@@ -57,28 +77,6 @@ ${text.slice(0, 1500)}${text.length > 1500 ? '\n... (مختصر)' : ''}
     let finalReplyText = "";
     let returnedFileName = null;
     let fileBase64 = null;
-
-    // ✅ معالجة طلب التحميل
-    if (message.includes('تحميل') || message.includes('رابط')) {
-        if (ctx.filePath && fs.existsSync(ctx.filePath)) {
-            try {
-                const fileBuffer = fs.readFileSync(ctx.filePath);
-                fileBase64 = fileBuffer.toString('base64');
-                returnedFileName = fileName;
-                console.log(`📥 [Kernel] تجهيز تحميل للملف: ${fileName}`);
-            } catch (err) {
-                console.warn(`⚠️ [Kernel] فشل قراءة الملف: ${err.message}`);
-            }
-        }
-    }
-
-    // ✅ إذا كان هناك تعديل مطلوب، نمرر اسم الملف للـ chat.js
-    // (kernel لا يحتاج لتحليل نية، Gemini سيفهمها بنفسه من SYSTEM_PROMPT)
-    if (ctx.filePath && extractedContent && !extractedContent.error) {
-        // نترك Gemini يقرر من خلال SYSTEM_PROMPT
-        // لكننا نجهز اسم الملف للرجوع إذا احتاج chat.js
-        returnedFileName = fileName;
-    }
 
     try {
         console.log(`🧠 [Kernel] إرسال الطلب إلى النموذج...`);
@@ -105,4 +103,4 @@ ${text.slice(0, 1500)}${text.length > 1500 ? '\n... (مختصر)' : ''}
         fileName: returnedFileName,
         fileBase64,
     };
-}
+                        }
