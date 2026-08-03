@@ -93,7 +93,7 @@ class ExcelUltimateEngine {
             console.log(`⚙️ [Ultimate Engine] تسليم ${jsOperations.length} مهمة لمحرك الجافاسكريبت...`);
             try {
                 finalResult = await this.modifier.modifyWithBackup(currentFilePath, jsOperations, params);
-                currentFilePath = finalResult.filePath; // تحديث المسار ليكون الملف المُعدّل
+                currentFilePath = finalResult.filePath || currentFilePath; // تحديث المسار ليكون الملف المُعدّل إذا توفر
             } catch (jsError) {
                 console.error(`⚠️ [Ultimate Engine] خطأ في مرحلة الجافاسكريبت: ${jsError.message}`);
                 // شبكة الأمان: في حال فشلت JS، نعطي كل مهامها لبايثون كمنقذ
@@ -123,9 +123,15 @@ class ExcelUltimateEngine {
        🐍 محرك بايثون السيادي (المدمج) - لمعالجة العقد
        ============================================================ */
     async executePythonModifier(filePath, operations) {
+        // ✅ التأكد من وجود الملف المطلق أو تصحيح مساره
+        const resolvedPath = path.resolve(filePath);
+        if (!fs.existsSync(resolvedPath)) {
+            throw new Error(`[Alatheer Python Engine] الملف غير موجود على المسار: ${resolvedPath}`);
+        }
+
         try {
             // إنشاء ملف بايثون مؤقت لتنفيذ المهام
-            const scriptPath = path.join(path.dirname(filePath), `temp_executor_${Date.now()}.py`);
+            const scriptPath = path.join(path.dirname(resolvedPath), `temp_executor_${Date.now()}.py`);
             
             const pythonCode = `
 import sys
@@ -134,7 +140,7 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 
 def process_excel():
-    file_path = r"${filePath.replace(/\\/g, '\\\\')}"
+    file_path = r"${resolvedPath.replace(/\\/g, '\\\\')}"
     ops_json = r"""${JSON.stringify(operations)}"""
     
     try:
@@ -182,26 +188,26 @@ if __name__ == "__main__":
     process_excel()
 `;
             
-            // حفظ السكربت وتنفيذه
-            fs.writeFileSync(scriptPath, pythonCode);
-            const { stdout, stderr } = await execAsync(`python "${scriptPath}"`);
+            // حفظ السكربت وتنفيذه باستخدام python3 حصراً لضمان التوافقية
+            fs.writeFileSync(scriptPath, pythonCode, 'utf-8');
+            const { stdout, stderr } = await execAsync(`python3 "${scriptPath}"`);
             
             // تنظيف السيرفر من السكربت المؤقت
             if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
-            if (stdout.includes("ERROR") || stderr) {
+            if (stdout.includes("ERROR") || (stderr && stderr.trim() !== "")) {
                 throw new Error(stderr || stdout);
             }
 
             // قراءة الملف بعد التعديل لتجهيزه للإرسال
-            const fileBuffer = fs.readFileSync(filePath);
+            const fileBuffer = fs.readFileSync(resolvedPath);
             return {
                 ok: true,
                 success: true,
-                filePath: filePath,
+                filePath: resolvedPath,
                 fileBase64: fileBuffer.toString('base64'),
-                fileName: path.basename(filePath),
-                reply: "تم تنفيذ التعديلات المعقدة بنجاح عبر محرك بايثون!"
+                fileName: path.basename(resolvedPath),
+                reply: "تم تنفيذ التعديلات المعقدة بنجاح عبر محرك بايثون السيادي!"
             };
 
         } catch (error) {
