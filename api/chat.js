@@ -4,6 +4,7 @@
  * ✅ يدعم ExcelJS + XLSX معاً
  * ✅ تم إصلاح مشكلة تضاعف حجم الملف
  * ✅ تم إصلاح مشكلة رابط التحميل (يعمل مع التعديل وطلب التحميل)
+ * ✅ يستقبل العمليات من orchestrator وينفذها
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -70,6 +71,7 @@ async function extractExcelContent(filePath, options = {}) {
  */
 async function modifyExcelContent(filePath, operations) {
     try {
+        console.log(`🔧 [chat.js] تنفيذ ${operations.length} عملية على الملف`);
         const result = await excelEngine.execute(filePath, 'modify', {
             operations: operations
         });
@@ -182,6 +184,7 @@ export default async function handler(req, res) {
                 const fileExt = path.extname(fileName).toLowerCase();
 
                 if (['.xlsx', '.xls', '.xlsm', '.csv'].includes(fileExt)) {
+                    // ✅ تنفيذ العمليات إذا كانت موجودة (من الطلب المباشر)
                     if (operations && operations.length > 0) {
                         modifiedResult = await modifyExcelContent(localFilePath, operations);
                         if (modifiedResult.error) {
@@ -248,6 +251,7 @@ export default async function handler(req, res) {
         let reply = "تم إنجاز طلبك بنجاح!";
         let fileBase64 = null;
         let returnedFileName = null;
+        let operationsFromOrchestrator = [];
 
         if (typeof output === "string") {
             reply = output;
@@ -255,6 +259,21 @@ export default async function handler(req, res) {
             reply = output.reply || output.message || "تم إنجاز طلبك بنجاح!";
             fileBase64 = output.fileBase64 || modifiedResult?.fileBase64 || null;
             returnedFileName = output.fileName || modifiedResult?.fileName || null;
+            operationsFromOrchestrator = output.operations || [];  // ✅ استقبال العمليات
+        }
+
+        // ✅ تنفيذ العمليات القادمة من orchestrator (من kernel)
+        if (operationsFromOrchestrator.length > 0 && localFilePath) {
+            console.log(`🔧 [chat.js] تنفيذ ${operationsFromOrchestrator.length} عملية من orchestrator`);
+            modifiedResult = await modifyExcelContent(localFilePath, operationsFromOrchestrator);
+            if (modifiedResult.error) {
+                throw new Error(modifiedResult.error);
+            }
+            // تحديث extractedContent بالملف المعدل
+            extractedContent = await extractExcelContent(modifiedResult.filePath, { analyze: true });
+            // تحديث fileBase64 و returnedFileName
+            fileBase64 = modifiedResult.fileBase64;
+            returnedFileName = modifiedResult.fileName;
         }
 
         // ✅ إضافة رابط التحميل في حالتين:
@@ -283,4 +302,4 @@ export default async function handler(req, res) {
             reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
         });
     }
-}
+            }
