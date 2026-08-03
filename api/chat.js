@@ -11,10 +11,12 @@ import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import excelEngine from './tools/external/engines/excel.js';
+import excelEngine from './tools/external/engines/excel/index.js';  // ← التغيير هنا
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ... باقي الملف كما هو (لا تغيير)
 
 /**
  * ✅ دالة معالجة الملفات باستخدام المحرك الشامل
