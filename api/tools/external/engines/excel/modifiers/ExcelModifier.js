@@ -1,9 +1,10 @@
 /**
- * excel/modifiers/ExcelModifier.js – التعديل السيادي المتقدم
+ * excel/modifiers/ExcelModifier.js – التعديل السيادي المتقدم (محدث بحماية ضد ضياع الملفات)
  * 🔥 يدعم: عمليات متعددة، تراجع حقيقي، نسخ احتياطي، تنفيذ ذكي مرتب بالأولويات
  */
 
 import fs from 'fs';
+import path from 'path';
 import { ErrorHandler } from '../utils/ErrorHandler.js';
 import { FileUtils } from '../utils/FileUtils.js';
 import { OPERATION_TYPES } from '../types/ExcelTypes.js';
@@ -15,17 +16,20 @@ export class ExcelModifier {
     }
     
     /**
-     * ✏️ تعديل الملف مع إنشاء نسخة احتياطية
+     * ✏️ تعديل الملف مع إنشاء نسخة احتياطية آمنة
      */
     async modifyWithBackup(filePath, operations, params = {}) {
         return ErrorHandler.execute('modifyWithBackup', async () => {
+            // ✅ تحقق سيادي من وجود الملف قبل أي عملية
+            const resolvedPath = this.resolveFilePath(filePath);
+            
             // ✅ إنشاء نسخة احتياطية أولاً قبل أي لمس للملف
-            this.backupPath = await this.createBackup(filePath);
+            this.backupPath = await this.createBackup(resolvedPath);
             
             // ✅ ترتيب العمليات حسَب الأولوية لضمان سلامة الصيغ والصفوف
             const sortedOperations = this.orderOperations(operations || []);
             
-            const result = await this.adapter.modify(filePath, { operations: sortedOperations, ...params });
+            const result = await this.adapter.modify(resolvedPath, { operations: sortedOperations, ...params });
             
             return {
                 ...result,
@@ -35,9 +39,35 @@ export class ExcelModifier {
     }
     
     /**
+     * 🔍 حل وتصحيح مسار الملف (دعم المسارات النسبية والمطلقة ومجلدات الرفع)
+     */
+    resolveFilePath(filePath) {
+        if (!filePath) {
+            throw new Error('[Alatheer Sovereign Error] مسار الملف غير مدخل أو فارغ.');
+        }
+        
+        // إذا كان المسار مطلقاً وموجوداً
+        if (fs.existsSync(filePath)) {
+            return filePath;
+        }
+        
+        // محاولة البحث في مجلد الرفع المحلي إذا كان المرور مجرد اسم ملف
+        const uploadsPath = path.resolve('/app/uploads', path.basename(filePath));
+        if (fs.existsSync(uploadsPath)) {
+            return uploadsPath;
+        }
+        
+        // إذا لم يوجد نهائياً (غالباً بسبب إعادة تشغيل الحاوية أو انقطاع الجلسة)
+        throw new Error(`[Alatheer Sovereign Error] الملف المستهدف غير موجود على القرص: ${filePath}. قد يكون قد تم مسح الملف أو إعادة تشغيل الحاوية. يرجى إعادة رفع الملف لاستئناف العمليات.`);
+    }
+
+    /**
      * 💾 إنشاء نسخة احتياطية آمنة
      */
     async createBackup(filePath) {
+        if (!fs.existsSync(filePath)) {
+            throw new Error(`[Alatheer Sovereign Error] تعذر إنشاء نسخة احتياطية، الملف غير موجود: ${filePath}`);
+        }
         const backupPath = FileUtils.getTempPath('backup');
         const data = await FileUtils.readFile(filePath);
         await FileUtils.writeFile(backupPath, data);
@@ -52,9 +82,11 @@ export class ExcelModifier {
             throw new Error('لا توجد نسخة احتياطية متاحة للتراجع.');
         }
         
+        const resolvedTarget = targetFilePath ? this.resolveFilePath(targetFilePath) : this.backupPath;
+        
         // ✅ استعادة النسخة الاحتياطية وكتابتها في الملف المستهدف
         const backupData = await FileUtils.readFile(this.backupPath);
-        await FileUtils.writeFile(targetFilePath || this.backupPath, backupData);
+        await FileUtils.writeFile(resolvedTarget, backupData);
         
         return { 
             success: true, 
@@ -124,7 +156,6 @@ export class ExcelModifier {
                 this.addFormulaSmart(worksheet, op);
                 break;
             case OPERATION_TYPES.ADD_VALIDATION:
-            case 'add_validation':
             case 'dropdown':
                 this.addValidationSmart(worksheet, op);
                 break;
@@ -137,9 +168,6 @@ export class ExcelModifier {
         }
     }
     
-    /**
-     * ➕ التوجيهات المحسنة للـ Adapters
-     */
     addColumnSmart(worksheet, op) { if (this.adapter.addColumn) this.adapter.addColumn(worksheet, op); }
     addRowSmart(worksheet, op) { if (this.adapter.addRow) this.adapter.addRow(worksheet, op); }
     updateCellSmart(worksheet, op) { if (this.adapter.updateCell) this.adapter.updateCell(worksheet, op); }
@@ -149,4 +177,6 @@ export class ExcelModifier {
     addValidationSmart(worksheet, op) { if (this.adapter.addValidation) this.adapter.addValidation(worksheet, op); }
     addFilterSmart(worksheet, op) { if (this.adapter.addFilter) this.adapter.addFilter(worksheet, op); }
 }
+
+export default ExcelModifier;
 
