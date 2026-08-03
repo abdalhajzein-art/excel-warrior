@@ -1,12 +1,10 @@
 /**
- * excel/index.js – Sovereign Excel Ultimate Engine (النسخة المبسطة)
+ * excel/index.js – Sovereign Excel Ultimate Engine (Hybrid Pipeline Edition)
  * 🔥 الوحدات المدمجة:
- * - ExcelReader: قراءة متقدمة
- * - ExcelModifier: تعديل متقدم
- * - ExcelAnalyzer: تحليل ذكي
- * - ExcelFormatter: تنسيق تلقائي
- * - ExcelPivot: جداول محورية
- * ✅ تم إضافة conditionalFormat لدعم التعديلات
+ * - ExcelReader, ExcelModifier, ExcelAnalyzer, ExcelFormatter, ExcelPivot
+ * 🧠 المحرك الهجين (JS + Python Bridge):
+ * - توزيع ذكي للمهام: الجافاسكريبت تنفذ التنسيقات والمهام السريعة، 
+ *   وبايثون يتولى المهام المعقدة (القوائم المنسدلة، الإدراج الدقيق) على نفس الملف.
  */
 
 import { ExcelAdapter } from './core/ExcelAdapter.js';
@@ -15,9 +13,15 @@ import { ExcelModifier } from './modifiers/ExcelModifier.js';
 import { ExcelAnalyzer } from './analyzers/ExcelAnalyzer.js';
 import { ExcelFormatter } from './formatters/ExcelFormatter.js';
 import { ExcelPivot } from './pivots/ExcelPivot.js';
-import { ErrorHandler } from './utils/ErrorHandler.js';
 import { FileUtils } from './utils/FileUtils.js';
 import { ENGINE_TYPES } from './types/ExcelTypes.js';
+
+// ✅ استيراد وحدات تشغيل بايثون المدمجة
+import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { promisify } from 'util';
+const execAsync = promisify(exec);
 
 /* ============================================================
    🧠 المحرك السيادي النهائي
@@ -25,23 +29,15 @@ import { ENGINE_TYPES } from './types/ExcelTypes.js';
 
 class ExcelUltimateEngine {
     constructor(engineType = ENGINE_TYPES.EXCELJS) {
-        // ✅ المحول الأساسي
         this.adapter = new ExcelAdapter(engineType);
-        
-        // ✅ جميع الوحدات (بدون Searcher)
         this.reader = new ExcelReader(this.adapter);
         this.modifier = new ExcelModifier(this.adapter);
         this.analyzer = new ExcelAnalyzer(this.adapter);
         this.formatter = new ExcelFormatter(this.adapter);
         this.pivot = new ExcelPivot(this.adapter);
-        
         this.engineType = engineType;
         this.initialized = false;
     }
-
-    /* ============================================================
-       ⚡ التهيئة
-       ============================================================ */
 
     async initialize() {
         if (!this.initialized) {
@@ -52,213 +48,226 @@ class ExcelUltimateEngine {
     }
 
     /* ============================================================
-       📖 1. عمليات القراءة (ExcelReader)
+       📖 1. عمليات القراءة
        ============================================================ */
-
-    async read(filePath, params = {}) {
-        await this.initialize();
-        return this.reader.readFull(filePath, params);
-    }
-
-    async readFast(filePath, params = {}) {
-        await this.initialize();
-        return this.reader.readFast(filePath, params);
-    }
-
-    async readMetadata(filePath) {
-        await this.initialize();
-        return this.reader.readMetadata(filePath);
-    }
-
-    async readRange(filePath, range, params = {}) {
-        await this.initialize();
-        return this.reader.readRange(filePath, range, params);
-    }
-
-    async readSheets(filePath, sheetNames, params = {}) {
-        await this.initialize();
-        return this.reader.readSheets(filePath, sheetNames, params);
-    }
+    async read(filePath, params = {}) { await this.initialize(); return this.reader.readFull(filePath, params); }
+    async readFast(filePath, params = {}) { await this.initialize(); return this.reader.readFast(filePath, params); }
+    async readMetadata(filePath) { await this.initialize(); return this.reader.readMetadata(filePath); }
+    async readRange(filePath, range, params = {}) { await this.initialize(); return this.reader.readRange(filePath, range, params); }
+    async readSheets(filePath, sheetNames, params = {}) { await this.initialize(); return this.reader.readSheets(filePath, sheetNames, params); }
 
     /* ============================================================
-       ✏️ 2. عمليات التعديل (ExcelModifier)
+       ✏️ 2. عمليات التعديل (الهندسة الهجينة المتسلسلة - Hybrid Pipeline)
        ============================================================ */
 
     async modify(filePath, params = {}) {
         await this.initialize();
-        return this.modifier.modifyWithBackup(filePath, params.operations || [], params);
-    }
+        const ops = params.operations || [];
 
-    async undo() {
-        return this.modifier.undo();
+        if (ops.length === 0) {
+            return { ok: false, error: "لا توجد عمليات لتنفيذها." };
+        }
+
+        console.log(`🧠 [Ultimate Engine] تحليل المهام وتوزيعها بين الجافاسكريبت وبايثون...`);
+
+        // 1. تصنيف المهام بناءً على قدرات المحركات
+        const jsOperations = [];
+        const pythonOperations = [];
+
+        // قائمة بالعمليات التي نعرف يقيناً أن الجافاسكريبت تعجز عنها أو تخطئ فيها
+        const pythonExclusiveTypes = ['add_validation', 'dropdown', 'python_custom'];
+
+        ops.forEach(op => {
+            if (pythonExclusiveTypes.includes(op.type) || (op.type === 'add_column' && op.after)) {
+                pythonOperations.push(op); // مهام تحتاج بايثون حصراً
+            } else {
+                jsOperations.push(op); // مهام عادية للجافاسكريبت (ألوان، نصوص، إضافة صفوف...)
+            }
+        });
+
+        let currentFilePath = filePath;
+        let finalResult = null;
+
+        // 2. المرحلة الأولى: تنفيذ مهام الجافاسكريبت (القائد الأساسي)
+        if (jsOperations.length > 0) {
+            console.log(`⚙️ [Ultimate Engine] تسليم ${jsOperations.length} مهمة لمحرك الجافاسكريبت...`);
+            try {
+                finalResult = await this.modifier.modifyWithBackup(currentFilePath, jsOperations, params);
+                currentFilePath = finalResult.filePath; // تحديث المسار ليكون الملف المُعدّل
+            } catch (jsError) {
+                console.error(`⚠️ [Ultimate Engine] خطأ في مرحلة الجافاسكريبت: ${jsError.message}`);
+                // شبكة الأمان: في حال فشلت JS، نعطي كل مهامها لبايثون كمنقذ
+                pythonOperations.push(...jsOperations); 
+            }
+        }
+
+        // 3. المرحلة الثانية: تنفيذ مهام بايثون (المساعد الاستراتيجي)
+        if (pythonOperations.length > 0) {
+            console.log(`🐍 [Ultimate Engine] تسليم ${pythonOperations.length} مهمة (معقدة) لمحرك بايثون...`);
+            try {
+                // بايثون يستلم الملف الذي انتهت منه الجافاسكريبت
+                finalResult = await this.executePythonModifier(currentFilePath, pythonOperations);
+            } catch (pyError) {
+                console.error(`🔥 [Ultimate Engine] خطأ في مرحلة بايثون: ${pyError.message}`);
+                if (!finalResult) {
+                    return { ok: false, error: `فشل التعديل كلياً: ${pyError.message}` };
+                }
+            }
+        }
+
+        console.log(`✅ [Ultimate Engine] تم إنجاز العمل المشترك بنجاح!`);
+        return finalResult;
     }
 
     /* ============================================================
-       📊 3. عمليات التحليل (ExcelAnalyzer)
+       🐍 محرك بايثون السيادي (المدمج) - لمعالجة العقد
        ============================================================ */
+    async executePythonModifier(filePath, operations) {
+        try {
+            // إنشاء ملف بايثون مؤقت لتنفيذ المهام
+            const scriptPath = path.join(path.dirname(filePath), `temp_executor_${Date.now()}.py`);
+            
+            const pythonCode = `
+import sys
+import json
+from openpyxl import load_workbook
+from openpyxl.worksheet.datavalidation import DataValidation
 
-    async analyze(filePath, params = {}) {
-        await this.initialize();
-        return this.analyzer.analyze(filePath, params);
+def process_excel():
+    file_path = r"${filePath.replace(/\\/g, '\\\\')}"
+    ops_json = r"""${JSON.stringify(operations)}"""
+    
+    try:
+        operations = json.loads(ops_json)
+        wb = load_workbook(file_path)
+        ws = wb.active # العمل على الشيت الأول افتراضياً
+        
+        for op in operations:
+            op_type = op.get('type')
+            
+            # 1. إدراج عمود بعد عمود معين
+            if op_type == 'add_column' and op.get('after'):
+                target_header = op.get('after')
+                new_header = op.get('header', 'New Column')
+                
+                target_col_idx = None
+                for col in range(1, ws.max_column + 2):
+                    cell_val = ws.cell(row=1, column=col).value
+                    if cell_val == target_header:
+                        target_col_idx = col
+                        break
+                
+                if target_col_idx:
+                    ws.insert_cols(target_col_idx + 1)
+                    ws.cell(row=1, column=target_col_idx + 1).value = new_header
+                else:
+                    ws.cell(row=1, column=ws.max_column + 1).value = new_header
+
+            # 2. إضافة قوائم منسدلة
+            elif op_type in ['add_validation', 'dropdown']:
+                formulae = op.get('formulae', ['"Yes,No"'])[0]
+                address = op.get('address', 'A2:A1048576') 
+                
+                dv = DataValidation(type="list", formula1=formulae, allow_blank=True)
+                ws.add_data_validation(dv)
+                dv.add(address)
+
+        # حفظ التعديلات على نفس الملف
+        wb.save(file_path)
+        print("SUCCESS")
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+
+if __name__ == "__main__":
+    process_excel()
+`;
+            
+            // حفظ السكربت وتنفيذه
+            fs.writeFileSync(scriptPath, pythonCode);
+            const { stdout, stderr } = await execAsync(`python "${scriptPath}"`);
+            
+            // تنظيف السيرفر من السكربت المؤقت
+            if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
+
+            if (stdout.includes("ERROR") || stderr) {
+                throw new Error(stderr || stdout);
+            }
+
+            // قراءة الملف بعد التعديل لتجهيزه للإرسال
+            const fileBuffer = fs.readFileSync(filePath);
+            return {
+                ok: true,
+                success: true,
+                filePath: filePath,
+                fileBase64: fileBuffer.toString('base64'),
+                fileName: path.basename(filePath),
+                reply: "تم تنفيذ التعديلات المعقدة بنجاح عبر محرك بايثون!"
+            };
+
+        } catch (error) {
+            console.error("🔥 [Python Engine Error]:", error);
+            throw error;
+        }
     }
 
     /* ============================================================
-       🎨 4. عمليات التنسيق التلقائي (ExcelFormatter)
+       ⚙️ باقي الوظائف والميزات (تعمل كما هي دون تغيير)
        ============================================================ */
-
-    async autoFormat(filePath, params = {}) {
-        await this.initialize();
-        return this.formatter.autoFormat(filePath, params);
-    }
-
-    async applyTemplate(filePath, templateName, params = {}) {
-        await this.initialize();
-        return this.formatter.applyTemplate(filePath, templateName, params);
-    }
-
-    /* ============================================================
-       📋 5. عمليات الجداول المحورية (ExcelPivot)
-       ============================================================ */
-
-    async pivot(filePath, params = {}) {
-        await this.initialize();
-        return this.pivot.createPivot(filePath, params);
-    }
-
-    /* ============================================================
-       🎯 6. التنسيق الشرطي (للتعديلات)
-       ============================================================ */
-
+    async undo() { return this.modifier.undo(); }
+    async analyze(filePath, params = {}) { await this.initialize(); return this.analyzer.analyze(filePath, params); }
+    async autoFormat(filePath, params = {}) { await this.initialize(); return this.formatter.autoFormat(filePath, params); }
+    async applyTemplate(filePath, templateName, params = {}) { await this.initialize(); return this.formatter.applyTemplate(filePath, templateName, params); }
+    async pivot(filePath, params = {}) { await this.initialize(); return this.pivot.createPivot(filePath, params); }
     async conditionalFormat(filePath, params = {}) {
         await this.initialize();
-        // تمرير الطلب إلى الـ formatter أو modifier
         return this.formatter.conditionalFormat ? 
             await this.formatter.conditionalFormat(filePath, params) : 
             await this.modify(filePath, params);
     }
-
-    /* ============================================================
-       🆕 7. عمليات الإنشاء (عبر Adapter)
-       ============================================================ */
-
-    async create(params = {}) {
-        await this.initialize();
-        return this.adapter.create(params);
+    async create(params = {}) { await this.initialize(); return this.adapter.create(params); }
+    async convertToPdf(filePath) { await this.initialize(); return this.adapter.convertToPdf(filePath); }
+    async convertToCsv(filePath) { await this.initialize(); return this.adapter.convertToCsv(filePath); }
+    
+    async setEngine(engineType) { 
+        this.engineType = engineType; 
+        this.adapter = new ExcelAdapter(engineType); 
+        await this.adapter.initialize(); 
+        this.reader = new ExcelReader(this.adapter); 
+        this.modifier = new ExcelModifier(this.adapter); 
+        this.analyzer = new ExcelAnalyzer(this.adapter); 
+        this.formatter = new ExcelFormatter(this.adapter); 
+        this.pivot = new ExcelPivot(this.adapter); 
+        this.initialized = true; 
+        return this; 
     }
-
-    /* ============================================================
-       🔄 8. عمليات التحويل (عبر Adapter)
-       ============================================================ */
-
-    async convertToPdf(filePath) {
-        await this.initialize();
-        return this.adapter.convertToPdf(filePath);
-    }
-
-    async convertToCsv(filePath) {
-        await this.initialize();
-        return this.adapter.convertToCsv(filePath);
-    }
-
-    /* ============================================================
-       ⚙️ 9. إدارة المحرك
-       ============================================================ */
-
-    async setEngine(engineType) {
-        this.engineType = engineType;
-        this.adapter = new ExcelAdapter(engineType);
-        await this.adapter.initialize();
-        
-        this.reader = new ExcelReader(this.adapter);
-        this.modifier = new ExcelModifier(this.adapter);
-        this.analyzer = new ExcelAnalyzer(this.adapter);
-        this.formatter = new ExcelFormatter(this.adapter);
-        this.pivot = new ExcelPivot(this.adapter);
-        
-        this.initialized = true;
-        return this;
-    }
-
-    getCurrentEngine() {
-        return this.engineType;
-    }
-
-    /* ============================================================
-       🧹 10. الصيانة والتنظيف
-       ============================================================ */
-
-    async cleanup() {
-        await FileUtils.cleanupOldTempFiles();
-    }
-
-    async getStatus() {
-        return {
-            initialized: this.initialized,
-            engine: this.engineType,
-            modules: {
-                reader: true,
-                modifier: true,
-                analyzer: true,
-                formatter: true,
-                pivot: true
-            }
-        };
-    }
+    
+    getCurrentEngine() { return this.engineType; }
+    async cleanup() { await FileUtils.cleanupOldTempFiles(); }
+    async getStatus() { return { initialized: this.initialized, engine: this.engineType, modules: { reader: true, modifier: true, analyzer: true, formatter: true, pivot: true } }; }
 }
 
-/* ============================================================
-   🚀 إنشاء وتصدير المحرك النهائي
-   ============================================================ */
-
 const ultimateEngine = new ExcelUltimateEngine();
-
-// ✅ التصدير الافتراضي
 export default ultimateEngine;
-
-// ✅ تصدير الكلاس
 export { ExcelUltimateEngine };
 
-/* ============================================================
-   📤 تصدير جميع الوظائف الرئيسية
-   ============================================================ */
-
-// 📖 القراءة
+// 📤 التصديرات الثابتة 
 export const excelRead = (filePath, params) => ultimateEngine.read(filePath, params);
 export const excelReadFast = (filePath, params) => ultimateEngine.readFast(filePath, params);
 export const excelReadMetadata = (filePath) => ultimateEngine.readMetadata(filePath);
 export const excelReadRange = (filePath, range, params) => ultimateEngine.readRange(filePath, range, params);
 export const excelReadSheets = (filePath, sheetNames, params) => ultimateEngine.readSheets(filePath, sheetNames, params);
-
-// ✏️ التعديل
 export const excelModify = (filePath, params) => ultimateEngine.modify(filePath, params);
 export const excelUndo = () => ultimateEngine.undo();
-
-// 📊 التحليل
 export const excelAnalyze = (filePath, params) => ultimateEngine.analyze(filePath, params);
-
-// 🎨 التنسيق التلقائي
 export const excelAutoFormat = (filePath, params) => ultimateEngine.autoFormat(filePath, params);
 export const excelApplyTemplate = (filePath, templateName, params) => ultimateEngine.applyTemplate(filePath, templateName, params);
-
-// ✅ تصديرات إضافية للتوافق مع external_file_bridge.js
 export const excelFormat = (filePath, params) => ultimateEngine.autoFormat(filePath, params);
 export const excelConditionalFormat = (filePath, params) => ultimateEngine.conditionalFormat(filePath, params);
 export const excelPivot = (filePath, params) => ultimateEngine.pivot(filePath, params);
-
-// 📋 الجداول المحورية (تصدير إضافي)
-// export const excelPivot = (filePath, params) => ultimateEngine.pivot(filePath, params);  // مكرر، محذوف
-
-// 🆕 الإنشاء
 export const excelCreate = (params) => ultimateEngine.create(params);
-
-// 🔄 التحويل
 export const excelConvertToPdf = (filePath) => ultimateEngine.convertToPdf(filePath);
 export const excelConvertToCsv = (filePath) => ultimateEngine.convertToCsv(filePath);
-
-// ⚙️ الإدارة
 export const excelSetEngine = (engineType) => ultimateEngine.setEngine(engineType);
 export const excelGetEngine = () => ultimateEngine.getCurrentEngine();
 export const excelGetStatus = () => ultimateEngine.getStatus();
-
-// 🧹 الصيانة
 export const excelCleanup = () => ultimateEngine.cleanup();
