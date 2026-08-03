@@ -1,5 +1,5 @@
 /**
- * excel/modifiers/ExcelModifier.js – التعديل السيادي المتقدم (محدث بحماية ضد ضياع الملفات)
+ * excel/modifiers/ExcelModifier.js – التعديل السيادي المتقدم (محدث بحماية ضد ضياع الملفات ومسارات persistent_uploads)
  * 🔥 يدعم: عمليات متعددة، تراجع حقيقي، نسخ احتياطي، تنفيذ ذكي مرتب بالأولويات
  */
 
@@ -39,26 +39,37 @@ export class ExcelModifier {
     }
     
     /**
-     * 🔍 حل وتصحيح مسار الملف (دعم المسارات النسبية والمطلقة ومجلدات الرفع)
+     * 🔍 حل وتصحيح مسار الملف (دعم المسارات المطلقة ومجلدات التخزين المستدام والمؤقت)
      */
     resolveFilePath(filePath) {
         if (!filePath) {
             throw new Error('[Alatheer Sovereign Error] مسار الملف غير مدخل أو فارغ.');
         }
         
-        // إذا كان المسار مطلقاً وموجوداً
+        // إذا كان المسار مطلقاً وموجوداً مباشرة
         if (fs.existsSync(filePath)) {
             return filePath;
         }
         
-        // محاولة البحث في مجلد الرفع المحلي إذا كان المرور مجرد اسم ملف
-        const uploadsPath = path.resolve('/app/uploads', path.basename(filePath));
-        if (fs.existsSync(uploadsPath)) {
-            return uploadsPath;
+        const fileName = path.basename(filePath);
+        
+        // فحص مجلدات الرفع المستدامة والمؤقتة بترتيب الأولوية السيادية
+        const searchDirectories = [
+            '/app/persistent_uploads',
+            '/app/uploads',
+            process.cwd()
+        ];
+        
+        for (const dir of searchDirectories) {
+            const resolved = path.resolve(dir, fileName);
+            if (fs.existsSync(resolved)) {
+                console.log(`📁 [ExcelModifier] تم العثور على الملف في المسار السيادي: ${resolved}`);
+                return resolved;
+            }
         }
         
-        // إذا لم يوجد نهائياً (غالباً بسبب إعادة تشغيل الحاوية أو انقطاع الجلسة)
-        throw new Error(`[Alatheer Sovereign Error] الملف المستهدف غير موجود على القرص: ${filePath}. قد يكون قد تم مسح الملف أو إعادة تشغيل الحاوية. يرجى إعادة رفع الملف لاستئناف العمليات.`);
+        // إذا لم يوجد نهائياً
+        throw new Error(`[Alatheer Sovereign Error] الملف المستهدف غير موجود على القرص: ${filePath}. يرجى التحقق من مسار التخزين المستدام.`);
     }
 
     /**
@@ -84,7 +95,6 @@ export class ExcelModifier {
         
         const resolvedTarget = targetFilePath ? this.resolveFilePath(targetFilePath) : this.backupPath;
         
-        // ✅ استعادة النسخة الاحتياطية وكتابتها في الملف المستهدف
         const backupData = await FileUtils.readFile(this.backupPath);
         await FileUtils.writeFile(resolvedTarget, backupData);
         
@@ -107,7 +117,6 @@ export class ExcelModifier {
     
     /**
      * 📊 مصفوفة ترتيب أولويات تنفيذ العمليات
-     * (الهيكلية -> البيانات -> التنسيق والتلوين -> الفلاتر)
      */
     orderOperations(operations) {
         const priority = {
@@ -164,7 +173,7 @@ export class ExcelModifier {
                 this.addFilterSmart(worksheet, op);
                 break;
             default:
-                console.warn(`⚠️ [ExcelModifier] نوع عملية غير معروف أو يتم التوجيه للبايثون: ${op.type}`);
+                console.warn(`⚠️ [ExcelModifier] نوع عملية غير معروف: ${op.type}`);
         }
     }
     
@@ -179,4 +188,3 @@ export class ExcelModifier {
 }
 
 export default ExcelModifier;
-
