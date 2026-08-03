@@ -11,12 +11,10 @@ import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import excelEngine from './tools/external/engines/excel/index.js';  // ← التغيير هنا
+import { excelRead, excelModify } from './tools/external/engines/excel/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// ... باقي الملف كما هو (لا تغيير)
 
 /**
  * ✅ دالة معالجة الملفات باستخدام المحرك الشامل
@@ -35,7 +33,7 @@ async function extractExcelContent(filePath, options = {}) {
         console.log(`📊 [extractExcelContent] حجم الملف: ${stats.size} bytes`);
         console.log(`📊 [extractExcelContent] نوع الملف: ${path.extname(filePath)}`);
 
-        const result = await excelEngine.execute(filePath, 'read', {
+        const result = await excelRead(filePath, {
             analyze: options.analyze || false,
             includeFormulas: true,
             includeStyles: true
@@ -74,7 +72,7 @@ async function extractExcelContent(filePath, options = {}) {
 async function modifyExcelContent(filePath, operations) {
     try {
         console.log(`🔧 [chat.js] تنفيذ ${operations.length} عملية على الملف`);
-        const result = await excelEngine.execute(filePath, 'modify', {
+        const result = await excelModify(filePath, {
             operations: operations
         });
 
@@ -261,7 +259,7 @@ export default async function handler(req, res) {
             reply = output.reply || output.message || "تم إنجاز طلبك بنجاح!";
             fileBase64 = output.fileBase64 || modifiedResult?.fileBase64 || null;
             returnedFileName = output.fileName || modifiedResult?.fileName || null;
-            operationsFromOrchestrator = output.operations || [];  // ✅ استقبال العمليات
+            operationsFromOrchestrator = output.operations || [];
         }
 
         // ✅ تنفيذ العمليات القادمة من orchestrator (من kernel)
@@ -271,9 +269,7 @@ export default async function handler(req, res) {
             if (modifiedResult.error) {
                 throw new Error(modifiedResult.error);
             }
-            // تحديث extractedContent بالملف المعدل
             extractedContent = await extractExcelContent(modifiedResult.filePath, { analyze: true });
-            // تحديث fileBase64 و returnedFileName
             fileBase64 = modifiedResult.fileBase64;
             returnedFileName = modifiedResult.fileName;
         }
