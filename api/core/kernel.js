@@ -1,7 +1,8 @@
 /**
- * api/core/kernel.js – Alatheer Sovereign Kernel (Agentic Self-Correction Edition)
- * مع دعم الميتاداتا والملفات المرفقة مع بياناتها الوصفية
- * ✅ تم تحديثها لاستخدام المحتوى المستخرج محلياً (extractedContent) من Aspose.Cells
+ * api/core/kernel.js – Alatheer Sovereign Kernel (AI Intent Edition)
+ * ✅ يعتمد على Gemini لفهم نية المستخدم بدلاً من الكلمات المفتاحية
+ * ✅ يدعم الميتاداتا والمحتوى المستخرج محلياً
+ * ✅ يحدد تلقائياً متى يجب إرجاع ملف معدل
  */
 
 import groqService from "../geminiService.js";
@@ -10,140 +11,182 @@ import { SYSTEM_PROMPT } from "../agent/system.js";
 import fs from "fs";
 import path from "path";
 
-export default async function kernel(sessionId, rawMessage, ctx = {}) {
-  const message = (rawMessage || "").trim();
-  if (!message) return "أهلاً بك يا هندسة… كيف يمكنني مساعدتك اليوم؟";
+/**
+ * 🧠 كشف النية باستخدام النموذج اللغوي
+ */
+async function detectIntentWithAI(message, context = {}) {
+    const intentPrompt = `
+أنت مساعد ذكي مهمتك تحليل نية المستخدم من رسالته.
 
-  // ✅ الحصول على المحتوى المستخرج محلياً من Aspose.Cells
-  const extractedContent = ctx.extractedContent || null;
-  const metadata = ctx.metadata || null;
-  const fileName = ctx.fileName || "الملف";
+الرسالة: "${message}"
 
-  /* 🛡️ بناء السياق للمعالج الذكي */
-  let fileContextPrompt = "";
+السياق: المستخدم يتحدث عن ملف ${context.fileName || 'غير محدد'}.
 
-  // ✅ إذا كان هناك محتوى مستخرج، استخدمه مباشرة (بدون استدعاء Python)
-  if (extractedContent && !extractedContent.error) {
-    console.log(`📋 [Kernel] استخدام المحتوى المستخرج محلياً للملف: ${fileName}`);
-    
-    let contentText = "";
-    if (extractedContent.text) {
-      contentText = extractedContent.text;
-    } else if (extractedContent.markdown) {
-      contentText = extractedContent.markdown;
-    }
-    
-    // ✅ إضافة معلومات الميتاداتا إن وجدت
-    let metadataInfo = "";
-    if (metadata && metadata.sheet_name) {
-      metadataInfo = `\n[الميتاداتا المرفقة]:\n- اسم الورقة: ${metadata.sheet_name}\n- عدد الصفوف: ${metadata.total_rows || 'غير معروف'}\n- الأعمدة: ${metadata.headers ? metadata.headers.join(', ') : 'غير معروف'}\n`;
-    }
-    
-    if (extractedContent.metadata) {
-      metadataInfo += `\n[البيانات المستخرجة]:\n`;
-      metadataInfo += `- عدد الأوراق: ${extractedContent.metadata.sheets || 0}\n`;
-      metadataInfo += `- عدد الصفوف: ${extractedContent.metadata.rows || 0}\n`;
-      metadataInfo += `- عدد الأعمدة: ${extractedContent.metadata.columns || 0}\n`;
-      if (extractedContent.metadata.hasFormulas) {
-        metadataInfo += `- يحتوي على صيغ: نعم\n`;
-        if (extractedContent.metadata.formulas && extractedContent.metadata.formulas.length > 0) {
-          metadataInfo += `- الصيغ المكتشفة:\n${extractedContent.metadata.formulas.map(f => `  • ${f}`).join('\n')}\n`;
+صنف النية إلى أحد التصنيفات التالية:
+1. "info" - إذا كان يطلب معلومات، عرض بيانات، أسماء، أرقام، ملخص، تحليل، إحصاء، استعلام عن محتوى.
+2. "modify" - إذا كان يطلب تعديل، إضافة، حذف، تغيير، تنسيق، تلوين، إنشاء، ترتيب، تصنيف.
+3. "general" - إذا كان حديثاً عاماً أو ترحيباً أو لا علاقة له بالملف.
+
+أيضاً حدد:
+- requiresFile: هل الطلب يتطلب إرجاع ملف معدل للمستخدم؟ (true/false)
+- description: وصف مختصر للطلب (جملة واحدة بالعربية)
+
+أجب بصيغة JSON فقط، بدون أي نص إضافي:
+{
+    "intent": "info|modify|general",
+    "requiresFile": true|false,
+    "description": "وصف الطلب"
+}
+`;
+
+    try {
+        const response = await groqService.chat([
+            { role: "system", content: intentPrompt },
+            { role: "user", content: message }
+        ], { temperature: 0.1 });
+
+        // استخراج JSON من الرد
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]);
+            return {
+                intent: result.intent || 'general',
+                requiresFile: result.requiresFile || false,
+                description: result.description || 'غير محدد'
+            };
         }
-      }
+        return { intent: 'general', requiresFile: false, description: 'غير محدد' };
+    } catch (error) {
+        console.warn('⚠️ فشل تحليل النية، استخدام الوضع الافتراضي:', error.message);
+        return { intent: 'general', requiresFile: false, description: 'غير محدد' };
     }
-    
-    fileContextPrompt = `
+}
+
+export default async function kernel(sessionId, rawMessage, ctx = {}) {
+    const message = (rawMessage || "").trim();
+    if (!message) {
+        return {
+            reply: "أهلاً بك يا هندسة… كيف يمكنني مساعدتك اليوم؟",
+            fileBase64: null,
+            fileName: null
+        };
+    }
+
+    const extractedContent = ctx.extractedContent || null;
+    const metadata = ctx.metadata || null;
+    const fileName = ctx.fileName || "الملف";
+    const modifiedResult = ctx.modifiedResult || null;
+
+    /* 🛡️ بناء السياق للمعالج الذكي */
+    let fileContextPrompt = "";
+
+    if (extractedContent && !extractedContent.error) {
+        console.log(`📋 [Kernel] استخدام المحتوى المستخرج محلياً للملف: ${fileName}`);
+
+        let contentText = extractedContent.text || extractedContent.markdown || '';
+
+        let metadataInfo = "";
+        if (metadata && metadata.sheet_name) {
+            metadataInfo = `\n[الميتاداتا المرفقة]:\n- اسم الورقة: ${metadata.sheet_name}\n- عدد الصفوف: ${metadata.total_rows || 'غير معروف'}\n- الأعمدة: ${metadata.headers ? metadata.headers.join(', ') : 'غير معروف'}\n`;
+        }
+
+        if (extractedContent.metadata) {
+            metadataInfo += `\n[البيانات المستخرجة]:\n`;
+            metadataInfo += `- عدد الأوراق: ${extractedContent.metadata.sheets || 0}\n`;
+            metadataInfo += `- عدد الصفوف: ${extractedContent.metadata.rows || 0}\n`;
+            metadataInfo += `- عدد الأعمدة: ${extractedContent.metadata.columns || 0}\n`;
+            if (extractedContent.metadata.hasFormulas) {
+                metadataInfo += `- يحتوي على صيغ: نعم (${extractedContent.metadata.formulas?.length || 0} صيغة)\n`;
+            }
+        }
+
+        // تقطيع النص لتقليل استهلاك التوكنز
+        const maxChars = 6000;
+        const truncatedText = contentText.length > maxChars
+            ? contentText.slice(0, maxChars) + '\n... (تم اختصار المحتوى لتوفير التوكنز)'
+            : contentText;
+
+        fileContextPrompt = `
 📄 **[محتوى الملف "${fileName}" المستخرج محلياً (بدون استهلاك توكنز)]:**
 
-${contentText.slice(0, 8000)}${contentText.length > 8000 ? '\n... (تم اختصار المحتوى)' : ''}
+${truncatedText}
 
 ${metadataInfo}
 `;
-  } else if (ctx.filePath && fs.existsSync(ctx.filePath)) {
-    // ✅ إذا لم يكن هناك محتوى مستخرج، حاول قراءة الملف كنص عادي
-    try {
-      const content = fs.readFileSync(ctx.filePath, 'utf-8');
-      fileContextPrompt = `
-📄 **[محتوى الملف "${fileName}" (قراءة كنص عادي)]:**
-${content.slice(0, 8000)}${content.length > 8000 ? '\n... (تم اختصار المحتوى)' : ''}
-`;
-    } catch (err) {
-      console.warn(`⚠️ [Kernel] تعذر قراءة الملف كنص: ${err.message}`);
-      fileContextPrompt = `📄 [ملف: ${fileName}] - لا يمكن قراءة المحتوى كنص.`;
     }
-  }
 
-  /* 🟩 تعليمات سيادية للمعالج */
-  let agenticInstructions = "";
-  if (fileContextPrompt) {
-    agenticInstructions = `
-[قوانين سيادية للمعالجة]:
-1. أنت تعمل مع محتوى ملف تم استخراجه محلياً باستخدام محرك Excel احترافي.
+    // ✅ استخدام النموذج لفهم النية
+    const intentResult = await detectIntentWithAI(message, { fileName });
+    console.log(`🎯 [Kernel] النية المكتشفة:`, intentResult);
+
+    // ✅ بناء التعليمات السيادية
+    let agenticInstructions = "";
+    if (fileContextPrompt) {
+        agenticInstructions = `
+[تحليل النية]:
+- نوع الطلب: ${intentResult.intent}
+- يتطلب ملفاً: ${intentResult.requiresFile ? 'نعم' : 'لا'}
+- وصف الطلب: ${intentResult.description}
+
+[تعليمات سيادية]:
+1. أنت تعمل مع محتوى ملف تم استخراجه محلياً.
 2. لا حاجة لكتابة كود Python لقراءة الملف (المحتوى موجود بالفعل).
-3. أجب عن طلب المستخدم بناءً على المحتوى المقدم أعلاه.
-4. إذا طلب المستخدم تعديلاً، قم بوصف التعديل المطلوب بناءً على المحتوى.
-5. لا تختلق معلومات غير موجودة في المحتوى.
-6. إذا كان هناك صيغ في الملف، يمكنك اقتراح تعديلات عليها.
+3. ${intentResult.requiresFile ? '⚠️ المستخدم يطلب تعديلاً على الملف، قم بوصف التعديل المطلوب بالتفصيل.' : 'ℹ️ المستخدم يطلب معلومات، أجب بناءً على محتوى الملف.'}
+4. لا تختلق معلومات غير موجودة في المحتوى.
+5. إذا كان هناك صيغ في الملف، يمكنك اقتراح تعديلات عليها.
 ${fileContextPrompt}`;
-  }
+    }
 
-  const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
-  let conversationMessages = [
-    { role: "system", content: SYSTEM_PROMPT + "\n" + agenticInstructions },
-    ...history.map((h) => ({ role: h.role, content: h.content })),
-    { role: "user", content: message },
-  ];
+    const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
+    let conversationMessages = [
+        { role: "system", content: SYSTEM_PROMPT + "\n" + agenticInstructions },
+        ...history.map((h) => ({ role: h.role, content: h.content })),
+        { role: "user", content: message },
+    ];
 
-  /* 🤖 التنفيذ المباشر (بدون حلقة Python) */
-  let finalReplyText = "";
-  let returnedFileName = ctx.fileName;
-  let fileBase64 = null;
+    /* 🤖 التنفيذ المباشر */
+    let finalReplyText = "";
+    let returnedFileName = null;
+    let fileBase64 = null;
 
-  // ✅ إذا كان هناك محتوى مستخرج، نعطي تعليمات إضافية للنموذج
-  if (extractedContent && !extractedContent.error) {
-    const systemInstruction = `
-⚠️ **تعليمات إضافية:**
-- المحتوى أعلاه مستخرج من ملف "${fileName}" باستخدام محرك Excel احترافي (Aspose.Cells).
-- المحتوى دقيق ويعكس محتوى الملف الفعلي مع الصيغ والتنسيقات.
-- استخدم هذا المحتوى للإجابة على استفسارات المستخدم.
-- إذا طلب المستخدم تعديلاً، صف التعديل المطلوب بناءً على المحتوى.
-- إذا كانت هناك صيغ في الملف، يمكنك اقتراح تعديلات عليها.
-`;
-    conversationMessages[0].content += "\n" + systemInstruction;
-  }
+    // ✅ تحديد ما إذا كنا سنعيد ملفاً بناءً على تحليل النية
+    if (intentResult.requiresFile && ctx.filePath && extractedContent && !extractedContent.error) {
+        returnedFileName = fileName;
+        console.log(`📝 [Kernel] سيتم إرجاع ملف معدل بناءً على طلب: ${intentResult.description}`);
+    }
 
-  try {
-    console.log(`🧠 [Kernel] إرسال الطلب إلى النموذج (بدون استدعاء Python)...`);
-    
-    const reply = await groqService.chat(conversationMessages, {
-      fileName: ctx.fileName,
+    try {
+        console.log(`🧠 [Kernel] إرسال الطلب إلى النموذج...`);
+
+        const reply = await groqService.chat(conversationMessages, {
+            fileName: ctx.fileName,
+        });
+
+        finalReplyText = reply;
+
+        // تسجيل معلومات الملف للتصحيح
+        if (ctx.filePath && extractedContent && !extractedContent.error) {
+            console.log(`📝 [Kernel] تمت معالجة الملف: ${fileName}`);
+            console.log(`📊 [Kernel] عدد الصفوف: ${extractedContent.metadata?.rows || 0}`);
+            console.log(`📊 [Kernel] عدد الأعمدة: ${extractedContent.metadata?.columns || 0}`);
+            if (extractedContent.metadata?.hasFormulas) {
+                console.log(`📊 [Kernel] يحتوي على صيغ: نعم (${extractedContent.metadata.formulas?.length || 0} صيغة)`);
+            }
+        }
+
+    } catch (error) {
+        console.error("❌ [Kernel] خطأ في المعالجة:", error);
+        finalReplyText = `⚠️ حدث خطأ أثناء معالجة طلبك: ${error.message}`;
+    }
+
+    memory.appendSovereignHistory(sessionId, {
+        role: "assistant",
+        content: finalReplyText,
     });
 
-    finalReplyText = reply;
-    
-    // ✅ إذا كان هناك ملف وتعديل، نمرر المعلومات للتعديل الفعلي
-    if (ctx.filePath && extractedContent && !extractedContent.error) {
-      console.log(`📝 [Kernel] تمت معالجة الملف: ${fileName}`);
-      console.log(`📊 [Kernel] عدد الصفوف: ${extractedContent.metadata?.rows || 0}`);
-      console.log(`📊 [Kernel] عدد الأعمدة: ${extractedContent.metadata?.columns || 0}`);
-      if (extractedContent.metadata?.hasFormulas) {
-        console.log(`📊 [Kernel] يحتوي على صيغ: نعم (${extractedContent.metadata.formulas?.length || 0} صيغة)`);
-      }
+    return {
+        reply: finalReplyText.trim(),
+        fileName: returnedFileName,
+        fileBase64,
+    };
     }
-
-  } catch (error) {
-    console.error("❌ [Kernel] خطأ في المعالجة:", error);
-    finalReplyText = `⚠️ حدث خطأ أثناء معالجة طلبك: ${error.message}`;
-  }
-
-  memory.appendSovereignHistory(sessionId, {
-    role: "assistant",
-    content: finalReplyText,
-  });
-
-  return {
-    reply: finalReplyText.trim(),
-    fileName: returnedFileName,
-    fileBase64,
-  };
-  }
