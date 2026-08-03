@@ -134,7 +134,6 @@ export class ExcelJSAdapter extends BaseAdapter {
     }
     
     async applyOperations(worksheet, operations) {
-        // ✅ كشف الجدول الرئيسي ديناميكياً لأي نوع ملف إكسل
         const tableInfo = ExcelTableDetector.detectMainTable(worksheet);
         const { headerRowNum, dataStartRow, dataEndRow } = tableInfo;
         
@@ -173,17 +172,12 @@ export class ExcelJSAdapter extends BaseAdapter {
         }
     }
     
-    /**
-     * 🔍 البحث الذكي عن رقم صف العناوين ورقم العمود بناءً على اسم العمود
-     * ⚠️ تم الإبقاء عليها، لكن الآن نعتمد أكثر على ExcelTableDetector
-     */
     findColumnAndHeaderRow(worksheet, columnName) {
         if (!columnName) return { headerRowNum: HEADER_ROW || 1, colNumber: null };
         
         let foundHeaderRow = HEADER_ROW || 1;
         let foundCol = null;
         
-        // ✅ بدلاً من حصرها بأول 6 صفوف، نستخدم كل الصفوف لزيادة الذكاء
         for (let r = 1; r <= worksheet.rowCount; r++) {
             const row = worksheet.getRow(r);
             let matchedInThisRow = false;
@@ -205,17 +199,13 @@ export class ExcelJSAdapter extends BaseAdapter {
     
     addColumn(worksheet, op, tableInfo) {
         try {
-            // نستخدم الهيدر المكتشف من TableDetector كمرجع أساسي
             let headerRowNum = tableInfo.headerRowNum || HEADER_ROW || 1;
             let insertIndex = worksheet.columnCount + 1;
             
-            // ✅ البحث الديناميكي عن العمود المستهدف بدقة مطلقة
             if (op.afterColumn) {
-                // أولاً نحاول عبر TableDetector
                 const colByDetector = ExcelTableDetector.findColumnByHeader(worksheet, headerRowNum, op.afterColumn);
                 let targetCol = colByDetector;
                 
-                // إذا ما لقيه، نرجع للمنطق القديم كـ fallback
                 if (!targetCol) {
                     const searchResult = this.findColumnAndHeaderRow(worksheet, op.afterColumn);
                     headerRowNum = searchResult.headerRowNum;
@@ -230,14 +220,11 @@ export class ExcelJSAdapter extends BaseAdapter {
                 }
             }
             
-            // ✅ إدراج العمود باستخدام spliceColumns
             worksheet.spliceColumns(insertIndex, 0, []);
             
-            // ✅ تعيين عنوان العمود في صف العناوين الصحيح
             const headerCell = worksheet.getCell(headerRowNum, insertIndex);
             headerCell.value = op.header || op.columnName || `عمود ${insertIndex}`;
             
-            // ✅ نسخ التنسيق من العمود المجاور للحفاظ على الهوية البصرية
             const sourceCol = insertIndex - 1;
             if (sourceCol >= 1) {
                 const maxRow = worksheet.rowCount || 1;
@@ -337,7 +324,6 @@ export class ExcelJSAdapter extends BaseAdapter {
             const { address, formulae, afterColumn } = op;
             const options = formulae || ['"خيار1,خيار2,خيار3"'];
             
-            // نستخدم معلومات الجدول المكتشفة
             const { headerRowNum, dataStartRow, dataEndRow } = tableInfo;
             
             if (address) {
@@ -375,11 +361,9 @@ export class ExcelJSAdapter extends BaseAdapter {
             }
             
             if (afterColumn) {
-                // أولاً نحاول عبر TableDetector
                 const colByDetector = ExcelTableDetector.findColumnByHeader(worksheet, headerRowNum, afterColumn);
                 let targetCol = colByDetector ? colByDetector + 1 : null;
                 
-                // إذا فشل، نستخدم المنطق القديم كـ fallback
                 if (!targetCol) {
                     const searchResult = this.findColumnAndHeaderRow(worksheet, afterColumn);
                     targetCol = searchResult.colNumber ? searchResult.colNumber + 1 : null;
@@ -455,7 +439,7 @@ export class ExcelJSAdapter extends BaseAdapter {
                 case '>': return numValue > numThreshold;
                 case '<': return numValue < numThreshold;
                 case '==': return numValue === numThreshold;
-                case '!='': return numValue !== numThreshold;
+                case '!=': return numValue !== numThreshold;   // ← ✔ تم إصلاح الخطأ هنا
                 case '>=': return numValue >= numThreshold;
                 case '<=': return numValue <= numThreshold;
                 default: return false;
@@ -476,4 +460,4 @@ export class ExcelJSAdapter extends BaseAdapter {
             sheet.map(row => `| ${row.join(' | ')} |`).join('\n')
         ).join('\n\n---\n\n');
     }
-            }
+                    }
