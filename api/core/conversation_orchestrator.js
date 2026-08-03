@@ -1,13 +1,18 @@
 /**
- * api/core/conversation_orchestrator.js – Sovereign Universal Orchestrator (Multi-Turn State Sync Edition)
- * ✅ يمرر العمليات من kernel إلى chat.js
+ * api/core/conversation_orchestrator.js – Sovereign Universal Orchestrator (Multi-Turn State Sync & Execution Edition)
+ * ✅ يمرر العمليات من kernel إلى محرك التعديل الفعلي (ExcelModifier)
  * ✅ يدير حالة الملفات بشكل ذكي ويحافظ على الذاكرة العميقة (Deep Memory)
- * 🔄 يدعم التعديل المتتابع المترابط (Syncs Active File to latest modified version)
+ * 🔄 يدعم التعديل المتتابع المترابط ويولد الملف المعدل للتحميل
  */
 
 import memory from "./memory.js";
 import fusionMemory from "./fusion_memory.js";
 import kernel from "./kernel.js";
+
+// 🛠️ استيراد محركات معالجة وإكسل الأثير السيادية
+import { ExcelModifier } from '../tools/external/engines/excel/modifiers/ExcelModifier.js';
+import { ExcelJSAdapter } from '../tools/external/engines/excel/core/ExcelJSAdapter.js';
+import { FileUtils } from '../tools/external/engines/excel/utils/FileUtils.js';
 
 /**
  * 📊 دالة مساعدة لتنسيق ملخص الملف للـ Kernel ليفهم هيكلية الجدول بدقة
@@ -23,7 +28,6 @@ function formatFileContextForKernel(activeFile) {
     }
 
     if (extractedContent && extractedContent.text) {
-        // اقتطاع عينة ملائمة من نص الملف ليفهم النموذج أسماء الأعمدة الهيكلية
         const sampleText = extractedContent.text.slice(0, 3000);
         summary += `📝 **عينة من البيانات واسماء الأعمدة:**\n${sampleText}\n`;
     }
@@ -37,7 +41,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
         const session = memory.getSession(sessionId) || memory.createSession(sessionId);
 
-        // 1. رصد نية إنهاء أو إعادة ضبط الملف النشط (باستخدام تعبير نمطي قوي Regex)
+        // 1. رصد نية إنهاء أو إعادة ضبط الملف النشط
         const lowerMsg = (message || "").toLowerCase();
         const resetRegex = /(انسى|اغلق|احذف|سكر|تجاهل) (الملف|البيانات)|ملف (جديد|اخر)/;
         const isResetFile = resetRegex.test(lowerMsg);
@@ -61,9 +65,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
         const hasNewFile = !!fileData || !!filePath;
 
         if (hasNewFile && !session.activeFile) {
-            // استلام ملف جديد لأول مرة في الجلسة
             session.activeFile = {
-                fileData: null, // لا نخزن Base64 لتوفير الذاكرة
+                fileData: null,
                 fileName, 
                 filePath, 
                 metadata, 
@@ -73,10 +76,8 @@ export default async function conversationOrchestrator(sessionId, message, extra
             };
         } else if (session.activeFile && !isResetFile) {
             if (!hasNewFile) {
-                // استمرار النقاش على الملف القديم المرفوع سابقاً
                 console.log(`🔄 [Orchestrator] استرجاع الملف النشط من الذاكرة: ${session.activeFile.fileName}`);
             } else {
-                // استبدال الملف القديم بملف جديد تم رفعه الآن
                 console.log(`🔄 [Orchestrator] استبدال الملف القديم بملف جديد: ${fileName}`);
                 session.activeFile = {
                     fileData: null,
@@ -96,7 +97,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
         // 4. تجميع الذاكرة العميقة (Deep Context Fusion)
         const fusedMemory = fusionMemory.apply(sessionId);
-        let history = memory.getChatHistory(sessionId, 50); // سعة 50 رسالة
+        let history = memory.getChatHistory(sessionId, 50);
 
         history = history.map(msg => ({
             ...msg,
@@ -114,7 +115,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
                 lastTopics: fusedMemory.lastTopics || [],
                 tags: fusedMemory.tags || []
             },
-            // نمرر ملخص وسياق الملف النشط المُنقح
             activeFileSummary: fileContextSummary,
             activeFile: session.activeFile ? {
                 fileName: session.activeFile.fileName,
@@ -128,7 +128,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
         console.log(`🧠 [Orchestrator] تسليم القيادة إلى Kernel لمعالجة الطلب...`);
         const kernelOutput = await kernel(sessionId, message, kernelContext);
 
-        // 7. تفكيك المخرجات وتحديث الذاكرة
+        // 7. تفكيك المخرجات الأولية
         let reply = "تم إنجاز طلبك بنجاح!";
         let fileBase64 = null;
         let returnedFileName = null;
@@ -138,16 +138,39 @@ export default async function conversationOrchestrator(sessionId, message, extra
             reply = kernelOutput;
         } else if (kernelOutput && typeof kernelOutput === "object") {
             reply = kernelOutput.reply || kernelOutput.message || reply;
-            fileBase64 = kernelOutput.fileBase64 || null;
-            returnedFileName = kernelOutput.fileName || null;
             operations = kernelOutput.operations || [];
+            returnedFileName = kernelOutput.fileName || session.activeFile?.fileName || "modified_file.xlsx";
         }
 
-        // 🔄 8. بروتوكول مزامنة الحالة (إذا تم تغيير الملف أو إنشاء ملف جديد)
-        if (returnedFileName && extraCtx.newFilePath) {
-            console.log(`📝 [Orchestrator] مزامنة حالة الملف النشط مع النسخة المعدلة الجديدة: ${returnedFileName}`);
-            session.activeFile.filePath = extraCtx.newFilePath;
-            session.activeFile.fileName = returnedFileName;
+        // ⚡ 8. التنفيذ البرمجي السيادي: تطبيق العمليات المستخرجة عبر محرك الإكسل الفعلي
+        if (operations.length > 0 && session.activeFile && session.activeFile.filePath) {
+            try {
+                console.log(`🛠️ [Orchestrator] بدء تنفيذ ${operations.length} عملية على الملف الفعلي: ${session.activeFile.filePath}`);
+                
+                const adapter = new ExcelJSAdapter();
+                const modifier = new ExcelModifier(adapter);
+                
+                // تنفيذ التعديلات مع نسخة احتياطية
+                const modifyResult = await modifier.modifyWithBackup(session.activeFile.filePath, operations);
+                
+                if (modifyResult && modifyResult.success) {
+                    // تحديث مسار الملف النشط في الجلسة ليصبح النسخة المعدلة
+                    session.activeFile.filePath = modifyResult.filePath || session.activeFile.filePath;
+                    
+                    // قراءة الملف وتجهيزه بصيغة base64 للواجهة لكي يظهر زر التحميل
+                    const fileBuffer = await FileUtils.readFile(session.activeFile.filePath);
+                    fileBase64 = fileBuffer.toString('base64');
+                    returnedFileName = session.activeFile.fileName;
+                    
+                    console.log(`✅ [Orchestrator] تم تطبيق التعديلات وتوليد النسخة النهائية بنجاح.`);
+                    reply += `\n\n📥 جاهز يا شريكي! تم تطبيق كافة التعديلات المطلوبة على الملف، وصار بإمكانك تحميله الآن.`;
+                } else {
+                    console.warn(`⚠️ [Orchestrator] لم يرجع محرك التعديل حالة نجاح صريحة.`);
+                }
+            } catch (execErr) {
+                console.error(`❌ [Orchestrator] فشل تنفيذ عمليات الإكسل برمجياً:`, execErr);
+                reply += `\n\n⚠️ معليش يا شريكي، استخرجت العمليات بس صار في خطأ أثناء تطبيقها برمجياً: ${execErr.message}`;
+            }
         }
 
         // حفظ رد النظام في الذاكرة
@@ -161,11 +184,11 @@ export default async function conversationOrchestrator(sessionId, message, extra
             operations
         };
 
-    } catch (err) {
+    }ج catch (err) {
         console.error("🔥 [Orchestrator Critical Error]:", err);
         return {
             ok: false,
-            reply: `⚠️ واجه النظام تحدياً أثناء تنظيم السياق. التفاصيل: ${err.message}`,
+            reply: `⚠️ واجه النظام تحدياً أثناء تنظيم السياق وتنفيذ العمليات. التفاصيل: ${err.message}`,
             error: err.message,
             fileBase64: null,
             fileName: null,
@@ -173,4 +196,3 @@ export default async function conversationOrchestrator(sessionId, message, extra
         };
     }
 }
-
