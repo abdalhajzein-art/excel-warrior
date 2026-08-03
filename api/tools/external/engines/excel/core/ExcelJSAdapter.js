@@ -1,6 +1,6 @@
 /**
  * excel/core/ExcelJSAdapter.js – تطبيق ExcelJS
- * ✅ تم إصلاح مشكلة insertColumns (استخدام spliceColumns بدلاً منها)
+ * ✅ محرك ذكي يعمل مع أي ملف وأي عمود
  */
 
 import ExcelJS from 'exceljs';
@@ -171,6 +171,7 @@ export class ExcelJSAdapter extends BaseAdapter {
             const headerRowNum = HEADER_ROW || 3;
             let insertIndex = worksheet.columnCount + 1;
             
+            // ✅ البحث عن العمود المطلوب للإضافة بعده
             if (op.afterColumn) {
                 const headerRow = worksheet.getRow(headerRowNum);
                 let foundCol = null;
@@ -185,16 +186,18 @@ export class ExcelJSAdapter extends BaseAdapter {
                     insertIndex = foundCol + 1;
                     console.log(`📊 [ExcelJSAdapter] إضافة عمود بعد "${op.afterColumn}" (العمود ${insertIndex})`);
                 } else {
-                    console.warn(`⚠️ [ExcelJSAdapter] العمود "${op.afterColumn}" غير موجود`);
+                    console.warn(`⚠️ [ExcelJSAdapter] العمود "${op.afterColumn}" غير موجود، الإضافة في النهاية`);
                 }
             }
             
-            // ✅ استخدام spliceColumns بدلاً من insertColumns
+            // ✅ إدراج العمود باستخدام spliceColumns
             worksheet.spliceColumns(insertIndex, 0, []);
             
+            // ✅ تعيين عنوان العمود
             const headerCell = worksheet.getCell(headerRowNum, insertIndex);
             headerCell.value = op.header || `عمود ${insertIndex}`;
             
+            // ✅ نسخ التنسيق من العمود المجاور
             const sourceCol = insertIndex - 1;
             if (sourceCol >= 1) {
                 const maxRow = worksheet.rowCount || 1;
@@ -298,19 +301,35 @@ export class ExcelJSAdapter extends BaseAdapter {
     }
     
     addValidation(worksheet, op) {
-        const { address, formulae } = op;
-        const options = formulae || ['"إجازة مرضية,عذر رسمي,غياب بدون إذن,ظرف طارئ"'];
-        
-        if (address && address.includes(':')) {
-            const [start, end] = address.split(':');
-            const startRow = parseInt(start.match(/\d+/)[0]);
-            const endRow = parseInt(end.match(/\d+/)[0]);
-            const startCol = start.charCodeAt(0) - 64;
-            const endCol = end.charCodeAt(0) - 64;
+        try {
+            const { address, formulae, afterColumn } = op;
+            const options = formulae || ['"خيار1,خيار2,خيار3"'];
             
-            for (let row = startRow; row <= endRow; row++) {
-                for (let col = startCol; col <= endCol; col++) {
-                    const cell = worksheet.getCell(row, col);
+            // ✅ 1. إذا كان address موجود (نطاق أو خلية)
+            if (address) {
+                if (address.includes(':')) {
+                    // نطاق
+                    const [start, end] = address.split(':');
+                    const startRow = parseInt(start.match(/\d+/)[0]);
+                    const endRow = parseInt(end.match(/\d+/)[0]);
+                    const startCol = start.charCodeAt(0) - 64;
+                    const endCol = end.charCodeAt(0) - 64;
+                    
+                    for (let row = startRow; row <= endRow; row++) {
+                        for (let col = startCol; col <= endCol; col++) {
+                            const cell = worksheet.getCell(row, col);
+                            cell.dataValidation = {
+                                type: 'list',
+                                formulae: options,
+                                showErrorMessage: true,
+                                errorTitle: 'خطأ في الإدخال',
+                                error: 'الرجاء اختيار قيمة من القائمة'
+                            };
+                        }
+                    }
+                } else {
+                    // خلية واحدة
+                    const cell = worksheet.getCell(address);
                     cell.dataValidation = {
                         type: 'list',
                         formulae: options,
@@ -319,16 +338,60 @@ export class ExcelJSAdapter extends BaseAdapter {
                         error: 'الرجاء اختيار قيمة من القائمة'
                     };
                 }
+                console.log(`✅ [ExcelJSAdapter] تم إضافة القائمة المنسدلة في: ${address}`);
+                return;
             }
-        } else {
-            const cell = worksheet.getCell(address || 'A1');
-            cell.dataValidation = {
-                type: 'list',
-                formulae: options,
-                showErrorMessage: true,
-                errorTitle: 'خطأ في الإدخال',
-                error: 'الرجاء اختيار قيمة من القائمة'
-            };
+            
+            // ✅ 2. إذا كان afterColumn موجود (بعد عمود معين)
+            if (afterColumn) {
+                const headerRow = worksheet.getRow(HEADER_ROW || 3);
+                let targetCol = null;
+                
+                headerRow.eachCell((cell, colNumber) => {
+                    if (String(cell.value || '').trim() === String(afterColumn).trim()) {
+                        targetCol = colNumber + 1; // العمود المضاف بعد هذا العمود
+                    }
+                });
+                
+                if (targetCol) {
+                    const startRow = HEADER_ROW + 1 || 4;
+                    const endRow = worksheet.rowCount || 10;
+                    
+                    for (let row = startRow; row <= endRow; row++) {
+                        const cell = worksheet.getCell(row, targetCol);
+                        cell.dataValidation = {
+                            type: 'list',
+                            formulae: options,
+                            showErrorMessage: true,
+                            errorTitle: 'خطأ في الإدخال',
+                            error: 'الرجاء اختيار قيمة من القائمة'
+                        };
+                    }
+                    console.log(`✅ [ExcelJSAdapter] تم إضافة القائمة المنسدلة بعد عمود: ${afterColumn}`);
+                    return;
+                }
+            }
+            
+            // ✅ 3. إذا لم يوجد address ولا afterColumn، نبحث عن آخر عمود مضاف
+            const lastCol = worksheet.columnCount;
+            const startRow = HEADER_ROW + 1 || 4;
+            const endRow = worksheet.rowCount || 10;
+            
+            for (let row = startRow; row <= endRow; row++) {
+                const cell = worksheet.getCell(row, lastCol);
+                cell.dataValidation = {
+                    type: 'list',
+                    formulae: options,
+                    showErrorMessage: true,
+                    errorTitle: 'خطأ في الإدخال',
+                    error: 'الرجاء اختيار قيمة من القائمة'
+                };
+            }
+            console.log(`✅ [ExcelJSAdapter] تم إضافة القائمة المنسدلة في آخر عمود`);
+            
+        } catch (err) {
+            console.error('❌ [ExcelJSAdapter] خطأ في addValidation:', err);
+            throw err;
         }
     }
     
@@ -381,4 +444,4 @@ export class ExcelJSAdapter extends BaseAdapter {
             sheet.map(row => `| ${row.join(' | ')} |`).join('\n')
         ).join('\n\n---\n\n');
     }
-                          }
+                }
