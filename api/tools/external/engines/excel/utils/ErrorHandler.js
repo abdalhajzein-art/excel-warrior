@@ -1,5 +1,6 @@
 /**
  * excel/utils/ErrorHandler.js – معالجة الأخطاء السيادية المركزية
+ * ✅ تم إصلاح مشكلة error undefined
  */
 
 export class ErrorHandler {
@@ -8,7 +9,23 @@ export class ErrorHandler {
      */
     static async execute(action, fn, context = {}) {
         try {
-            return await fn();
+            const result = await fn();
+            
+            // ✅ إذا كانت النتيجة فيها ok: false وليس فيها error، نضيف error
+            if (result && result.ok === false && !result.error) {
+                result.error = 'فشل العملية بدون تفاصيل';
+            }
+            
+            // ✅ إذا كانت النتيجة مش كائن أو مش فيها ok، نعتبرها نجاح
+            if (!result || typeof result !== 'object') {
+                return {
+                    ok: true,
+                    data: result,
+                    reply: `تم تنفيذ ${action} بنجاح`
+                };
+            }
+            
+            return result;
         } catch (err) {
             const errorLog = {
                 action,
@@ -20,29 +37,38 @@ export class ErrorHandler {
             
             console.error(`❌ [${action}] خطأ:`, errorLog);
             
-            // ✅ تسجيل مركزي (يمكن ربطه بـ logger لاحقاً)
-            await this.logError(errorLog);
+            // ✅ تسجيل مركزي
+            try {
+                await this.logError(errorLog);
+            } catch (logErr) {
+                // تجاهل أخطاء التسجيل
+            }
             
-            return this.normalizedError(`فشل ${action}`, err);
+            return {
+                ok: false,
+                error: err.message || 'خطأ غير معروف',
+                reply: `فشل ${action}`,
+                data: null,
+                fileBase64: null,
+                fileName: null,
+                filePath: null
+            };
         }
     }
     
     static async logError(errorLog) {
-        // يمكن إرسال الأخطاء إلى نظام مراقبة مثل Sentry
-        if (process.env.NODE_ENV === 'production') {
-            // إرسال إلى نظام المراقبة
-        }
-        // تسجيل في الملف
         try {
             const fs = await import('fs');
             const path = await import('path');
             const logPath = path.join(process.cwd(), 'logs', 'errors.log');
-            if (!fs.existsSync(path.dirname(logPath))) {
-                fs.mkdirSync(path.dirname(logPath), { recursive: true });
+            const logDir = path.dirname(logPath);
+            
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
             }
             fs.appendFileSync(logPath, JSON.stringify(errorLog) + '\n');
         } catch (e) {
-            // تجاهل
+            // تجاهل أخطاء التسجيل
         }
     }
     
@@ -50,7 +76,7 @@ export class ErrorHandler {
         return {
             ok: false,
             reply,
-            error: err?.message || reply,
+            error: err?.message || reply || 'خطأ غير معروف',
             data: null,
             fileBase64: null,
             fileName: null,
