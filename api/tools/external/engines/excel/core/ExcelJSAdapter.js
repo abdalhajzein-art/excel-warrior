@@ -1,6 +1,6 @@
 /**
  * excel/core/ExcelJSAdapter.js – تطبيق ExcelJS
- * ✅ تم إصلاح مشكلة insertColumns
+ * ✅ تم إصلاح مشكلة insertColumns (استخدام spliceColumns بدلاً منها)
  */
 
 import ExcelJS from 'exceljs';
@@ -171,15 +171,12 @@ export class ExcelJSAdapter extends BaseAdapter {
             const headerRowNum = HEADER_ROW || 3;
             let insertIndex = worksheet.columnCount + 1;
             
-            // ✅ البحث عن عمود "الغياب" للإضافة بعده
             if (op.afterColumn) {
                 const headerRow = worksheet.getRow(headerRowNum);
                 let foundCol = null;
                 
                 headerRow.eachCell((cell, colNumber) => {
-                    const cellValue = String(cell.value || '').trim();
-                    const targetValue = String(op.afterColumn).trim();
-                    if (cellValue === targetValue) {
+                    if (String(cell.value || '').trim() === String(op.afterColumn).trim()) {
                         foundCol = colNumber;
                     }
                 });
@@ -192,14 +189,12 @@ export class ExcelJSAdapter extends BaseAdapter {
                 }
             }
             
-            // ✅ إدراج العمود
-            worksheet.insertColumns(insertIndex, 1);
+            // ✅ استخدام spliceColumns بدلاً من insertColumns
+            worksheet.spliceColumns(insertIndex, 0, []);
             
-            // ✅ تعيين عنوان العمود
             const headerCell = worksheet.getCell(headerRowNum, insertIndex);
             headerCell.value = op.header || `عمود ${insertIndex}`;
             
-            // ✅ نسخ التنسيق من العمود المجاور (الأيمن)
             const sourceCol = insertIndex - 1;
             if (sourceCol >= 1) {
                 const maxRow = worksheet.rowCount || 1;
@@ -223,7 +218,6 @@ export class ExcelJSAdapter extends BaseAdapter {
             }
             
             console.log(`✅ [ExcelJSAdapter] تم إضافة العمود "${op.header}"`);
-            
         } catch (err) {
             console.error('❌ [ExcelJSAdapter] خطأ في addColumn:', err);
             throw err;
@@ -387,4 +381,4 @@ export class ExcelJSAdapter extends BaseAdapter {
             sheet.map(row => `| ${row.join(' | ')} |`).join('\n')
         ).join('\n\n---\n\n');
     }
-                        }
+                          }
