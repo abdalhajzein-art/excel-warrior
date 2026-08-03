@@ -1,9 +1,7 @@
 /**
  * api/core/kernel.js – Alatheer Sovereign Kernel
- * ✅ النسخة المعمارية النقية: تعتمد كلياً على ذكاء Gemini في فهم النوايا (Intent Routing).
- * ✅ خالية من الشروط الصلبة (No Hardcoded Keywords).
- * ✅ تستورد SYSTEM_PROMPT من system.js كمصدر وحيد للتعليمات.
- * ✅ تستخرج العمليات من الرد لتمريرها لمحرك التعديل الشامل.
+ * ✅ تنظيف الرد وإخفاء كتلة الـ JSON عن الواجهة نهائياً.
+ * ✅ دعم اللهجة السورية والردود المختصرة.
  */
 
 import geminiService from "../geminiService.js";
@@ -11,37 +9,45 @@ import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 
 /**
- * 🛠️ استخراج العمليات من رد Gemini
+ * 🛠️ استخراج العمليات من رد Gemini مع تنظيف الرد النصي منها
  */
-function extractOperationsFromReply(reply) {
+function parseAndCleanReply(reply) {
+    let operations = [];
+    let cleanReply = reply;
+
     try {
-        // محاولة استخراج JSON من كتلة ```json
+        // البحث عن الـ JSON بصيغة ```json ... ```
         const jsonMatch = reply.match(/```json\s*([\s\S]*?)\s*```/);
         if (jsonMatch) {
             const data = JSON.parse(jsonMatch[1]);
             if (data.operations && Array.isArray(data.operations)) {
-                return data.operations;
+                operations = data.operations;
             }
-        }
-        // محاولة ثانية: البحث عن JSON مباشرة
-        const jsonMatch2 = reply.match(/\{[\s\S]*"operations"[\s\S]*\}/);
-        if (jsonMatch2) {
-            const data = JSON.parse(jsonMatch2[0]);
-            if (data.operations && Array.isArray(data.operations)) {
-                return data.operations;
+            // إزالة كتلة الـ JSON تماماً من النص الذي يراه المستخدم
+            cleanReply = cleanReply.replace(jsonMatch[0], '').trim();
+        } else {
+            // محاولة ثانية للبحث عن كتل JSON عارية
+            const jsonMatch2 = reply.match(/\{[\s\S]*"operations"[\s\S]*\}/);
+            if (jsonMatch2) {
+                const data = JSON.parse(jsonMatch2[0]);
+                if (data.operations && Array.isArray(data.operations)) {
+                    operations = data.operations;
+                }
+                cleanReply = cleanReply.replace(jsonMatch2[0], '').trim();
             }
         }
     } catch (e) {
-        console.warn('⚠️ [Kernel] فشل استخراج العمليات من الرد:', e.message);
+        console.warn('⚠️ [Kernel] فشل تحليل العمليات:', e.message);
     }
-    return [];
+
+    return { operations, cleanReply };
 }
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const message = (rawMessage || "").trim();
     if (!message) {
         return {
-            reply: "أهلاً بك يا هندسة… كيف يمكنني مساعدتك اليوم؟",
+            reply: "هلا والله يا شريكي… آمرني، شو عنا شغل اليوم؟",
             fileBase64: null,
             fileName: null,
             operations: []
@@ -51,7 +57,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const extractedContent = ctx.extractedContent || null;
     const fileName = ctx.fileName || "الملف";
 
-    // ✅ بناء سياق الملف (إن وجد)
     let fileContext = "";
     if (extractedContent && !extractedContent.error) {
         const meta = extractedContent.metadata || {};
@@ -59,37 +64,27 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         
         fileContext = `
 📄 **الملف المرفق:** ${fileName}
-📊 **معلومات:** ${meta.rows || 0} صف، ${meta.columns || 0} عمود، ${meta.sheets || 1} ورقة
-${meta.hasFormulas ? '📐 يحتوي على صيغ' : ''}
-
-📝 **البيانات:**
-${text.slice(0, 1500)}${text.length > 1500 ? '\n... (مختصر)' : ''}
+📊 **معلومات:** ${meta.rows || 0} صف، ${meta.columns || 0} عمود
 `;
     }
 
-    // ✅ بناء قائمة المحادثة مع تعليمات صارمة لاستخراج العمليات
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
     
     let systemContent = `
 ${SYSTEM_PROMPT}
 
-[تعليمات إضافية للتعديلات]:
-إذا طلب المستخدم تعديلاً على الملف، قم بما يلي:
-1. صف التعديل بالعربية كما تفعل عادة.
-2. في نهاية ردك، أضف كتلة JSON تحتوي على العمليات المطلوبة بالصيغة التالية:
+[تعليمات داخلية للعمليات]:
+إذا طلب المستخدم تعديلاً على الملف، قم بتنفيذ المطلوب وضع في نهاية ردك كتلـة JSON صامتة بالشكل التالي (ولكن إياك أن تضع تفاصيل تقنية في النص للمستخدم):
 
 \`\`\`json
 {
     "operations": [
         {"type": "add_column", "header": "اسم العمود"},
-        {"type": "add_validation", "address": "الخلية:الخلية", "formulae": ["\\"خيار1,خيار2,خيار3\\""]},
-        {"type": "add_formula", "address": "الخلية", "formula": "الصيغة"},
-        {"type": "color_cells", "range": "النطاق", "color": "لون"}
+        {"type": "add_validation", "address": "الخلية:الخلية", "formulae": ["\\"خيار1,خيار2\\""]}
     ]
 }
 \`\`\`
-
-ملاحظة: إذا لم يكن هناك تعديل، أضف كتلة JSON فارغة: {"operations": []}
+إذا لم يكن هناك تعديل، أضف: {"operations": []}
 `;
 
     if (fileContext) {
@@ -110,32 +105,31 @@ ${SYSTEM_PROMPT}
     try {
         console.log(`🧠 [Kernel] إرسال الطلب إلى النموذج...`);
 
-        const reply = await geminiService.chat(conversationMessages, {
+        const rawReply = await geminiService.chat(conversationMessages, {
             fileName: ctx.fileName,
             extractedContent: ctx.extractedContent
         });
 
-        finalReplyText = reply;
-        
-        // ✅ استخراج العمليات من الرد
-        operations = extractOperationsFromReply(reply);
+        // تنظيف الرد وفصل الـ JSON عن النص المرئي
+        const parsed = parseAndCleanReply(rawReply);
+        finalReplyText = parsed.cleanReply;
+        operations = parsed.operations;
+
         if (operations.length > 0) {
-            console.log(`📝 [Kernel] تم استخراج ${operations.length} عملية من الرد للعمل على الملف: ${fileName}`);
+            console.log(`📝 [Kernel] تم استخراج ${operations.length} عملية بنجاح للملف: ${fileName}`);
             returnedFileName = fileName;
         }
 
     } catch (error) {
         console.error("❌ [Kernel] خطأ:", error);
-        finalReplyText = `⚠️ حدث خطأ: ${error.message}`;
+        finalReplyText = `معليش يا شريكي، صار في خطأ تقني: ${error.message}`;
     }
 
-    // حفظ المحادثة في الذاكرة
     memory.appendSovereignHistory(sessionId, {
         role: "assistant",
         content: finalReplyText,
     });
 
-    // إرجاع المخرجات للـ Orchestrator أو Chat.js
     return {
         reply: finalReplyText.trim(),
         fileName: returnedFileName,
@@ -143,3 +137,4 @@ ${SYSTEM_PROMPT}
         operations: operations
     };
 }
+
