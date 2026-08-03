@@ -1,7 +1,7 @@
 /**
  * api/core/conversation_orchestrator.js – Sovereign Universal Orchestrator
  * ✅ يمرر العمليات من kernel إلى chat.js
- * ✅ يدير حالة الملفات بشكل ذكي
+ * ✅ يدير حالة الملفات بشكل ذكي ويحافظ على الذاكرة العميقة (Deep Memory)
  */
 
 import memory from "./memory.js";
@@ -10,85 +10,68 @@ import kernel from "./kernel.js";
 
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
     try {
-        console.log(`📥 [Orchestrator] جلسة ${sessionId}: "${message}"`);
+        console.log(`📥 [Orchestrator] جلسة ${sessionId} | الرسالة: "${message.substring(0, 50)}..."`);
 
-        const session = memory.getSession(sessionId);
+        const session = memory.getSession(sessionId) || memory.createSession(sessionId);
 
-        // 1. رصد نية إنهاء أو إعادة ضبط الملف النشط
+        // 1. رصد نية إنهاء أو إعادة ضبط الملف النشط (باستخدام تعبير نمطي قوي Regex)
         const lowerMsg = (message || "").toLowerCase();
-        const isResetFile = lowerMsg.includes("انسى الملف") ||
-            lowerMsg.includes("اغلق الملف") ||
-            lowerMsg.includes("ملف جديد") ||
-            lowerMsg.includes("احذف الملف") ||
-            lowerMsg.includes("سكر الملف");
+        const resetRegex = /(انسى|اغلق|احذف|سكر|تجاهل) (الملف|البيانات)|ملف (جديد|اخر)/;
+        const isResetFile = resetRegex.test(lowerMsg);
 
         if (isResetFile && session.activeFile) {
-            console.log(`🗑️ [Orchestrator] تم مسح سياق الملف النشط للجلسة.`);
+            console.log(`🗑️ [Orchestrator] تم إغلاق ومسح سياق الملف النشط للجلسة بطلب من المستخدم.`);
             session.activeFile = null;
             if (session.intentCache) {
                 delete session.intentCache;
             }
         }
 
-        // 2. إدارة حالة الملف بمرونة
+        // 2. إدارة حالة الملف بمرونة وسيادة
         let fileData = extraCtx.fileData || null;
         let fileName = extraCtx.fileName || null;
         let filePath = extraCtx.filePath || null;
         const metadata = extraCtx.metadata || null;
         const extractedContent = extraCtx.extractedContent || null;
         const modifiedResult = extraCtx.modifiedResult || null;
-        const hasFile = !!fileData || !!filePath;
+        
+        const hasNewFile = !!fileData || !!filePath;
 
-        let sessionMetadata = metadata;
-        let sessionExtractedContent = extractedContent;
-
-        if (hasFile && !session.activeFile) {
+        if (hasNewFile && !session.activeFile) {
+            // استلام ملف جديد لأول مرة في الجلسة
             session.activeFile = {
-                fileData,
-                fileName,
-                filePath,
-                metadata,
-                extractedContent,
-                modifiedResult
+                fileData, fileName, filePath, metadata, extractedContent, modifiedResult,
+                timestamp: Date.now()
             };
-            sessionMetadata = metadata;
-            sessionExtractedContent = extractedContent;
         } else if (session.activeFile && !isResetFile) {
-            if (!hasFile) {
-                fileData = session.activeFile.fileData;
-                fileName = session.activeFile.fileName;
-                filePath = session.activeFile.filePath;
-                sessionMetadata = session.activeFile.metadata || null;
-                sessionExtractedContent = session.activeFile.extractedContent || null;
-                console.log(`🔄 [Orchestrator] استرجاع الملف من الجلسة: ${fileName}`);
+            if (!hasNewFile) {
+                // استمرار النقاش على الملف القديم المرفوع سابقاً
+                console.log(`🔄 [Orchestrator] استرجاع الملف النشط من الذاكرة: ${session.activeFile.fileName}`);
             } else {
+                // استبدال الملف القديم بملف جديد تم رفعه الآن
+                console.log(`🔄 [Orchestrator] استبدال الملف القديم بملف جديد: ${fileName}`);
                 session.activeFile = {
-                    fileData,
-                    fileName,
-                    filePath,
-                    metadata,
-                    extractedContent,
-                    modifiedResult
+                    fileData, fileName, filePath, metadata, extractedContent, modifiedResult,
+                    timestamp: Date.now()
                 };
-                if (session.intentCache) {
-                    delete session.intentCache;
-                }
+                if (session.intentCache) delete session.intentCache;
             }
         }
 
         // 3. تسجيل رسالة المستخدم في التاريخ
         memory.appendChatHistory(sessionId, { role: "user", content: message });
 
-        // 4. تجميع الذاكرة والسياق العام
+        // 4. تجميع الذاكرة العميقة (Deep Context Fusion)
         const fusedMemory = fusionMemory.apply(sessionId);
-        let history = memory.getChatHistory(sessionId, 30);
+        let history = memory.getChatHistory(sessionId, 50); // رفعنا سعة الرسائل لـ 50 رسالة
 
+        // ⚠️ إزالة الخنق (slice 2000): تركنا مساحة كافية (15000 حرف) لتمرير الأكواد أو الجداول دون فقدان السياق
         history = history.map(msg => ({
             ...msg,
-            content: (msg.content || "").slice(0, 2000)
+            content: (msg.content || "").slice(0, 15000) 
         }));
 
-        // 5. بناء السياق للمعالج (Kernel)
+        // 5. بناء السياق المتقدم للمعالج المركزي (Kernel)
         const kernelContext = {
             history,
             locationContext: extraCtx.locationContext || "",
@@ -97,18 +80,22 @@ export default async function conversationOrchestrator(sessionId, message, extra
                 lastTopics: fusedMemory.lastTopics || [],
                 tags: fusedMemory.tags || []
             },
-            fileData,
-            fileName,
-            filePath,
-            activeFile: session.activeFile || null,
-            metadata: sessionMetadata,
-            extractedContent: sessionExtractedContent,
-            modifiedResult: modifiedResult || session.activeFile?.modifiedResult || null
+            // نمرر تفاصيل الملف النشط فقط لضمان نظافة السياق
+            activeFile: session.activeFile ? {
+                fileName: session.activeFile.fileName,
+                filePath: session.activeFile.filePath,
+                metadata: session.activeFile.metadata,
+                extractedContent: session.activeFile.extractedContent,
+                modifiedResult: session.activeFile.modifiedResult
+                // ⚠️ لا نمرر fileData (الـ Base64) في السياق لمنع استهلاك ملايين التوكنز في كل رسالة!
+            } : null
         };
 
-        // 6. تسليم القيادة المطلقة للـ Kernel
+        // 6. تسليم القيادة المطلقة للـ Kernel (العقل المركزي)
+        console.log(`🧠 [Orchestrator] تسليم القيادة إلى Kernel لمعالجة الطلب...`);
         const kernelOutput = await kernel(sessionId, message, kernelContext);
 
+        // 7. تفكيك المخرجات وتحديث الذاكرة
         let reply = "تم إنجاز طلبك بنجاح!";
         let fileBase64 = null;
         let returnedFileName = null;
@@ -120,9 +107,10 @@ export default async function conversationOrchestrator(sessionId, message, extra
             reply = kernelOutput.reply || kernelOutput.message || reply;
             fileBase64 = kernelOutput.fileBase64 || null;
             returnedFileName = kernelOutput.fileName || null;
-            operations = kernelOutput.operations || [];  // ✅ استقبال العمليات
+            operations = kernelOutput.operations || [];
         }
 
+        // حفظ رد النظام في الذاكرة
         memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
         return {
@@ -130,18 +118,18 @@ export default async function conversationOrchestrator(sessionId, message, extra
             reply,
             fileBase64,
             fileName: returnedFileName,
-            operations: operations  // ✅ تمرير العمليات
+            operations
         };
 
     } catch (err) {
-        console.error("🔥 [Orchestrator Error]:", err);
+        console.error("🔥 [Orchestrator Critical Error]:", err);
         return {
             ok: false,
-            reply: `⚠️ صار خطأ بالنظام أثناء المعالجة: ${err.message}`,
+            reply: `⚠️ واجه النظام تحدياً أثناء تنظيم السياق. التفاصيل: ${err.message}`,
             error: err.message,
             fileBase64: null,
             fileName: null,
             operations: []
         };
     }
-                    }
+}
