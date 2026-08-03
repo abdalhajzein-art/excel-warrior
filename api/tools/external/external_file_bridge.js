@@ -20,7 +20,18 @@ import wordEngine from "./engines/docx.js";
 import imageEngine from "./engines/image.js";
 
 // ⚡ المحرك الشامل الجديد (Excel Ultimate Engine)
-import excelEngine from "./engines/excel/index.js";  // ← التغيير هنا
+import { 
+    excelRead, 
+    excelModify, 
+    excelCreate, 
+    excelFormat,
+    excelAnalyze,
+    excelSearch,
+    excelConditionalFormat,
+    excelPivot,
+    excelConvertToPdf,
+    excelConvertToCsv 
+} from "./engines/excel/index.js";
 
 // ⚠ CSV فقط عبر محرك pandas (اختياري)
 import pandasEngine from "./engines/pandas.js";
@@ -249,51 +260,51 @@ export default async function externalBridge(req, res, fileInfo = null) {
                 case 'read':
                 case 'preview':
                 case 'excel_preview':
-                    result = await excelEngine.execute(filePath, 'read', params);
+                    result = await excelRead(filePath, params);
                     break;
                     
                 case 'modify':
                 case 'excel_modify':
-                    result = await excelEngine.execute(filePath, 'modify', params);
+                    result = await excelModify(filePath, params);
                     break;
                     
                 case 'create':
-                    result = await excelEngine.execute(null, 'create', params);
+                    result = await excelCreate(params);
                     break;
                     
                 case 'format':
                 case 'excel_format':
-                    result = await excelEngine.execute(filePath, 'format', params);
+                    result = await excelFormat(filePath, params);
                     break;
                     
                 case 'analyze':
                 case 'excel_analyze':
-                    result = await excelEngine.execute(filePath, 'analyze', params);
+                    result = await excelAnalyze(filePath, params);
                     break;
                     
                 case 'search':
-                    result = await excelEngine.execute(filePath, 'search', params);
+                    result = await excelSearch(filePath, params);
                     break;
                     
                 case 'conditional_format':
-                    result = await excelEngine.execute(filePath, 'conditional_format', params);
+                    result = await excelConditionalFormat(filePath, params);
                     break;
                     
                 case 'pivot':
-                    result = await excelEngine.execute(filePath, 'pivot', params);
+                    result = await excelPivot(filePath, params);
                     break;
                     
                 case 'convert_pdf':
                 case 'to_pdf':
-                    result = await excelEngine.execute(filePath, 'convert_pdf');
+                    result = await excelConvertToPdf(filePath);
                     break;
                     
                 case 'convert_csv':
-                    result = await excelEngine.execute(filePath, 'convert_csv');
+                    result = await excelConvertToCsv(filePath);
                     break;
                     
                 default:
-                    result = await excelEngine.execute(filePath, 'read', params);
+                    result = await excelRead(filePath, params);
             }
 
             // ✅ تسجيل التدقيق
@@ -369,4 +380,4 @@ export default async function externalBridge(req, res, fileInfo = null) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-}
+    }
