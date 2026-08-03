@@ -1,12 +1,16 @@
 /**
  * api/upload.js – Sovereign File Intake (Final Edition)
  * يستقبل الملف ويمرّره مباشرة إلى الجسر السيادي لمعالجة الملفات.
- * يدعم قراءة الميتاداتا إذا كانت موجودة في الطلب.
- * ✅ تم إصلاح مشكلة تضاعف حجم الملف
+ * يدعم قراءة الميتاداتا وحفظ نسخة دائمة بمنطقة آمنة لمنع حذفها بواسطة Garbage Collection.
  */
 
 import externalBridge from "./tools/external/external_file_bridge.js";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default async function uploadHandler(req, res) {
   try {
@@ -22,12 +26,13 @@ export default async function uploadHandler(req, res) {
     console.log(`📊 [Intake] الحجم الأصلي: ${req.file.size} bytes`);
     console.log(`📊 [Intake] المسار المؤقت: ${req.file.path}`);
     
-    // ✅ قراءة الملف من المسار المؤقت للتأكد من وجوده
-    if (req.file.path && fs.existsSync(req.file.path)) {
-      const stats = fs.statSync(req.file.path);
+    let sourcePath = req.file.path;
+
+    // ✅ قراءة الملف من المسار المؤقت والتأكد من صحته
+    if (sourcePath && fs.existsSync(sourcePath)) {
+      const stats = fs.statSync(sourcePath);
       console.log(`📊 [Intake] حجم الملف المؤقت: ${stats.size} bytes`);
       
-      // ✅ إذا كان الملف صغيراً جداً، قد يكون تالفاً
       if (stats.size < 10) {
         console.warn(`⚠️ [Intake] الملف صغير جداً (${stats.size} bytes)، قد يكون تالفاً.`);
         return res.status(400).json({
@@ -35,7 +40,6 @@ export default async function uploadHandler(req, res) {
         });
       }
       
-      // ✅ التحقق من أن الحجم معقول (ليس كبيراً بشكل غير طبيعي)
       const maxSize = 50 * 1024 * 1024; // 50MB
       if (stats.size > maxSize) {
         return res.status(400).json({
@@ -43,31 +47,40 @@ export default async function uploadHandler(req, res) {
         });
       }
     } else {
-      console.error(`❌ [Intake] الملف غير موجود في المسار: ${req.file.path}`);
+      console.error(`❌ [Intake] الملف غير موجود في المسار: ${sourcePath}`);
       return res.status(400).json({
         error: "⚠️ الملف غير موجود على السيرفر."
       });
     }
 
+    // ✅ قراءة الملف كـ Buffer
+    let fileBuffer = fs.readFileSync(sourcePath);
+
+    // 🛡️ [حماية السيادة]: نقل وتثبيت الملف في مجلد دائمة وآمن لمنع الـ Garbage Collection من مسحه
+    const persistentDir = path.join(__dirname, "../persistent_uploads");
+    if (!fs.existsSync(persistentDir)) {
+      fs.mkdirSync(persistentDir, { recursive: true });
+    }
+
+    const safeFilename = `${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9_.-]/g, "_")}`;
+    const persistentPath = path.join(persistentDir, safeFilename);
+    
+    fs.writeFileSync(persistentPath, fileBuffer);
+    console.log(`🛡️ [Intake] تم حفظ نسخة دائمة وآمنة للملف في: ${persistentPath}`);
+
     // ✅ التحقق من وجود ميتاداتا
     const metadata = req.body?.metadata || null;
-    
-    // ✅ قراءة الملف كـ Buffer
-    let fileBuffer = null;
-    if (req.file.path && fs.existsSync(req.file.path)) {
-      fileBuffer = fs.readFileSync(req.file.path);
-    }
 
     const fileInfo = {
       originalname: req.file.originalname || "unknown_file",
       mimetype: req.file.mimetype || "application/octet-stream",
       size: req.file.size || 0,
-      path: req.file.path,
+      path: persistentPath, // ✅ توجيه المسار للمجلد الدائم الآمن حصراً
       metadata: metadata,
-      buffer: fileBuffer // ✅ تمرير Buffer للجسر
+      buffer: fileBuffer // ✅ تمرير الـ Buffer السيادي للجسر
     };
 
-    console.log(`✅ [الأثير Intake] تم استلام الملف الآمن: ${fileInfo.originalname}`);
+    console.log(`✅ [الأثير Intake] تم استلام وتأمين الملف بنجاح: ${fileInfo.originalname}`);
     if (metadata && metadata.sheet_name) {
       console.log(`📋 [الأثير Intake] تم استلام ميتاداتا للملف: ${metadata.sheet_name}`);
     }
@@ -81,4 +94,4 @@ export default async function uploadHandler(req, res) {
       error: `⚠️ حدث خطأ غير متوقع أثناء معالجة الملف: ${error.message}`
     });
   }
-      }
+}
