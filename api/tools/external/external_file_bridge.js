@@ -1,5 +1,8 @@
 /**
  * external_file_bridge.js – Sovereign Heavy Engine Bridge (Ultimate Edition)
+ * ✅ الجسر السيادي الموحد لمعالجة الملفات باستخدام المحرك الشامل Excel Ultimate Engine
+ * ✅ يدعم: ExcelJS + XLSX معاً، مع تكامل كامل للميتاداتا والتحليل
+ * ✅ تم إصلاح مشكلة تضاعف حجم الملف وإضافة تحقق من صحة البيانات
  */
 
 import fs from "fs";
@@ -23,8 +26,8 @@ import {
     excelCreate, 
     excelFormat,
     excelAnalyze,
-    excelSearch,
     excelPivot,
+    excelConditionalFormat,
     excelConvertToPdf,
     excelConvertToCsv 
 } from "./engines/excel/index.js";
@@ -32,9 +35,6 @@ import {
 // ⚠ CSV فقط عبر محرك pandas (اختياري)
 import pandasEngine from "./engines/pandas.js";
 
-// ... باقي الملف كما هو
-
-// ... باقي الملف كما هو (لا تغيير)
 /**
  * 🔍 دالة استخراج الـ Metadata لأي ملف برمجياً
  */
@@ -280,10 +280,6 @@ export default async function externalBridge(req, res, fileInfo = null) {
                     result = await excelAnalyze(filePath, params);
                     break;
                     
-                case 'search':
-                    result = await excelSearch(filePath, params);
-                    break;
-                    
                 case 'conditional_format':
                     result = await excelConditionalFormat(filePath, params);
                     break;
@@ -378,4 +374,4 @@ export default async function externalBridge(req, res, fileInfo = null) {
       error: `⚠️ خطأ أثناء معالجة الملف: ${err.message}`
     });
   }
-    }
+}
