@@ -1,14 +1,11 @@
 /**
- * excel/index.js – Sovereign Excel Ultimate Engine (المدخل السيادي النهائي)
- * 🔥 يجمع كل الوحدات في واجهة واحدة موحدة وقابلة للتوسع
- * 
- * 📦 الوحدات المدمجة:
- * - ExcelReader: قراءة متقدمة (صيغ، تنسيق، ميتاداتا، نطاقات)
- * - ExcelModifier: تعديل متقدم (نسخ احتياطي، تراجع، عمليات ذكية)
- * - ExcelAnalyzer: تحليل ذكي (إحصائيات، أنماط، رؤى، تقارير)
- * - ExcelFormatter: تنسيق تلقائي (جداول، رؤوس، أرقام، تواريخ، قوالب)
- * - ExcelPivot: جداول محورية (تحليل، تجميع، تصدير)
- * - ExcelSearcher: بحث متقدم (نصوص، تعابير منتظمة، شروط، مكررات)
+ * excel/index.js – Sovereign Excel Ultimate Engine (النسخة المبسطة)
+ * 🔥 الوحدات المدمجة:
+ * - ExcelReader: قراءة متقدمة
+ * - ExcelModifier: تعديل متقدم
+ * - ExcelAnalyzer: تحليل ذكي
+ * - ExcelFormatter: تنسيق تلقائي
+ * - ExcelPivot: جداول محورية
  */
 
 import { ExcelAdapter } from './core/ExcelAdapter.js';
@@ -30,13 +27,12 @@ class ExcelUltimateEngine {
         // ✅ المحول الأساسي
         this.adapter = new ExcelAdapter(engineType);
         
-        // ✅ جميع الوحدات
+        // ✅ جميع الوحدات (بدون Searcher)
         this.reader = new ExcelReader(this.adapter);
         this.modifier = new ExcelModifier(this.adapter);
         this.analyzer = new ExcelAnalyzer(this.adapter);
         this.formatter = new ExcelFormatter(this.adapter);
         this.pivot = new ExcelPivot(this.adapter);
-        this.searcher = new ExcelSearcher(this.adapter);
         
         this.engineType = engineType;
         this.initialized = false;
@@ -92,17 +88,8 @@ class ExcelUltimateEngine {
         return this.modifier.modifyWithBackup(filePath, params.operations || [], params);
     }
 
-    async modifyDirect(filePath, operations, params = {}) {
-        await this.initialize();
-        return this.modifier.modifyDirect(filePath, operations, params);
-    }
-
     async undo() {
         return this.modifier.undo();
-    }
-
-    async getBackupInfo() {
-        return this.modifier.getBackupInfo();
     }
 
     /* ============================================================
@@ -112,16 +99,6 @@ class ExcelUltimateEngine {
     async analyze(filePath, params = {}) {
         await this.initialize();
         return this.analyzer.analyze(filePath, params);
-    }
-
-    async analyzeStatistics(filePath, params = {}) {
-        await this.initialize();
-        return this.analyzer.calculateStatistics(await this.adapter.read(filePath, params));
-    }
-
-    async analyzePatterns(filePath, params = {}) {
-        await this.initialize();
-        return this.analyzer.detectPatterns(await this.adapter.read(filePath, params));
     }
 
     /* ============================================================
@@ -138,20 +115,6 @@ class ExcelUltimateEngine {
         return this.formatter.applyTemplate(filePath, templateName, params);
     }
 
-    async formatTable(filePath, params = {}) {
-        await this.initialize();
-        const data = await this.adapter.read(filePath, params);
-        const operations = this.formatter.formatTable(data);
-        return this.modifier.modifyWithBackup(filePath, operations, params);
-    }
-
-    async formatHeaders(filePath, params = {}) {
-        await this.initialize();
-        const data = await this.adapter.read(filePath, params);
-        const operations = this.formatter.formatHeaders(data);
-        return this.modifier.modifyWithBackup(filePath, operations, params);
-    }
-
     /* ============================================================
        📋 5. عمليات الجداول المحورية (ExcelPivot)
        ============================================================ */
@@ -161,42 +124,12 @@ class ExcelUltimateEngine {
         return this.pivot.createPivot(filePath, params);
     }
 
-    async pivotMultiple(filePath, params = {}) {
-        await this.initialize();
-        return this.pivot.createMultiplePivots(filePath, params);
-    }
-
-    async pivotToCsv(pivotPath) {
-        return this.pivot.pivotToCsv(pivotPath);
-    }
-
-    async pivotToHtml(pivotPath) {
-        return this.pivot.pivotToHtml(pivotPath);
-    }
-
-    async pivotGroup(pivotPath, params = {}) {
-        return this.pivot.groupPivot(pivotPath, params);
-    }
-
-    async pivotAnalyze(pivotPath) {
-        return this.pivot.analyzePivot(pivotPath);
-    }
-
-
     /* ============================================================
        🆕 6. عمليات الإنشاء (عبر Adapter)
        ============================================================ */
 
     async create(params = {}) {
         await this.initialize();
-        return this.adapter.create(params);
-    }
-
-    async createFromTemplate(templatePath, params = {}) {
-        await this.initialize();
-        // قراءة القالب ثم التعديل
-        const data = await this.adapter.read(templatePath, params);
-        // إنشاء ملف جديد بناءً على القالب
         return this.adapter.create(params);
     }
 
@@ -223,13 +156,11 @@ class ExcelUltimateEngine {
         this.adapter = new ExcelAdapter(engineType);
         await this.adapter.initialize();
         
-        // ✅ إعادة ربط الوحدات بالمحول الجديد
         this.reader = new ExcelReader(this.adapter);
         this.modifier = new ExcelModifier(this.adapter);
         this.analyzer = new ExcelAnalyzer(this.adapter);
         this.formatter = new ExcelFormatter(this.adapter);
         this.pivot = new ExcelPivot(this.adapter);
-        this.searcher = new ExcelSearcher(this.adapter);
         
         this.initialized = true;
         return this;
@@ -237,10 +168,6 @@ class ExcelUltimateEngine {
 
     getCurrentEngine() {
         return this.engineType;
-    }
-
-    getAvailableEngines() {
-        return Object.values(ENGINE_TYPES);
     }
 
     /* ============================================================
@@ -255,18 +182,12 @@ class ExcelUltimateEngine {
         return {
             initialized: this.initialized,
             engine: this.engineType,
-            adapters: {
-                exceljs: true,
-                xlsx: true,
-                python: true
-            },
             modules: {
                 reader: true,
                 modifier: true,
                 analyzer: true,
                 formatter: true,
-                pivot: true,
-                searcher: true
+                pivot: true
             }
         };
     }
@@ -297,32 +218,20 @@ export const excelReadSheets = (filePath, sheetNames, params) => ultimateEngine.
 
 // ✏️ التعديل
 export const excelModify = (filePath, params) => ultimateEngine.modify(filePath, params);
-export const excelModifyDirect = (filePath, operations, params) => ultimateEngine.modifyDirect(filePath, operations, params);
 export const excelUndo = () => ultimateEngine.undo();
-export const excelGetBackupInfo = () => ultimateEngine.getBackupInfo();
 
 // 📊 التحليل
 export const excelAnalyze = (filePath, params) => ultimateEngine.analyze(filePath, params);
-export const excelAnalyzeStatistics = (filePath, params) => ultimateEngine.analyzeStatistics(filePath, params);
-export const excelAnalyzePatterns = (filePath, params) => ultimateEngine.analyzePatterns(filePath, params);
 
 // 🎨 التنسيق التلقائي
 export const excelAutoFormat = (filePath, params) => ultimateEngine.autoFormat(filePath, params);
 export const excelApplyTemplate = (filePath, templateName, params) => ultimateEngine.applyTemplate(filePath, templateName, params);
-export const excelFormatTable = (filePath, params) => ultimateEngine.formatTable(filePath, params);
-export const excelFormatHeaders = (filePath, params) => ultimateEngine.formatHeaders(filePath, params);
 
 // 📋 الجداول المحورية
 export const excelPivot = (filePath, params) => ultimateEngine.pivot(filePath, params);
-export const excelPivotMultiple = (filePath, params) => ultimateEngine.pivotMultiple(filePath, params);
-export const excelPivotToCsv = (pivotPath) => ultimateEngine.pivotToCsv(pivotPath);
-export const excelPivotToHtml = (pivotPath) => ultimateEngine.pivotToHtml(pivotPath);
-export const excelPivotGroup = (pivotPath, params) => ultimateEngine.pivotGroup(pivotPath, params);
-export const excelPivotAnalyze = (pivotPath) => ultimateEngine.pivotAnalyze(pivotPath);
 
 // 🆕 الإنشاء
 export const excelCreate = (params) => ultimateEngine.create(params);
-export const excelCreateFromTemplate = (templatePath, params) => ultimateEngine.createFromTemplate(templatePath, params);
 
 // 🔄 التحويل
 export const excelConvertToPdf = (filePath) => ultimateEngine.convertToPdf(filePath);
@@ -331,46 +240,7 @@ export const excelConvertToCsv = (filePath) => ultimateEngine.convertToCsv(fileP
 // ⚙️ الإدارة
 export const excelSetEngine = (engineType) => ultimateEngine.setEngine(engineType);
 export const excelGetEngine = () => ultimateEngine.getCurrentEngine();
-export const excelGetEngines = () => ultimateEngine.getAvailableEngines();
 export const excelGetStatus = () => ultimateEngine.getStatus();
 
 // 🧹 الصيانة
 export const excelCleanup = () => ultimateEngine.cleanup();
-
-/* ============================================================
-   📖 توثيق سريع للاستخدام
-   ============================================================ */
-
-/**
- * 📖 أمثلة على الاستخدام:
- * 
- * // قراءة ملف
- * const data = await excelRead('file.xlsx');
- * 
- * // تعديل ملف
- * const result = await excelModify('file.xlsx', {
- *     operations: [
- *         { type: 'add_column', header: 'عمود جديد', afterColumn: 'الغياب' },
- *         { type: 'add_validation', address: 'F2:F11', formulae: ['"خيار1,خيار2"'] }
- *     ]
- * });
- * 
- * // تنسيق تلقائي
- * const formatted = await excelAutoFormat('file.xlsx');
- * 
- * // تحليل البيانات
- * const analysis = await excelAnalyze('file.xlsx');
- * 
- * // جدول محوري
- * const pivot = await excelPivot('file.xlsx', {
- *     values: 'المبيعات',
- *     index: 'المنطقة',
- *     columns: 'المنتج'
- * });
- * 
- * // بحث متقدم
- * const search = await excelSearch('file.xlsx', { query: 'أحمد' });
- * 
- * // تغيير المحرك
- * await excelSetEngine('python');
- */
