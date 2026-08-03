@@ -3,7 +3,7 @@
  * ✅ تم تحديثها لاستخدام المحرك الشامل (Excel Ultimate Engine)
  * ✅ يدعم ExcelJS + XLSX معاً
  * ✅ تم إصلاح مشكلة تضاعف حجم الملف
- * ✅ تم إصلاح مشكلة رابط التحميل الوهمي
+ * ✅ تم إصلاح مشكلة رابط التحميل (يعمل مع التعديل وطلب التحميل)
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -257,15 +257,16 @@ export default async function handler(req, res) {
             returnedFileName = output.fileName || modifiedResult?.fileName || null;
         }
 
-        // ✅ إضافة رابط التحميل فقط إذا كان هناك ملف محدث فعلاً
-        const hasActualModification = modifiedResult &&
-            modifiedResult.fileName &&
-            modifiedResult.fileBase64;
+        // ✅ إضافة رابط التحميل في حالتين:
+        // 1. تعديل فعلي (modifiedResult)
+        // 2. طلب تحميل من kernel (fileBase64 من output)
+        const hasFileToDownload = (modifiedResult && modifiedResult.fileName && modifiedResult.fileBase64) ||
+                                  (fileBase64 && returnedFileName);
 
-        if (hasActualModification && returnedFileName) {
+        if (hasFileToDownload && returnedFileName) {
             const realFileUrl = encodeURI(`/uploads/${returnedFileName}`);
             if (!reply.includes(returnedFileName)) {
-                reply += `\n\n📥 **[تحميل الملف المحدث مباشرة](${realFileUrl})**`;
+                reply += `\n\n📥 **[تحميل الملف مباشرة](${realFileUrl})**`;
             }
         }
 
@@ -282,4 +283,4 @@ export default async function handler(req, res) {
             reply: `⚠️ خطأ داخلي أثناء المعالجة: ${error.message}`
         });
     }
-          }
+}
