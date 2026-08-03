@@ -184,7 +184,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
             operations
         };
 
-    }ج catch (err) {
+    } catch (err) {
         console.error("🔥 [Orchestrator Critical Error]:", err);
         return {
             ok: false,
@@ -196,3 +196,4 @@ export default async function conversationOrchestrator(sessionId, message, extra
         };
     }
 }
+
