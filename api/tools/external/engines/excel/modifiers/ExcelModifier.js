@@ -1,8 +1,9 @@
 /**
  * excel/modifiers/ExcelModifier.js – التعديل السيادي المتقدم
- * 🔥 يدعم: عمليات متعددة، تراجع، نسخ احتياطي، تنفيذ ذكي
+ * 🔥 يدعم: عمليات متعددة، تراجع حقيقي، نسخ احتياطي، تنفيذ ذكي مرتب بالأولويات
  */
 
+import fs from 'fs';
 import { ErrorHandler } from '../utils/ErrorHandler.js';
 import { FileUtils } from '../utils/FileUtils.js';
 import { OPERATION_TYPES } from '../types/ExcelTypes.js';
@@ -14,14 +15,17 @@ export class ExcelModifier {
     }
     
     /**
-     * ✏️ تعديل الملف مع نسخ احتياطي
+     * ✏️ تعديل الملف مع إنشاء نسخة احتياطية
      */
     async modifyWithBackup(filePath, operations, params = {}) {
         return ErrorHandler.execute('modifyWithBackup', async () => {
-            // ✅ إنشاء نسخة احتياطية
+            // ✅ إنشاء نسخة احتياطية أولاً قبل أي لمس للملف
             this.backupPath = await this.createBackup(filePath);
             
-            const result = await this.adapter.modify(filePath, { operations, ...params });
+            // ✅ ترتيب العمليات حسَب الأولوية لضمان سلامة الصيغ والصفوف
+            const sortedOperations = this.orderOperations(operations || []);
+            
+            const result = await this.adapter.modify(filePath, { operations: sortedOperations, ...params });
             
             return {
                 ...result,
@@ -31,7 +35,7 @@ export class ExcelModifier {
     }
     
     /**
-     * 💾 إنشاء نسخة احتياطية
+     * 💾 إنشاء نسخة احتياطية آمنة
      */
     async createBackup(filePath) {
         const backupPath = FileUtils.getTempPath('backup');
@@ -41,23 +45,27 @@ export class ExcelModifier {
     }
     
     /**
-     * ↩️ التراجع عن آخر تعديل
+     * ↩️ التراجع الحقيقي عن آخر تعديل واستعادة الملف
      */
-    async undo() {
+    async undo(targetFilePath) {
         if (!this.backupPath || !fs.existsSync(this.backupPath)) {
-            throw new Error('لا توجد نسخة احتياطية للتراجع');
+            throw new Error('لا توجد نسخة احتياطية متاحة للتراجع.');
         }
         
-        const data = await FileUtils.readFile(this.backupPath);
-        // استعادة الملف
-        return { success: true };
+        // ✅ استعادة النسخة الاحتياطية وكتابتها في الملف المستهدف
+        const backupData = await FileUtils.readFile(this.backupPath);
+        await FileUtils.writeFile(targetFilePath || this.backupPath, backupData);
+        
+        return { 
+            success: true, 
+            message: "تم التراجع عن التعديل واستعادة النسخة السابقة بنجاح." 
+        };
     }
     
     /**
-     * 🎯 تنفيذ عمليات متعددة بذكاء
+     * 🎯 تنفيذ عمليات متعددة بذكاء وعلى حسب الأولوية البرمجية
      */
     async applySmartOperations(worksheet, operations) {
-        // ✅ ترتيب العمليات حسب الأفضلية
         const orderedOps = this.orderOperations(operations);
         
         for (const op of orderedOps) {
@@ -66,81 +74,79 @@ export class ExcelModifier {
     }
     
     /**
-     * 📊 ترتيب العمليات
+     * 📊 مصفوفة ترتيب أولويات تنفيذ العمليات
+     * (الهيكلية -> البيانات -> التنسيق والتلوين -> الفلاتر)
      */
     orderOperations(operations) {
-        // العمليات التي يجب تنفيذها أولاً
         const priority = {
             'add_column': 1,
             'add_row': 1,
             'add_validation': 2,
             'add_formula': 2,
-            'format_range': 3,
-            'color_cells': 3,
-            'update_cell': 4,
+            'update_cell': 3,
+            'format_range': 4,
+            'color_cells': 4,
+            'highlight': 4,
             'add_filter': 5
         };
         
-        return operations.sort((a, b) => (priority[a.type] || 99) - (priority[b.type] || 99));
+        return [...operations].sort((a, b) => (priority[a.type] || 99) - (priority[b.type] || 99));
     }
     
     /**
-     * 🛠️ تنفيذ عملية واحدة
+     * 🛠️ توجيه وتنفيد عملية فردية عبر Adapter
      */
     async applyOperation(worksheet, op) {
         switch(op.type) {
             case OPERATION_TYPES.ADD_COLUMN:
+            case 'add_column':
                 this.addColumnSmart(worksheet, op);
                 break;
             case OPERATION_TYPES.ADD_ROW:
+            case 'add_row':
                 this.addRowSmart(worksheet, op);
                 break;
             case OPERATION_TYPES.UPDATE_CELL:
+            case 'update_cell':
                 this.updateCellSmart(worksheet, op);
                 break;
             case OPERATION_TYPES.COLOR_CELLS:
+            case 'color_cells':
+            case 'highlight':
                 this.colorCellsSmart(worksheet, op);
                 break;
             case OPERATION_TYPES.FORMAT_RANGE:
+            case 'format_range':
                 this.formatRangeSmart(worksheet, op);
                 break;
             case OPERATION_TYPES.ADD_FORMULA:
+            case 'add_formula':
                 this.addFormulaSmart(worksheet, op);
                 break;
             case OPERATION_TYPES.ADD_VALIDATION:
+            case 'add_validation':
+            case 'dropdown':
                 this.addValidationSmart(worksheet, op);
                 break;
             case OPERATION_TYPES.ADD_FILTER:
+            case 'add_filter':
                 this.addFilterSmart(worksheet, op);
                 break;
             default:
-                console.warn(`⚠️ عملية غير معروفة: ${op.type}`);
+                console.warn(`⚠️ [ExcelModifier] نوع عملية غير معروف أو يتم التوجيه للبايثون: ${op.type}`);
         }
     }
     
     /**
-     * ➕ إضافة عمود بذكاء (مع الحفاظ على التنسيق)
+     * ➕ التوجيهات المحسنة للـ Adapters
      */
-    addColumnSmart(worksheet, op) {
-        // تنفيذ محسن لإضافة العمود
-        this.adapter.addColumn(worksheet, op);
-    }
-    
-    /**
-     * 🎨 تلوين خلايا بذكاء (مع دعم الشروط المركبة)
-     */
-    colorCellsSmart(worksheet, op) {
-        // دعم الشروط المركبة
-        const { range, color, condition } = op;
-        // تنفيذ محسن...
-        this.adapter.colorCells(worksheet, op);
-    }
-    
-    // دوال Smart إضافية
-    addRowSmart(worksheet, op) { this.adapter.addRow(worksheet, op); }
-    updateCellSmart(worksheet, op) { this.adapter.updateCell(worksheet, op); }
-    formatRangeSmart(worksheet, op) { this.adapter.formatRange(worksheet, op); }
-    addFormulaSmart(worksheet, op) { this.adapter.addFormula(worksheet, op); }
-    addValidationSmart(worksheet, op) { this.adapter.addValidation(worksheet, op); }
-    addFilterSmart(worksheet, op) { this.adapter.addFilter(worksheet, op); }
+    addColumnSmart(worksheet, op) { if (this.adapter.addColumn) this.adapter.addColumn(worksheet, op); }
+    addRowSmart(worksheet, op) { if (this.adapter.addRow) this.adapter.addRow(worksheet, op); }
+    updateCellSmart(worksheet, op) { if (this.adapter.updateCell) this.adapter.updateCell(worksheet, op); }
+    colorCellsSmart(worksheet, op) { if (this.adapter.colorCells) this.adapter.colorCells(worksheet, op); }
+    formatRangeSmart(worksheet, op) { if (this.adapter.formatRange) this.adapter.formatRange(worksheet, op); }
+    addFormulaSmart(worksheet, op) { if (this.adapter.addFormula) this.adapter.addFormula(worksheet, op); }
+    addValidationSmart(worksheet, op) { if (this.adapter.addValidation) this.adapter.addValidation(worksheet, op); }
+    addFilterSmart(worksheet, op) { if (this.adapter.addFilter) this.adapter.addFilter(worksheet, op); }
 }
+
