@@ -1,13 +1,17 @@
 # بيئة Node حديثة
 FROM node:22
 
-# تثبيت الأدوات الأساسية للنظام (Python لم يعد ضرورياً، لكنه قد يكون مفيداً لبعض الأدوات)
+# تثبيت أدوات النظام + Python 3 + pip ومكتبات البيانات الكبرى (Pandas, Openpyxl)
 RUN apt-get update && apt-get install -y \
     libreoffice \
     ghostscript \
     poppler-utils \
     imagemagick \
     tesseract-ocr \
+    python3 \
+    python3-pip \
+    python3-pandas \
+    python3-openpyxl \
     && rm -rf /var/lib/apt/lists/*
 
 # مجلد العمل الرئيسي
