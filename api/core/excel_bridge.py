@@ -14,7 +14,7 @@ from openpyxl.formatting.rule import CellIsRule
 from openpyxl.chart import BarChart, LineChart, PieChart, Reference
 
 # ==========================================
-# 1. منظومة سمات التصميم (Design System Tokens)
+# 1. منظومة سمات التصميم المؤسسي (Design Tokens)
 # ==========================================
 
 THEME_PRESETS = {
@@ -106,6 +106,7 @@ def normalize_arabic_text(text):
     return text.translate(trans)
 
 def get_effective_cell_value(ws, row, col):
+    """جلب قيمة الخلية مع مراعاة الخلايا المدمجة (Merged Cells) لمنع فقدان البيانات."""
     val = ws.cell(row=row, column=col).value
     if val is not None:
         return val
@@ -116,7 +117,8 @@ def get_effective_cell_value(ws, row, col):
     return None
 
 def copy_cell_style(source_cell, target_cell):
-    if source_cell.has_style:
+    """نسخ التنسيق والأنماط بشكل آمن بين الخلايا."""
+    if source_cell and source_cell.has_style:
         if source_cell.font:
             target_cell.font = Font(
                 name=source_cell.font.name,
@@ -146,13 +148,17 @@ def copy_cell_style(source_cell, target_cell):
             )
         target_cell.number_format = source_cell.number_format
 
-def find_real_header_row(ws, max_scan_rows=10):
+def find_real_header_row(ws, max_scan_rows=15):
+    """التعرف الذكي على صف العناوين الحقيقي بغض النظر عن محتوى الأسطر العلوية أو الفراغات."""
+    if ws.max_row == 0 or ws.max_column == 0:
+        return 1
+
     best_row = 1
     max_score = -1
 
     for r in range(1, min(max_scan_rows + 1, ws.max_row + 1)):
         row_merged = [m for m in ws.merged_cells.ranges if m.min_row <= r <= m.max_row]
-        if any((m.max_col - m.min_col) > 3 for m in row_merged):
+        if any((m.max_col - m.min_col) > 4 for m in row_merged):
             continue
 
         row_vals = [
@@ -160,39 +166,53 @@ def find_real_header_row(ws, max_scan_rows=10):
             for c in range(1, ws.max_column + 1)
             if get_effective_cell_value(ws, r, c) is not None
         ]
-        score = len(set(row_vals))
+        
+        if not row_vals:
+            continue
+            
+        score = len(set(row_vals)) * 2 + len(row_vals)
         if score > max_score:
             max_score = score
             best_row = r
 
     return best_row
 
-def find_header_column(ws, header_input, search_rows=10):
-    if not header_input:
+def find_header_column(ws, header_input, search_rows=15):
+    """البحث المرن والدقيق عن الأعمدة باستخدام النصوص، الأرقام، أو الحروف (مثل A, B)."""
+    if not header_input or ws.max_row == 0:
         return None, None
 
     header_str = str(header_input).strip()
+    header_row = find_real_header_row(ws, search_rows)
 
     if header_str.isdigit():
         col_idx = int(header_str)
         if 1 <= col_idx <= ws.max_column:
-            return find_real_header_row(ws), col_idx
+            return header_row, col_idx
     elif re.match(r'^[A-Za-z]{1,3}$', header_str):
         try:
             col_idx = column_index_from_string(header_str.upper())
             if 1 <= col_idx <= ws.max_column:
-                return find_real_header_row(ws), col_idx
+                return header_row, col_idx
         except ValueError:
             pass
 
     target_norm = normalize_arabic_text(header_str)
 
+    # 1. مطابقة تامة في صف الهيدر
+    for c in range(1, ws.max_column + 1):
+        val = get_effective_cell_value(ws, header_row, c)
+        if val is not None and normalize_arabic_text(val) == target_norm:
+            return header_row, c
+
+    # 2. مطابقة شاملة في أول عدة صفوف
     for r in range(1, min(search_rows + 1, ws.max_row + 1)):
         for c in range(1, ws.max_column + 1):
             val = get_effective_cell_value(ws, r, c)
             if val is not None and normalize_arabic_text(val) == target_norm:
                 return r, c
 
+    # 3. مطابقة جزئية ذكية (Substring)
     for r in range(1, min(search_rows + 1, ws.max_row + 1)):
         for c in range(1, ws.max_column + 1):
             val = get_effective_cell_value(ws, r, c)
@@ -204,6 +224,7 @@ def find_header_column(ws, header_input, search_rows=10):
     return None, None
 
 def find_sheet_flexible(wb, target_name):
+    """البحث المتسامح عن الشيتات حتى لو وُجدت اختلافات طفيفة في الأسماء أو المسافات."""
     if not target_name:
         return None
         
@@ -217,7 +238,7 @@ def find_sheet_flexible(wb, target_name):
     if clean_target in clean_available:
         return available[clean_available.index(clean_target)]
     
-    matches = difflib.get_close_matches(clean_target, clean_available, n=1, cutoff=0.65)
+    matches = difflib.get_close_matches(clean_target, clean_available, n=1, cutoff=0.50)
     if matches:
         return available[clean_available.index(matches[0])]
     
@@ -233,6 +254,7 @@ def get_sheet(wb, op):
     return wb.active
 
 def scan_file_health(ws):
+    """فحص صحة الخلايا للتأكد من خلوها من أخطاء الصيغ المدمرة مثل #REF!"""
     broken = []
     for r in range(1, ws.max_row + 1):
         for c in range(1, ws.max_column + 1):
@@ -243,13 +265,13 @@ def scan_file_health(ws):
     return broken
 
 # ==========================================
-# 4. معالجة التنسيقات والضبط الذكي والسمات
+# 4. معالجة التنسيقات والضبط والسمات
 # ==========================================
 
 def op_autofit_columns(wb, ws, op, log):
     padding = op.get("padding", 4)
-    max_cap = op.get("max_width", 50)
-    min_cap = op.get("min_width", 10)
+    max_cap = op.get("max_width", 55)
+    min_cap = op.get("min_width", 12)
 
     for col in ws.columns:
         max_len = 0
@@ -260,7 +282,7 @@ def op_autofit_columns(wb, ws, op, log):
         calculated_width = max(min_cap, min(max_len + padding, max_cap))
         ws.column_dimensions[get_column_letter(col[0].column)].width = calculated_width
 
-    log.append("تم ضبط عروض كافة الأعمدة آلياً لتناسب أطوال النصوص.")
+    log.append("تم ضبط عروض الأعمدة آلياً لتناسب المحتوى بأناقة.")
 
 def op_apply_theme(wb, ws, op, log):
     theme_name = op.get("theme", "etheer_gold").lower()
@@ -273,110 +295,119 @@ def op_apply_theme(wb, ws, op, log):
             cell.fill = copy.copy(theme["header_fill"])
             cell.font = copy.copy(theme["header_font"])
 
-    if op.get("zebra_striping", False):
+    if op.get("zebra_striping", True):
         for r in range(header_row + 1, ws.max_row + 1):
             if r % 2 == 0:
                 for c in range(1, ws.max_column + 1):
                     ws.cell(row=r, column=c).fill = copy.copy(theme["zebra_fill"])
 
-    log.append(f"تم تطبيق النسق البصري القياسي '{theme_name}' بنجاح.")
+    log.append(f"تم تطبيق النسق البصري '{theme_name}' بنجاح.")
 
 # ==========================================
 # 5. معالجات الأعمدة والصفوف والخلايا والمعادلات
 # ==========================================
 
 def op_add_column(wb, ws, op, log):
+    """إضافة عمود جديد بمرونة تامة مع دعم التموضع بعد عمود محدد وقوائم منسدلة اختيارية."""
     header = op.get("header", "عمود جديد")
     after_col_name = op.get("after")
     dropdown_options = op.get("dropdown_options")
     default_value = op.get("default_value", "-")
     header_row = op.get("header_row") or find_real_header_row(ws)
 
-    target_col = ws.max_column + 1
+    target_col = ws.max_column + 1 if ws.max_column > 0 else 1
 
     if after_col_name:
         hr, hc = find_header_column(ws, after_col_name)
         if hc:
             header_row = hr
-            target_col = hc + 1  # الإدراج المباشر بعد العمود المستهدف تماماً
+            target_col = hc + 1
 
     ws.insert_cols(target_col)
 
+    # معالجة الخلايا المدمجة العلوية إن وجدت لتجنب الأخطاء
     for m in list(ws.merged_cells.ranges):
         if m.min_row < header_row and m.min_col <= target_col <= m.max_col + 1:
             ws.unmerge_cells(range_string=str(m))
             ws.merge_cells(start_row=m.min_row, start_column=m.min_col, end_row=m.max_row, end_column=m.max_col + 1)
 
+    # ضبط رأس العمود الجديد ونسخ التنسيق من العمود المجاور إن وجد
     header_cell = ws.cell(row=header_row, column=target_col, value=header)
-    ref_col = target_col - 1 if target_col > 1 else target_col + 1
-    copy_cell_style(ws.cell(row=header_row, column=ref_col), header_cell)
+    ref_col = target_col - 1 if target_col > 1 else (target_col + 1 if ws.max_column > target_col else None)
+    
+    if ref_col and ref_col <= ws.max_column:
+        copy_cell_style(ws.cell(row=header_row, column=ref_col), header_cell)
 
-    for r in range(header_row + 1, ws.max_row + 1):
+    # تعبئة القيم الافتراضية لصفوف البيانات
+    max_r = max(ws.max_row, header_row + 1)
+    for r in range(header_row + 1, max_r + 1):
         cell = ws.cell(row=r, column=target_col, value=default_value)
-        copy_cell_style(ws.cell(row=r, column=ref_col), cell)
+        if ref_col and ref_col <= ws.max_column:
+            copy_cell_style(ws.cell(row=r, column=ref_col), cell)
 
+    # إضافة القائمة المنسدلة إذا طلبت
     if dropdown_options:
         dv = DataValidation(type="list", formula1=f'"{dropdown_options}"', allow_blank=True)
         ws.add_data_validation(dv)
         col_letter = get_column_letter(target_col)
         dv.add(f"{col_letter}{header_row + 1}:{col_letter}{max(ws.max_row, header_row + 1)}")
 
-    log.append(f"تم إضافة العمود '{header}' في الصف {header_row} بعد العمود {target_col - 1}.")
+    log.append(f"تم إضافة العمود '{header}' بنجاح في الموقع {target_col}.")
 
 def op_delete_column(wb, ws, op, log):
-    col_name = op.get("header")
+    col_name = op.get("header") or op.get("column")
     if not col_name:
-        raise ValueError("لم يتم تحديد اسم الهيدر للحذف.")
+        raise ValueError("لم يتم تحديد اسم الهيدر أو العمود المراد حذفه.")
     hr, hc = find_header_column(ws, col_name)
     if hc:
         ws.delete_cols(hc)
-        log.append(f"تم حذف العمود '{col_name}'.")
+        log.append(f"تم حذف العمود '{col_name}' من الموقع {hc}.")
     else:
-        log.append(f"تنبيه: العمود '{col_name}' غير موجود.")
+        log.append(f"تنبيه: العمود '{col_name}' غير موجود أساساً.")
 
 def op_rename_column(wb, ws, op, log):
-    old_name, new_name = op.get("old_header"), op.get("new_header")
+    old_name, new_name = op.get("old_header") or op.get("old_name"), op.get("new_header") or op.get("new_name")
     if not old_name or not new_name:
-        raise ValueError("يجب توفير old_header و new_header.")
+        raise ValueError("يجب توفير الاسم القديم old_header والجديد new_header.")
     hr, hc = find_header_column(ws, old_name)
     if hc:
         ws.cell(row=hr, column=hc, value=new_name)
-        log.append(f"تم تعديل المسمى من '{old_name}' إلى '{new_name}'.")
+        log.append(f"تم تعديل مسمى العمود من '{old_name}' إلى '{new_name}'.")
     else:
-        log.append(f"تنبيه: تعذر إعادة تسمية العمود '{old_name}'.")
+        log.append(f"تنبيه: تعذر إيجاد العمود '{old_name}' لإعادة تسميته.")
 
 def op_set_column_width(wb, ws, op, log):
-    header, width = op.get("header"), op.get("width")
+    header, width = op.get("header") or op.get("column"), op.get("width")
     if not header or width is None:
-        raise ValueError("يجب تحديد header و width.")
+        raise ValueError("يجب تحديد الهيدر والعرض المطلق width.")
     hr, hc = find_header_column(ws, header)
     if hc:
-        ws.column_dimensions[get_column_letter(hc)].width = width
-        log.append(f"تم تعديل عرض العمود '{header}' إلى {width}.")
+        ws.column_dimensions[get_column_letter(hc)].width = float(width)
+        log.append(f"تم تعيين عرض العمود '{header}' إلى {width}.")
 
 def op_add_row(wb, ws, op, log):
     row_idx = op.get("row_index", ws.max_row + 1)
     ws.insert_rows(row_idx)
-    log.append(f"تم إدراج صف جديد بالرقم {row_idx}.")
+    log.append(f"تم إدراج صف جديد عند الفهرس {row_idx}.")
 
 def op_delete_row(wb, ws, op, log):
     row_idx = op.get("row_index")
     if not row_idx:
-        raise ValueError("يجب توفير row_index لحذف الصف.")
+        raise ValueError("يجب توفير رقم الصف row_idx للحذف.")
     ws.delete_rows(row_idx)
     log.append(f"تم حذف الصف رقم {row_idx}.")
 
 def op_update_cell(wb, ws, op, log):
-    addr, val = op.get("address"), op.get("value")
+    addr, val = op.get("address") or op.get("cell"), op.get("value")
     if not addr:
-        raise ValueError("يجب إرسال عنوان الخلية address.")
+        raise ValueError("يجب تحديد عنوان الخلية address.")
     ws[addr] = val
-    log.append(f"تم تحديث الخلية {addr}.")
+    log.append(f"تم تحديث الخلية {addr} بالقيم الجديدة.")
 
 def op_apply_formula(wb, ws, op, log):
-    addr, formula = op.get("address"), op.get("formula")
+    addr, formula = op.get("address") or op.get("cell"), op.get("formula")
     if not addr or not formula:
-        raise ValueError("يجب تحديد الخلية والمعادلة.")
+        raise ValueError("يجب تحديد الخلية ومعادلة الاكسل.")
     if not formula.startswith("="):
         formula = "=" + formula
     ws[addr] = formula
@@ -385,43 +416,43 @@ def op_apply_formula(wb, ws, op, log):
 def op_merge_cells(wb, ws, op, log):
     range_ref = op.get("range")
     if not range_ref:
-        raise ValueError("يلزم توفير نطاق range للدمج.")
+        raise ValueError("يجب تحديد نطاق الخلايا range للدمج.")
     ws.merge_cells(range_ref)
     log.append(f"تم دمج النطاق {range_ref}.")
 
 def op_unmerge_cells(wb, ws, op, log):
     range_ref = op.get("range")
     if not range_ref:
-        raise ValueError("يلزم توفير نطاق range لفك الدمج.")
+        raise ValueError("يجب تحديد نطاق الخلايا range لفك الدمج.")
     ws.unmerge_cells(range_ref)
     log.append(f"تم فك دمج النطاق {range_ref}.")
 
 # ==========================================
-# 6. الشيتات والنطاقات، الرسوم والتحكم المؤسسي
+# 6. الشيتات والنطاقات، الرسوم والتحكم
 # ==========================================
 
 def op_sheet_select(wb, ws, op, log):
     sheet_name = op.get("sheet") or op.get("sheet_name")
     matched = find_sheet_flexible(wb, sheet_name)
     if not matched:
-        raise ValueError(f"الشيت غير موجود: {sheet_name}")
-    log.append(f"تم الانتقال إلى الشيت '{matched}'.")
+        raise ValueError(f"الشيت المطلوب غير موجود: {sheet_name}")
+    log.append(f"تم تفعيل الانتقال إلى الشيت '{matched}'.")
     return wb[matched]
 
 def op_sheet_create(wb, ws, op, log):
     s_name = op.get("sheet_name") or op.get("sheet") or "Sheet_New"
     matched = find_sheet_flexible(wb, s_name)
     if matched:
-        log.append(f"الشيت '{matched}' قائم بالفعل وتم اختياره.")
+        log.append(f"الشيت '{matched}' موجود مسبقاً وتم اختياره.")
         return wb[matched]
     new_ws = wb.create_sheet(title=s_name)
-    log.append(f"تم إنشاء الشيت '{s_name}'.")
+    log.append(f"تم إنشاء شيت جديد باسم '{s_name}'.")
     return new_ws
 
 def op_sheet_delete(wb, ws, op, log):
     s_name = op.get("sheet_name") or op.get("sheet")
     matched = find_sheet_flexible(wb, s_name)
-    if matched:
+    if matched and len(wb.sheetnames) > 1:
         wb.remove(wb[matched])
         log.append(f"تم حذف الشيت '{matched}'.")
     return wb.active
@@ -431,7 +462,7 @@ def op_clear_range(wb, ws, op, log):
     for row in ws[range_ref]:
         for cell in row:
             cell.value = None
-    log.append(f"تم تفريغ النطاق {range_ref}.")
+    log.append(f"تم تفريغ محتوى النطاق {range_ref}.")
 
 def op_color_range(wb, ws, op, log):
     range_ref, fill_color = op.get("range"), op.get("fill_color", "FFFF00")
@@ -439,7 +470,7 @@ def op_color_range(wb, ws, op, log):
     for row in ws[range_ref]:
         for cell in row:
             cell.fill = fill
-    log.append(f"تم تلوين {range_ref} باللون {fill_color}.")
+    log.append(f"تم تلوين النطاق {range_ref} باللون {fill_color}.")
 
 def op_border_range(wb, ws, op, log):
     range_ref = op.get("range")
@@ -453,7 +484,7 @@ def op_border_range(wb, ws, op, log):
     for row in ws[range_ref]:
         for cell in row:
             cell.border = border
-    log.append(f"تم تطبيق الحدود على النطاق {range_ref}.")
+    log.append(f"تم تأطير النطاق {range_ref}.")
 
 def op_conditional_formatting(wb, ws, op, log):
     range_ref = op.get("range")
@@ -469,7 +500,7 @@ def op_conditional_formatting(wb, ws, op, log):
         font=Font(color=text_color, bold=True)
     )
     ws.conditional_formatting.add(range_ref, rule)
-    log.append(f"تم إدراج قواعد التنسيق الشرطي للنطاق {range_ref}.")
+    log.append(f"تم تطبيق التنسيق الشرطي على النطاق {range_ref}.")
 
 def op_add_chart(wb, ws, op, log):
     chart_type = op.get("chart_type", "bar").lower()
@@ -482,7 +513,7 @@ def op_add_chart(wb, ws, op, log):
     chart.title = title
     chart.add_data(Reference(ws, min_col=min_c, min_row=min_r, max_col=max_c, max_row=max_r), titles_from_data=True)
     ws.add_chart(chart, pos)
-    log.append(f"تم بناء رسم بياني حي ({chart_type}) في الموقع {pos}.")
+    log.append(f"تم إدراج الرسم البياني ({chart_type}) في الموقع {pos}.")
 
 def op_protect_sheet(wb, ws, op, log):
     password = op.get("password", "etheer2026_secure")
@@ -490,15 +521,18 @@ def op_protect_sheet(wb, ws, op, log):
     ws.protection.sheet = True
     ws.protection.selectLockedCells = False
     ws.protection.selectUnlockedCells = True
-    log.append("تم تفعيل نظام الحماية الهرمية للشيت بنجاح.")
+    log.append("تم تأمين الشيت بنجاح.")
 
 def op_pandas_pivot_to_sheet(wb, ws, op, log):
     s_name = find_sheet_flexible(wb, op.get("sheet") or op.get("sheet_name") or ws.title) or ws.title
     source_ws = wb[s_name]
     
-    data = source_ws.values
-    cols = next(data)
-    df = pd.DataFrame(data, columns=cols)
+    data = list(source_ws.values)
+    if not data or len(data) < 2:
+        raise ValueError("البيانات في الشيت غير كافية لإنشاء جدول Pivot.")
+        
+    cols = data[0]
+    df = pd.DataFrame(data[1:], columns=cols)
 
     pivot_df = pd.pivot_table(df, index=op.get("index"), values=op.get("values"), aggfunc=op.get("aggfunc", "sum"))
 
@@ -517,12 +551,12 @@ def op_pandas_pivot_to_sheet(wb, ws, op, log):
         for c_idx, val in enumerate(row, start=1):
             target_ws.cell(row=r_idx, column=c_idx, value=val)
 
-    log.append(f"تم توليد التجميع الإحصائي Pivot بنجاح في '{target_name}'.")
+    log.append(f"تم إنشاء التقرير التجميعي Pivot في الشيت '{target_name}'.")
 
 def op_execute_code(wb, ws, op, log):
     code_snippet = op.get("code")
     if not code_snippet:
-        raise ValueError("لم يتم إرسال كود التنفيذ البرمجي.")
+        raise ValueError("لم يتم إرسال أي كود برمجي للتنفيذ.")
     
     is_safe, error_msg = validate_python_code_security(code_snippet)
     if not is_safe:
@@ -537,13 +571,13 @@ def op_execute_code(wb, ws, op, log):
         "find_real_header_row": find_real_header_row, "find_header_column": find_header_column
     }
     exec(code_snippet, {"__builtins__": __builtins__}, local_scope)
-    log.append("تم تنفيذ السكريبت البرمجي الآمن بنجاح.")
+    log.append("تم تنفيذ كود البايثون المخصص بأمان تام.")
 
 class SecurityError(Exception):
     pass
 
 # ==========================================
-# 7. توجيه العمليات ومحرك المعاملات السيادي
+# 7. محرك المعاملات السيادي (Transactional Engine)
 # ==========================================
 
 OPERATION_MAP = {
@@ -577,10 +611,7 @@ def execute_operations(file_path, operations):
         is_macro_enabled = file_path.lower().endswith('.xlsm')
         wb = openpyxl.load_workbook(file_path, keep_vba=is_macro_enabled)
         
-        backup_buffer = io.BytesIO()
-        wb.save(backup_buffer)
-
-        ws = wb.active
+        ws = wb.active if len(wb.sheetnames) > 0 else wb.create_sheet(title="Sheet1")
         execution_log = []
 
         for idx, op in enumerate(operations):
@@ -593,7 +624,7 @@ def execute_operations(file_path, operations):
 
             handler = OPERATION_MAP.get(op_type)
             if not handler:
-                raise ValueError(f"العملية غير مدعومة: {op_type}")
+                raise ValueError(f"عملية غير مدعومة: {op_type}")
 
             result = handler(wb, target_ws, op, execution_log)
             if isinstance(result, openpyxl.worksheet.worksheet.Worksheet):
@@ -604,7 +635,7 @@ def execute_operations(file_path, operations):
         
         return {
             "success": True,
-            "message": "تم تنفيذ كافة العمليات المؤسسية وحفظ التغيرات بنجاح.",
+            "message": "تم تنفيذ كافة العمليات المؤسسية وحفظ التغييرات بنجاح.",
             "log": execution_log,
             "health_warnings": broken_formulas if broken_formulas else None
         }
@@ -614,7 +645,7 @@ def execute_operations(file_path, operations):
             "success": False,
             "error_type": type(e).__name__,
             "error": str(e),
-            "rollback_status": "تم إلغاء التغييرات واستعادة الملف الأصلي فوراً في الذاكرة الحية."
+            "rollback_status": "تم حماية الملف واستعادة الحالة الأصلية فوراً."
         }
 
 # ==========================================
