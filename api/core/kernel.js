@@ -1,5 +1,5 @@
 /**
- * api/core/kernel.js – Alatheer Sovereign Kernel (Clean & Lean Edition)
+ * api/core/kernel.js – Alatheer Sovereign Kernel (Fully Bridged & Error-Aware Edition)
  */
 
 import geminiService from "../geminiService.js";
@@ -46,9 +46,8 @@ ${text.slice(0, MAX_CHARS)}
     /* ============================================================
        🧠 بناء التعليمات النهائية (دمج البرومبت الأساسي مع سياق الملف)
        ============================================================ */
-    let systemContent = SYSTEM_PROMPT; // استخدام البرومبت النظيف من system.js
+    let systemContent = SYSTEM_PROMPT;
 
-    // إضافة سياق الملف فقط إذا كان موجوداً
     if (fileContext) {
         systemContent += `\n\n[سياق الملف الحالي للرجوع إليه]:\n${fileContext}`;
     }
@@ -75,7 +74,7 @@ ${text.slice(0, MAX_CHARS)}
 
         finalReplyText = rawReply || "تم يا شريكي.";
 
-        // استخراج JSON (لا تغيير هنا)
+        // استخراج JSON من رد الوكيل
         const jsonMatch =
             finalReplyText.match(/```json\s*([\s\S]*?)\s*```/) ||
             finalReplyText.match(/\{[\s\S]*"operations"[\s\S]*\}/);
@@ -96,7 +95,7 @@ ${text.slice(0, MAX_CHARS)}
         finalReplyText = finalReplyText.replace(/```json[\s\S]*?```/g, "").trim();
 
         /* ============================================================
-           ⚙️ تنفيذ جسر بايثون
+           ⚙️ تنفيذ جسر بايثون السيادي المحدث
            ============================================================ */
         if (operations.length > 0 && filePath && fs.existsSync(filePath)) {
             const scriptPath = path.join(process.cwd(), "api/core/excel_bridge.py");
@@ -104,16 +103,22 @@ ${text.slice(0, MAX_CHARS)}
             
             console.log(`⚡ [Python Bridge] تنفيذ ${operations.length} عملية على الملف...`);
             
-            // تمرير العمليات للجسر
             const stdout = execFileSync("python3", [scriptPath, filePath, opsJson], { encoding: "utf8" });
             const res = JSON.parse(stdout);
             
             if (res.success) {
                 finalReplyText += `\n\n✅ تم التنفيذ بنجاح يا شريكي، والملف جاهز للتحميل!`;
+                
+                // إضافة تنبيهات سلامة المعادلات إذا وجدت في الملف
+                if (res.health_warnings && res.health_warnings.length > 0) {
+                    finalReplyText += `\n\n⚠️ **تنبيه صحي للمعادلات:** وجدنا بعض المراجع التالفة أو غير المكتملة:\n- ${res.health_warnings.slice(0, 3).join("\n- ")}`;
+                }
+
                 const updatedBuffer = fs.readFileSync(filePath);
                 fileBase64 = updatedBuffer.toString("base64");
             } else {
-                finalReplyText += `\n⚠️ صار خطأ أثناء التنفيذ البرمجي: ${res.error}`;
+                // إظهار رسالة التراجع السيادي وفشل التنفيذ بدقة
+                finalReplyText += `\n\n❌ **خطأ برمجـي (${res.error_type || 'Error'}):** ${res.error}\n🛡️ **الحالة:** ${res.rollback_status}`;
                 console.error("❌ [Python Error]:", res.error);
             }
         }
