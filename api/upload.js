@@ -1,11 +1,23 @@
 /**
- * api/upload.js – Sovereign File Intake (Transition Edition)
- * يستقبل الملف ويؤمّنه فقط، بدون تمريره لأي محرك (لحين بناء ExcelEngine).
+ * api/upload.js – Sovereign File Intake (ExcelEngine Integration Edition)
+ * يستقبل الملف، يؤمّنه، ثم يمرّره مباشرة لمحرك ExcelEngine الموحد.
  */
 
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+
+// 🟦 استيراد محرك الإكسل الموحد
+import {
+  excelRead,
+  excelModify,
+  excelAnalyze,
+  excelFormat,
+  excelPivot,
+  excelCreate,
+  excelConvertToPdf,
+  excelConvertToCsv
+} from "./tools/external/engines/excel/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,9 +65,56 @@ export default async function uploadHandler(req, res) {
       buffer: fileBuffer
     };
 
+    // 🟦 تحديد العملية المطلوبة
+    const action = req.body.action || "read";
+    const params = req.body || {};
+
+    let result;
+
+    switch (action) {
+      case "read":
+      case "preview":
+        result = await excelRead(fileInfo.path, params);
+        break;
+
+      case "modify":
+        result = await excelModify(fileInfo.path, params);
+        break;
+
+      case "analyze":
+        result = await excelAnalyze(fileInfo.path, params);
+        break;
+
+      case "format":
+        result = await excelFormat(fileInfo.path, params);
+        break;
+
+      case "pivot":
+        result = await excelPivot(fileInfo.path, params);
+        break;
+
+      case "create":
+        result = await excelCreate(params);
+        break;
+
+      case "convert_pdf":
+        result = await excelConvertToPdf(fileInfo.path);
+        break;
+
+      case "convert_csv":
+        result = await excelConvertToCsv(fileInfo.path);
+        break;
+
+      default:
+        result = await excelRead(fileInfo.path, params);
+    }
+
     return res.status(200).json({
-      reply: "📁 تم استلام الملف بنجاح (مرحلة انتقالية).",
-      fileInfo
+      reply: result?.reply || "تمت معالجة الملف بنجاح.",
+      data: result?.data || null,
+      fileBase64: result?.fileBase64 || null,
+      fileName: result?.fileName || null,
+      metadata: result?.metadata || null
     });
 
   } catch (error) {
@@ -64,4 +123,4 @@ export default async function uploadHandler(req, res) {
       error: `⚠️ حدث خطأ غير متوقع أثناء معالجة الملف: ${error.message}`
     });
   }
-}
+      }
