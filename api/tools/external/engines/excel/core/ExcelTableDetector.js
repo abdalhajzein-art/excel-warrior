@@ -1,12 +1,13 @@
 /**
- * excel/core/ExcelTableDetector.js – Sovereign Table Detector (Advanced Edition)
- * كشف الجداول والهيدر والبيانات بشكل عام فوق ExcelJS و SheetJS.
+ * api/tools/external/engines/excel/core/ExcelTableDetector.js
+ * Sovereign Table Detector (Advanced Edition - Alatheer AI Suite)
+ * رادار ذكي جداً، يتخطى الشعارات، يحلل كثافة البيانات، ويكشف الجداول الحقيقية.
  */
 
 export class ExcelTableDetector {
 
   /* ============================================================
-     🎯 كشف الجدول الرئيسي – عام 100٪
+     🎯 كشف الجدول الرئيسي – العقل الراداري
      ============================================================ */
   static detectMainTable(sheet) {
     const data = sheet.data || [];
@@ -16,19 +17,15 @@ export class ExcelTableDetector {
     const sheetProps = sheet.sheetProps || {};
     const autoFilter = sheetProps?.autoFilter || null;
 
-    // 1) إذا في AutoFilter → هذا جدول حقيقي
+    // 1) إذا كان الملف يحتوي على AutoFilter رسمي، نستخرج أبعاده مباشرة
     if (autoFilter) {
       const range = autoFilter.ref || autoFilter;
-      return this.fromRange(range);
+      return this.parseRangeToTable(range, data);
     }
 
-    // 2) إذا في merges فوق الصف الأول → الهيدر مو بالضرورة الصف 1
-    const headerRowNum = this.detectHeaderRow(data, merges);
-
-    // 3) كشف بداية البيانات
+    // 2) الكشف الذكي بناءً على "كثافة البيانات"
+    const headerRowNum = this.detectHeaderRow(data);
     const dataStartRow = this.detectDataStartRow(data, headerRowNum);
-
-    // 4) كشف نهاية البيانات
     const dataEndRow = this.detectDataEndRow(data, dataStartRow);
 
     return {
@@ -40,26 +37,27 @@ export class ExcelTableDetector {
   }
 
   /* ============================================================
-     🔍 كشف صف الهيدر – عام
+     🔍 كشف صف الهيدر - يعتمد على الكثافة وتنوع النصوص
      ============================================================ */
-  static detectHeaderRow(data, merges) {
-    for (let r = 0; r < data.length; r++) {
+  static detectHeaderRow(data) {
+    for (let r = 0; r < Math.min(data.length, 20); r++) { // نبحث في أول 20 صف كحد أقصى
       const row = data[r];
-      const nonEmpty = row.filter(v => String(v || "").trim() !== "");
+      const nonEmptyCells = row.filter(v => String(v || "").trim() !== "");
+      
+      // كثافة البيانات: يجب أن يحتوي الصف على أكثر من قيمة واحدة ليعتبر هيدر للجدول
+      // وتنوع النصوص: نتأكد أنها ليست مجرد أرقام
+      const uniqueValues = new Set(nonEmptyCells);
+      const hasText = nonEmptyCells.some(v => isNaN(v));
 
-      // هيدر حقيقي = تنوع + نصوص + بدون أرقام فقط
-      const diversity = new Set(nonEmpty).size;
-
-      if (nonEmpty.length >= 2 && diversity >= 2) {
-        return r + 1; // ExcelJS rows start at 1
+      if (nonEmptyCells.length >= 2 && uniqueValues.size >= 2 && hasText) {
+        return r + 1; // إرجاع الرقم بناءً على Index-1 الخاص بـ Excel
       }
     }
-
-    return 1; // fallback
+    return 1; // Fallback
   }
 
   /* ============================================================
-     🔍 كشف بداية البيانات – عام
+     🔍 كشف بداية البيانات الفعلية
      ============================================================ */
   static detectDataStartRow(data, headerRowNum) {
     for (let r = headerRowNum; r < data.length; r++) {
@@ -71,32 +69,42 @@ export class ExcelTableDetector {
   }
 
   /* ============================================================
-     🔍 كشف نهاية البيانات – عام
+     🔍 كشف نهاية البيانات
      ============================================================ */
   static detectDataEndRow(data, dataStartRow) {
-    let last = dataStartRow;
+    let lastDataRow = dataStartRow;
     for (let r = dataStartRow - 1; r < data.length; r++) {
       const row = data[r];
       const nonEmpty = row.filter(v => String(v || "").trim() !== "");
-      if (nonEmpty.length > 0) last = r + 1;
+      if (nonEmpty.length > 0) {
+        lastDataRow = r + 1;
+      } else {
+        // إذا وجدنا 3 صفوف متتالية فارغة، نعتبر أن الجدول قد انتهى
+        if (r + 2 < data.length && this.isEmptyRow(data[r+1]) && this.isEmptyRow(data[r+2])) {
+          break;
+        }
+      }
     }
-    return last;
+    return lastDataRow;
+  }
+
+  static isEmptyRow(row) {
+    if (!row) return true;
+    return row.filter(v => String(v || "").trim() !== "").length === 0;
   }
 
   /* ============================================================
-     📐 بناء نطاق الجدول
+     📐 بناء النطاق وإرجاع التفاصيل
      ============================================================ */
   static buildRange(headerRowNum, dataStartRow, dataEndRow, data) {
-    const maxCols = data.reduce((m, r) => Math.max(m, r.length), 0);
-
+    const maxCols = data.reduce((max, row) => Math.max(max, row.length), 0);
     const startCol = "A";
     const endCol = this.numberToColumn(maxCols);
-
     return `${startCol}${headerRowNum}:${endCol}${dataEndRow}`;
   }
 
   /* ============================================================
-     🔠 تحويل رقم عمود إلى حرف (A → Z → AA → AB)
+     🛠️ تحويل رقم عمود إلى حرف (1 -> A, 27 -> AA)
      ============================================================ */
   static numberToColumn(n) {
     let col = "";
@@ -105,29 +113,50 @@ export class ExcelTableDetector {
       col = String.fromCharCode(65 + rem) + col;
       n = Math.floor((n - 1) / 26);
     }
-    return col;
+    return col || "A";
   }
 
   /* ============================================================
-     🔍 كشف عمود عبر الهيدر – عام
+     📐 تحليل النطاق الجاهز (AutoFilter) إلى تفاصيل
+     ============================================================ */
+  static parseRangeToTable(rangeStr, data) {
+    try {
+      const [start, end] = rangeStr.split(":");
+      const headerRowNum = parseInt(start.match(/\d+/)[0], 10);
+      let dataEndRow = end ? parseInt(end.match(/\d+/)[0], 10) : headerRowNum;
+      
+      // التأكد من أن نهاية البيانات تتوافق مع طول المصفوفة الفعلي
+      if (dataEndRow > data.length) dataEndRow = data.length;
+
+      return {
+        headerRowNum: headerRowNum,
+        dataStartRow: headerRowNum + 1,
+        dataEndRow: dataEndRow,
+        range: rangeStr
+      };
+    } catch (e) {
+      return { range: rangeStr }; // Fallback
+    }
+  }
+
+  /* ============================================================
+     🔍 البحث عن عمود بناءً على اسم الهيدر
      ============================================================ */
   static findColumnByHeader(sheet, columnName) {
     const data = sheet.data || [];
     if (!data.length) return null;
 
-    const headerRow = data[0];
+    const tableInfo = this.detectMainTable(sheet);
+    if (!tableInfo) return null;
+
+    const headerRowIndex = tableInfo.headerRowNum - 1; // تحويل إلى Index-0
+    const headerRow = data[headerRowIndex] || [];
+
     for (let c = 0; c < headerRow.length; c++) {
-      if (String(headerRow[c] || "").trim() === String(columnName).trim()) {
-        return c + 1; // ExcelJS columns start at 1
+      if (String(headerRow[c] || "").trim().toLowerCase() === String(columnName).trim().toLowerCase()) {
+        return c + 1; // إرجاع بناءً على Index-1
       }
     }
     return null;
   }
-
-  /* ============================================================
-     📐 استخراج نطاق من AutoFilter أو TableParts
-     ============================================================ */
-  static fromRange(range) {
-    return { range };
-  }
-      }
+}
