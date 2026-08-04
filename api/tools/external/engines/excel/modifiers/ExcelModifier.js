@@ -1,6 +1,6 @@
 /**
- * excel/modifiers/ExcelModifier.js – Sovereign Excel Modifier
- * تعديل سيادي متقدم مع نسخ احتياطي وتراجع، متوافق مع ExcelAdapter/ExcelJSAdapter.
+ * excel/modifiers/ExcelModifier.js – Sovereign Excel Modifier (Advanced Edition)
+ * متوافق 100٪ مع ExcelJSAdapter السيادي و Kernel السيادي
  */
 
 import fs from "fs";
@@ -13,7 +13,6 @@ export class ExcelModifier {
     this.backupPath = null;
   }
 
-  // ✏️ تعديل مع نسخة احتياطية
   async modifyWithBackup(filePath, operations, params = {}) {
     const resolvedPath = this.resolveFilePath(filePath);
 
@@ -32,11 +31,8 @@ export class ExcelModifier {
     };
   }
 
-  // 🔍 حل مسار الملف
   resolveFilePath(filePath) {
-    if (!filePath) {
-      throw new Error("مسار الملف غير مدخل أو فارغ.");
-    }
+    if (!filePath) throw new Error("مسار الملف غير مدخل أو فارغ.");
 
     if (fs.existsSync(filePath)) return filePath;
 
@@ -58,18 +54,13 @@ export class ExcelModifier {
     throw new Error(`الملف غير موجود على القرص: ${filePath}`);
   }
 
-  // 💾 إنشاء نسخة احتياطية
   async createBackup(filePath) {
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`تعذر إنشاء نسخة احتياطية، الملف غير موجود: ${filePath}`);
-    }
     const backupPath = FileUtils.getTempPath("backup");
     const data = await FileUtils.readFile(filePath);
     await FileUtils.writeFile(backupPath, data);
     return backupPath;
   }
 
-  // ↩️ تراجع عن آخر تعديل
   async undo(targetFilePath) {
     if (!this.backupPath || !fs.existsSync(this.backupPath)) {
       throw new Error("لا توجد نسخة احتياطية متاحة للتراجع.");
@@ -88,18 +79,23 @@ export class ExcelModifier {
     };
   }
 
-  // 🎯 ترتيب العمليات حسب الأولوية
   orderOperations(operations) {
     const priority = {
       add_column: 1,
-      add_row: 1,
-      add_validation: 2,
-      add_formula: 2,
-      update_cell: 3,
-      format_range: 4,
-      color_cells: 4,
-      highlight: 4,
-      add_filter: 5
+      delete_column: 1,
+
+      add_row: 2,
+
+      add_validation: 3,
+      add_style: 3,
+
+      add_formula: 4,
+
+      update_cell: 5,
+
+      format_table: 6,
+
+      pivot: 7
     };
 
     return [...operations].sort(
