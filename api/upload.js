@@ -1,23 +1,11 @@
 /**
- * api/upload.js – Sovereign File Intake (ExcelEngine Integration Edition)
- * يستقبل الملف، يؤمّنه، ثم يمرّره مباشرة لمحرك ExcelEngine الموحد.
+ * api/upload.js – Sovereign Clean File Intake
+ * استقبال الملف، تأمينه، وحفظه بنجاح دون أي تعقيدات أو محركات مكسورة.
  */
 
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-
-// 🟦 استيراد محرك الإكسل الموحد
-import {
-  excelRead,
-  excelModify,
-  excelAnalyze,
-  excelFormat,
-  excelPivot,
-  excelCreate,
-  excelConvertToPdf,
-  excelConvertToCsv
-} from "./tools/external/engines/excel/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,7 +14,7 @@ export default async function uploadHandler(req, res) {
   try {
     if (!req.file) {
       return res.status(400).json({
-        error: "⚠️ ما وصلني أي ملف. يرجى إرفاق الملف المطلوب مع الطلب."
+        error: "⚠️ ما وصلني أي ملف. يرجى إرفاق الملف المطلوب مع الطلب يا شريكي."
       });
     }
 
@@ -57,64 +45,13 @@ export default async function uploadHandler(req, res) {
 
     fs.writeFileSync(persistentPath, fileBuffer);
 
-    const fileInfo = {
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      path: persistentPath,
-      buffer: fileBuffer
-    };
-
-    // 🟦 تحديد العملية المطلوبة
-    const action = req.body.action || "read";
-    const params = req.body || {};
-
-    let result;
-
-    switch (action) {
-      case "read":
-      case "preview":
-        result = await excelRead(fileInfo.path, params);
-        break;
-
-      case "modify":
-        result = await excelModify(fileInfo.path, params);
-        break;
-
-      case "analyze":
-        result = await excelAnalyze(fileInfo.path, params);
-        break;
-
-      case "format":
-        result = await excelFormat(fileInfo.path, params);
-        break;
-
-      case "pivot":
-        result = await excelPivot(fileInfo.path, params);
-        break;
-
-      case "create":
-        result = await excelCreate(params);
-        break;
-
-      case "convert_pdf":
-        result = await excelConvertToPdf(fileInfo.path);
-        break;
-
-      case "convert_csv":
-        result = await excelConvertToCsv(fileInfo.path);
-        break;
-
-      default:
-        result = await excelRead(fileInfo.path, params);
-    }
+    console.log(`🛡️ [Intake] تم حفظ الملف بنجاح في المسار الدائم: ${persistentPath}`);
 
     return res.status(200).json({
-      reply: result?.reply || "تمت معالجة الملف بنجاح.",
-      data: result?.data || null,
-      fileBase64: result?.fileBase64 || null,
-      fileName: result?.fileName || null,
-      metadata: result?.metadata || null
+      reply: `تم استلام الملف وتأمينه بنجاح يا شريكي: ${req.file.originalname}`,
+      fileName: req.file.originalname,
+      filePath: persistentPath,
+      size: req.file.size
     });
 
   } catch (error) {
@@ -123,4 +60,4 @@ export default async function uploadHandler(req, res) {
       error: `⚠️ حدث خطأ غير متوقع أثناء معالجة الملف: ${error.message}`
     });
   }
-      }
+}
