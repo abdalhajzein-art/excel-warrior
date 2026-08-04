@@ -101,12 +101,17 @@ export default async function conversationOrchestrator(sessionId, message, extra
            ============================================================ */
         memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
+        /* ============================================================
+           7) تمرير العمليات للجسر (النقطة الجوهرية)
+           ============================================================ */
+        const operations = kernelOutput.operations || [];
+
         return {
             ok: true,
             reply,
             fileBase64,
             fileName: returnedFileName,
-            operations: []
+            operations
         };
 
     } catch (err) {
@@ -120,5 +125,4 @@ export default async function conversationOrchestrator(sessionId, message, extra
             operations: []
         };
     }
-}
-
+           }
