@@ -7,7 +7,7 @@
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
 
@@ -44,19 +44,25 @@ ${text.slice(0, MAX_CHARS)}
 
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
     
+    // شحن جيميناي بكل إمكانيات جسر بايثون المتاحة
     let systemContent = `
 ${SYSTEM_PROMPT}
 
 [التوجيهات الصارمة لشخصيتك وتعديل الملفات]:
 - أنت زميل ومهندس معماري لمنصة "الأثير". خاطب المستخدم دائماً بروح الزميل باللهجة السورية المهنية المحببة (يا شريكي، يا هندسة، تكرم عينك، إلخ).
-- إذا طلب المستخدم تعديل على ملف الإكسل (مثل إضافة عمود، حذف، تعديل خلية)، قم بالرد بشكل طبيعي وأرفق في نهاية ردك كتلة JSON بالصيغة التالية تماماً لتنفيذ التعديل عبر بايثون:
+- إذا طلب المستخدم أي تعديل على ملف الإكسل، قم بالرد بنص طبيعي وأرفق في نهاية ردك كتلة JSON تحتوي على مصفوفة "operations" بالصيغة المحددة أدناه لتنفيذ التعديل عبر بايثون:
+
 \`\`\`json
 {
   "operations": [
-    {"type": "add_column", "header": "اسم العمود", "after": "اسم العمود السابق"}
+    {"type": "add_column", "header": "اسم العمود", "after": "اسم العمود السابق", "dropdown_options": "خيار1,خيار2", "default_value": "-"},
+    {"type": "update_cell", "address": "B5", "value": "القيمة الجديدة"},
+    {"type": "delete_column", "header": "اسم العمود المراد حذفه"},
+    {"type": "apply_formula", "address": "C10", "formula": "=SUM(C1:C9)"}
   ]
 }
 \`\`\`
+- استخدم العمليات المناسبة لطلب المستخدم بدقة، ولا تضف خيارات غير مطلوبة.
 `;
 
     if (fileContext) {
@@ -79,7 +85,7 @@ ${SYSTEM_PROMPT}
         const rawReply = await geminiService.chat(conversationMessages, { fileName, extractedContent });
         finalReplyText = rawReply || "تم يا شريكي، جهزتلك المطلوب.";
 
-        // استخراج عمليات JSON إن وجدت في رد جيميني
+        // استخراج operations من JSON
         const jsonMatch = finalReplyText.match(/```json\s*([\s\S]*?)\s*```/) || finalReplyText.match(/\{[\s\S]*"operations"[\s\S]*\}/);
         if (jsonMatch) {
             try {
@@ -93,22 +99,23 @@ ${SYSTEM_PROMPT}
             }
         }
 
-        // تنظيف الرد النصي من كتلة الـ JSON ليظهر بشكل نظيف للمستخدم
+        // تنظيف الرد النصي ليكون منسقاً أمام المستخدم
         finalReplyText = finalReplyText.replace(/```json[\s\S]*?```/g, "").trim();
 
-        // تنفيذ عمليات بايثون إذا توفرت عمليات وملف نشط
+        // تنفيذ جسر بايثون بأعلى معايير الاستقرار
         if (operations.length > 0 && filePath && fs.existsSync(filePath)) {
             const scriptPath = path.join(process.cwd(), "api/core/excel_bridge.py");
             const opsJson = JSON.stringify(operations);
             
             console.log(`⚡ [Python Bridge] تنفيذ ${operations.length} عملية على الملف: ${filePath}`);
-            const stdout = execSync(`python3 "${scriptPath}" "${filePath}" '${opsJson}'`).toString();
+            
+            // استدعاء آمن ومحصن يمنع مشاكل الـ Escaping
+            const stdout = execFileSync("python3", [scriptPath, filePath, opsJson], { encoding: "utf8" });
             const res = JSON.parse(stdout);
             
             if (res.success) {
                 finalReplyText += `\n\n✅ تم تطبيق التعديلات المطلوبة على الملف بنجاح يا شريكي، وصار جاهز للتحميل!`;
                 
-                // قراءة الملف المعدل وتحويله إلى Base64
                 const updatedBuffer = fs.readFileSync(filePath);
                 fileBase64 = updatedBuffer.toString("base64");
             } else {
@@ -133,3 +140,4 @@ ${SYSTEM_PROMPT}
         operations: operations
     };
 }
+
