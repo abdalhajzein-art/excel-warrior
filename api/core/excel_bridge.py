@@ -222,7 +222,7 @@ def op_sheet_delete(wb, ws, op, log):
     return wb.active
 
 # =========================
-# عمليات النطاقات
+# عمليات النطاقات الأساسية والمتقدمة
 # =========================
 
 def op_clear_range(wb, ws, op, log):
@@ -233,6 +233,116 @@ def op_clear_range(wb, ws, op, log):
         for cell in row:
             cell.value = None
     log.append(f"تم مسح محتوى النطاق {range_ref}.")
+
+def op_color_range(wb, ws, op, log):
+    range_ref = op.get("range")
+    fill_color = op.get("fill_color", "FFFF00")  # أصفر افتراضي
+    if not range_ref:
+        raise ValueError("يجب توفير range لتلوين النطاق.")
+    fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+    for row in ws[range_ref]:
+        for cell in row:
+            cell.fill = fill
+    log.append(f"تم تلوين النطاق {range_ref} باللون {fill_color}.")
+
+def op_border_range(wb, ws, op, log):
+    range_ref = op.get("range")
+    border_style = op.get("border_style", "thin")
+    border_color = op.get("border_color", "000000")
+    if not range_ref:
+        raise ValueError("يجب توفير range لإضافة حدود للنطاق.")
+    border = Border(
+        left=Side(style=border_style, color=border_color),
+        right=Side(style=border_style, color=border_color),
+        top=Side(style=border_style, color=border_color),
+        bottom=Side(style=border_style, color=border_color),
+    )
+    for row in ws[range_ref]:
+        for cell in row:
+            cell.border = border
+    log.append(f"تم إضافة حدود للنطاق {range_ref}.")
+
+def op_fill_range(wb, ws, op, log):
+    range_ref = op.get("range")
+    value = op.get("value", "")
+    if not range_ref:
+        raise ValueError("يجب توفير range لتعبئة النطاق.")
+    for row in ws[range_ref]:
+        for cell in row:
+            cell.value = value
+    log.append(f"تم تعبئة النطاق {range_ref} بالقيمة '{value}'.")
+
+# =========================
+# تنسيق جداول بسيطة
+# =========================
+
+def op_format_table_simple(wb, ws, op, log):
+    range_ref = op.get("range")
+    header_row = op.get("header_row", None)
+    if not range_ref:
+        raise ValueError("يجب توفير range لتنسيق الجدول.")
+    rows = list(ws[range_ref])
+    if not rows:
+        return
+    if header_row is None:
+        header_row = rows[0][0].row
+
+    # رؤوس غامقة وخلفية خفيفة
+    header_fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
+    header_font = Font(bold=True)
+    for cell in ws[header_row]:
+        cell.fill = header_fill
+        cell.font = header_font
+
+    # صفوف متناوبة
+    alt_fill = PatternFill(start_color="F7F7F7", end_color="F7F7F7", fill_type="solid")
+    for row in rows[1:]:
+        if row[0].row % 2 == 0:
+            for cell in row:
+                cell.fill = alt_fill
+
+    log.append(f"تم تنسيق الجدول في النطاق {range_ref} بشكل بسيط.")
+
+# =========================
+# عمليات تحليلية عبر pandas (Pivot / GroupBy / Summary)
+# =========================
+
+def op_pandas_pivot_to_sheet(wb, ws, op, log):
+    """
+    قراءة الشيت الحالي إلى pandas، تنفيذ Pivot أو GroupBy،
+    ثم كتابة النتيجة في شيت جديد.
+    """
+    sheet_name = op.get("sheet") or ws.title
+    index_cols = op.get("index") or []
+    value_cols = op.get("values") or []
+    aggfunc = op.get("aggfunc", "sum")
+    new_sheet_name = op.get("target_sheet", "Pivot_Result")
+
+    # قراءة الشيت إلى DataFrame
+    data = ws.values
+    cols = next(data)
+    df = pd.DataFrame(data, columns=cols)
+
+    if not index_cols or not value_cols:
+        raise ValueError("يجب توفير index و values لتنفيذ Pivot عبر pandas.")
+
+    pivot_df = pd.pivot_table(df, index=index_cols, values=value_cols, aggfunc=aggfunc)
+
+    # إنشاء شيت جديد وكتابة النتيجة
+    if new_sheet_name in wb.sheetnames:
+        target_ws = wb[new_sheet_name]
+        # مسح محتواه
+        for row in target_ws[target_ws.dimensions]:
+            for cell in row:
+                cell.value = None
+    else:
+        target_ws = wb.create_sheet(title=new_sheet_name)
+
+    for r_idx, row in enumerate(pivot_df.reset_index().itertuples(index=False), start=1):
+        for c_idx, value in enumerate(row, start=1):
+            target_ws.cell(row=r_idx, column=c_idx, value=value)
+
+    log.append(f"تم تنفيذ Pivot عبر pandas من الشيت '{sheet_name}' إلى الشيت '{new_sheet_name}'.")
 
 # =========================
 # تنفيذ كود ديناميكي
@@ -283,6 +393,15 @@ OPERATION_MAP = {
 
     # نطاقات
     "clear_range": op_clear_range,
+    "color_range": op_color_range,
+    "border_range": op_border_range,
+    "fill_range": op_fill_range,
+
+    # تنسيق جدول بسيط
+    "format_table_simple": op_format_table_simple,
+
+    # تحليل عبر pandas
+    "pandas_pivot_to_sheet": op_pandas_pivot_to_sheet,
 }
 
 # =========================
@@ -307,7 +426,6 @@ def execute_operations(file_path, operations):
             if not handler:
                 raise ValueError(f"نوع العملية غير معروف أو غير مدعوم: {op_type}")
 
-            # بعض العمليات قد تغيّر الشيت النشط (مثل sheet_select / sheet_create / sheet_delete)
             result = handler(wb, ws, op, execution_log)
             if isinstance(result, openpyxl.worksheet.worksheet.Worksheet):
                 ws = result  # تحديث الشيت النشط إذا رجعت العملية شيت جديد
