@@ -1,12 +1,14 @@
-// excel/core/ExcelTableDetector.js
-import ExcelJS from 'exceljs';
+/**
+ * excel/core/ExcelTableDetector.js – Sovereign Table Detector
+ * كشف الهيدر والبيانات داخل أي ورقة ExcelJS بطريقة سيادية موحدة.
+ */
 
 export class ExcelTableDetector {
   /**
-   * يكتشف الجدول الرئيسي في أي ورقة:
-   * - يبحث عن صف يبدو كـ "هيدر" (عدة خلايا نصية متجاورة)
-   * - يكتشف أول صف بيانات بعده
-   * - يحدد آخر صف بيانات بناءً على الصفوف غير الفارغة
+   * يكتشف الجدول الرئيسي داخل ورقة ExcelJS:
+   * - يحدد صف الهيدر
+   * - يحدد أول صف بيانات
+   * - يحدد آخر صف بيانات
    */
   static detectMainTable(worksheet) {
     const rowCount = worksheet.rowCount || 0;
@@ -15,14 +17,14 @@ export class ExcelTableDetector {
     let dataStartRow = null;
     let dataEndRow = null;
 
-    // 1) اكتشاف صف الهيدر: صف يحتوي على 3+ خلايا نصية غير فارغة
+    // 🔍 1) اكتشاف صف الهيدر: صف يحتوي على 3+ خلايا نصية
     for (let r = 1; r <= rowCount; r++) {
       const row = worksheet.getRow(r);
       let textCells = 0;
 
       row.eachCell((cell) => {
         const v = cell.value;
-        if (typeof v === 'string' && v.trim().length > 0) {
+        if (typeof v === "string" && v.trim().length > 0) {
           textCells++;
         }
       });
@@ -33,11 +35,9 @@ export class ExcelTableDetector {
       }
     }
 
-    if (!headerRowNum) {
-      headerRowNum = 1;
-    }
+    if (!headerRowNum) headerRowNum = 1;
 
-    // 2) أول صف بيانات بعد الهيدر
+    // 🔍 2) أول صف بيانات بعد الهيدر
     for (let r = headerRowNum + 1; r <= rowCount; r++) {
       const row = worksheet.getRow(r);
       let nonEmpty = 0;
@@ -61,8 +61,9 @@ export class ExcelTableDetector {
       return { headerRowNum, dataStartRow, dataEndRow };
     }
 
-    // 3) آخر صف بيانات: آخر صف غير فارغ بعد بداية البيانات
+    // 🔍 3) آخر صف بيانات غير فارغ
     let lastDataRow = dataStartRow;
+
     for (let r = dataStartRow; r <= rowCount; r++) {
       const row = worksheet.getRow(r);
       let nonEmpty = 0;
@@ -85,14 +86,14 @@ export class ExcelTableDetector {
   }
 
   /**
-   * يكتشف رقم عمود بناءً على نص الهيدر في صف الهيدر.
+   * 🔍 يكتشف رقم عمود بناءً على نص الهيدر
    */
   static findColumnByHeader(worksheet, headerRowNum, columnName) {
     const headerRow = worksheet.getRow(headerRowNum);
     let foundCol = null;
 
     headerRow.eachCell((cell, colNumber) => {
-      const cellVal = String(cell.value || '').trim();
+      const cellVal = String(cell.value || "").trim();
       if (cellVal === String(columnName).trim()) {
         foundCol = colNumber;
       }
@@ -100,4 +101,4 @@ export class ExcelTableDetector {
 
     return foundCol;
   }
-  }
+          }
