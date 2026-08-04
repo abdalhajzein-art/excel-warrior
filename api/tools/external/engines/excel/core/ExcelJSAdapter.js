@@ -152,7 +152,7 @@ export class ExcelJSAdapter {
       const ops = params.operations || [];
       const executionLogs = [];
 
-      // التحقق مما إذا كان الطلب يتضمن إضافة عمود لإن تطبيق استراتيجية إعادة البناء الهيكلي
+      // التحقق مما إذا كان الطلب يتضمن إضافة عمود لتطبيق استراتيجية إعادة البناء الهيكلي
       const hasStructuralOps = ops.some(op => op.type === "add_column" || op.type === "delete_column");
 
       if (hasStructuralOps) {
@@ -195,6 +195,9 @@ export class ExcelJSAdapter {
    * استراتيجية إعادة البناء الهيكلي للأعمدة بطريقة نظيفة واحترافية 100%
    */
   async reconstructSheetWithStructuralOps(ws, ops) {
+    const sheetName = ws.name;
+    const workbook = ws.workbook;
+
     // 1. استخراج جميع البيانات الحالية في ورقة العمل كـ مصفوفة ثنائية الأبعاد
     const sheetData = [];
     ws.eachRow({ includeEmpty: true }, (row) => {
@@ -243,19 +246,18 @@ export class ExcelJSAdapter {
     // تحديث صف الرأس في البيانات المستخرجة
     sheetData[0] = modifiedHeaders;
 
-    // 3. مسح ورقة العمل تماماً وإعادة بنائها من الصفر ببيانات نظيفة ومثالية
-    ws.rowCount = 0; // مسح كامل للصفوف القديمة لمنع التداخل
+    // 3. إعادة إنشاء ورقة العمل نظيفة بالكامل لتجنب قيود الـ Getter
+    workbook.removeWorksheet(ws.id);
+    const newWs = workbook.addWorksheet(sheetName);
 
-    sheetData.forEach((rowVals, rowIndex) => {
-      const r = ws.getRow(rowIndex + 1);
-      r.values = ["", ...rowVals]; // إضافة العنصر الفارغ في Index 0 الخاص بـ ExcelJS لتطابق المحاذاة
-      r.commit();
+    sheetData.forEach((rowVals) => {
+      newWs.addRow(["", ...rowVals]); // إضافة العنصر الفارغ في Index 0 الخاص بـ ExcelJS لتطابق المحاذاة
     });
 
-    // تنسيق صف الرأس بشكل ملكي (تنسيق احترافي موحد)
-    const headerRow = ws.getRow(1);
+    // تنسيق صف الرأس بشكل ملكي واحترافي
+    const headerRow = newWs.getRow(1);
     headerRow.font = { name: "Arial", bold: true, color: { argb: "FFFFFF" } };
-    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "1F4E78" } }; // لون احترافي أنيق
+    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "1F4E78" } };
     headerRow.alignment = { vertical: "middle", horizontal: "center" };
 
     return true;
