@@ -1,77 +1,88 @@
 /**
- * excel/modifiers/ExcelModifier.js – Sovereign Excel Modifier (Sovereign Edition)
- * معدِّل سيادي واعي للسياق، متوافق 100٪ مع ExcelAdapter السيادي و ExcelJSAdapter.
+ * api/tools/external/engines/excel/modifiers/ExcelModifier.js
+ * Sovereign Excel Modifier (Enterprise Edition - Alatheer AI Suite)
+ * معدِّل سيادي خالي من الحالة (Stateless)، يدعم التزامن (Concurrency)، والتراجع التلقائي (Auto-Rollback).
  */
 
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { FileUtils } from "../utils/FileUtils.js";
 import { ExcelTableDetector } from "../core/ExcelTableDetector.js";
 
 export class ExcelModifier {
   constructor(adapter) {
-    this.adapter = adapter;      // يفضّل يكون ExcelAdapter السيادي
-    this.backupPath = null;
+    this.adapter = adapter; // المحرك السيادي المحقون (ExcelJSAdapter أو غيره)
   }
 
   /* ============================================================
-     ✏️ تعديل مع نسخة احتياطية + وعي سياقي
+     ✏️ تعديل متزامن مع نظام المعاملات والتراجع التلقائي
      ============================================================ */
   async modifyWithBackup(filePath, operations, params = {}) {
     const resolvedPath = this.resolveFilePath(filePath);
+    const transactionId = crypto.randomUUID(); // توليد هوية فريدة لهذه العملية
 
-    // 🔐 إنشاء نسخة احتياطية سيادية
-    this.backupPath = await this.createBackup(resolvedPath);
+    // 🔐 إنشاء نسخة احتياطية سيادية مرتبطة بالمعاملة الحالية
+    const backupPath = await this.createBackup(resolvedPath, transactionId);
 
-    // 📖 قراءة سياقية قبل التعديل (من خلال الـ adapter السيادي)
-    const core = await this.adapter.read(resolvedPath, params);
-    const mainSheet = core.data?.[0] || { data: [] };
+    try {
+      // 📖 قراءة سياقية قبل التعديل
+      const core = await this.adapter.read(resolvedPath, params);
+      const mainSheet = core.data?.[0] || { data: [] };
 
-    // 🧩 كشف الجدول الرئيسي (هيدر + بيانات + نطاق)
-    const tableInfo = ExcelTableDetector.detectMainTable(mainSheet) || {};
-    const headers = (mainSheet.data?.[0] || []).map(v => String(v || "").trim());
+      // 🧩 استخراج الميتاداتا والسياق
+      const tableInfo = ExcelTableDetector.detectMainTable(mainSheet) || {};
+      const headers = (mainSheet.data?.[0] || []).map(v => String(v || "").trim());
 
-    const context = {
-      core,
-      sheet: mainSheet,
-      table: tableInfo,
-      headers
-    };
-
-    // 🧠 إثراء العمليات لتكون واعية للسياق
-    const enrichedOperations = this.enrichOperations(operations || [], context);
-
-    // 🧱 ترتيب العمليات حسب الأولوية السيادية
-    const sortedOperations = this.orderOperations(enrichedOperations);
-
-    // 🚀 تنفيذ التعديل عبر محرك الكتابة (ExcelJSAdapter عبر ExcelAdapter)
-    const result = await this.adapter.modify(resolvedPath, {
-      operations: sortedOperations,
-      ...params
-    });
-
-    return {
-      ...result,
-      backupPath: this.backupPath,
-      operationsApplied: sortedOperations.length,
-      contextUsed: {
+      const context = {
+        core,
+        sheet: mainSheet,
         table: tableInfo,
-        headers
-      }
-    };
+        headers,
+        transactionId
+      };
+
+      // 🧠 إثراء العمليات وتأمين المراسي الديناميكية
+      const enrichedOperations = this.enrichOperations(operations || [], context);
+
+      // 🧱 ترتيب صارم للعمليات لتجنب انهيار المعادلات
+      const sortedOperations = this.orderOperations(enrichedOperations);
+
+      // 🚀 تنفيذ التعديل عبر محرك الكتابة
+      const result = await this.adapter.modify(resolvedPath, {
+        operations: sortedOperations,
+        transactionId,
+        ...params
+      });
+
+      return {
+        ...result,
+        transactionId,
+        backupPath, // نعيد المسار للمنسق (Orchestrator) ليديره في الجلسة
+        operationsApplied: sortedOperations.length,
+        contextUsed: {
+          table: tableInfo,
+          headers
+        }
+      };
+    } catch (error) {
+      // 🛡️ التراجع التلقائي (Auto-Rollback) في حال فشل أي عملية برمجية
+      console.error(`❌ [ExcelModifier] فشل في المعاملة ${transactionId}. جاري استعادة الملف الأصلي...`);
+      await this.undo(backupPath, resolvedPath);
+      throw new Error(`تعذر تطبيق التعديلات وتم التراجع بأمان للحفاظ على الملف. السبب: ${error.message}`);
+    }
   }
 
   /* ============================================================
-     📁 حل مسار الملف سيادياً
+     📁 حل مسار الملف سيادياً (يدعم بيئات Railway)
      ============================================================ */
   resolveFilePath(filePath) {
     if (!filePath) throw new Error("مسار الملف غير مدخل أو فارغ.");
-
     if (fs.existsSync(filePath)) return filePath;
 
     const fileName = path.basename(filePath);
     const searchDirs = [
-      path.resolve(process.cwd(), "persistent_uploads"),
+      path.resolve(process.cwd(), "persistent_uploads"), // Railway Volume
       path.resolve(process.cwd(), "uploads"),
       process.cwd()
     ];
@@ -79,47 +90,52 @@ export class ExcelModifier {
     for (const dir of searchDirs) {
       const candidate = path.resolve(dir, fileName);
       if (fs.existsSync(candidate)) {
-        console.log(`📁 [ExcelModifier] تم العثور على الملف في: ${candidate}`);
+        console.log(`📁 [ExcelModifier] تم تأمين الملف في: ${candidate}`);
         return candidate;
       }
     }
 
-    throw new Error(`الملف غير موجود على القرص: ${filePath}`);
+    throw new Error(`الملف غير موجود على القرص أو التخزين المستدام: ${filePath}`);
   }
 
   /* ============================================================
-     🔐 نسخة احتياطية سيادية
+     🔐 إنشاء نسخة احتياطية آمنة (Concurrency Safe)
      ============================================================ */
-  async createBackup(filePath) {
-    const backupPath = FileUtils.getTempPath("backup");
+  async createBackup(filePath, transactionId) {
+    // نستخدم Transaction ID لضمان عدم تداخل التعديلات المتزامنة
+    const backupFileName = `backup_${transactionId}_${path.basename(filePath)}`;
+    const backupPath = path.resolve(FileUtils.getTempDir(), backupFileName);
+    
     const data = await FileUtils.readFile(filePath);
     await FileUtils.writeFile(backupPath, data);
+    
     return backupPath;
   }
 
   /* ============================================================
-     ↩️ تراجع باستخدام النسخة الاحتياطية
+     ↩️ تراجع واستعادة (Rollback)
      ============================================================ */
-  async undo(targetFilePath) {
-    if (!this.backupPath || !fs.existsSync(this.backupPath)) {
-      throw new Error("لا توجد نسخة احتياطية متاحة للتراجع.");
+  async undo(backupPath, targetFilePath) {
+    if (!backupPath || !fs.existsSync(backupPath)) {
+      throw new Error("لا توجد نسخة احتياطية متاحة لإجراء التراجع.");
     }
 
-    const target = targetFilePath
-      ? this.resolveFilePath(targetFilePath)
-      : this.backupPath;
+    if (!targetFilePath) throw new Error("يجب تحديد مسار الملف الهدف للاستعادة.");
 
-    const backupData = await FileUtils.readFile(this.backupPath);
+    const target = this.resolveFilePath(targetFilePath);
+    const backupData = await FileUtils.readFile(backupPath);
+    
+    // استعادة الملف
     await FileUtils.writeFile(target, backupData);
 
     return {
       success: true,
-      message: "تم التراجع عن التعديل واستعادة النسخة السابقة بنجاح."
+      message: "تم استعادة النسخة السابقة بنجاح وحماية البيانات."
     };
   }
 
   /* ============================================================
-     🧠 إثراء العمليات بالسياق (هيدر + جدول + نطاق)
+     🧠 إثراء العمليات (Dynamic Anchors & Context)
      ============================================================ */
   enrichOperations(operations, context) {
     const { table, headers } = context;
@@ -128,21 +144,24 @@ export class ExcelModifier {
     for (const op of operations) {
       const copy = { ...op };
 
-      // 📐 إذا في format_table بدون نطاق → استخدم نطاق الجدول السيادي
+      // 1. تحديد النطاق الديناميكي للجداول
       if (copy.type === "format_table" && !copy.range && table?.range) {
         copy.range = table.range;
       }
 
-      // 🧩 إذا في add_row بدون موقع → أضف بعد آخر صف بيانات
+      // 2. ضمان الإضافة بعد آخر صف بيانات حقيقي
       if (copy.type === "add_row" && !copy.rowIndex && table?.dataEndRow) {
         copy.rowIndex = table.dataEndRow + 1;
       }
 
-      // 🧩 إذا في add_column مع afterHeader → حوّلها إلى after (اسم الهيدر)
+      // 3. تأمين المراسي الديناميكية لتجنب إزاحة الأعمدة (Index Shifting)
       if (copy.type === "add_column" && copy.afterHeader && headers?.length) {
-        const idx = headers.indexOf(String(copy.afterHeader).trim());
-        if (idx !== -1) {
-          copy.after = headers[idx];
+        const targetHeader = String(copy.afterHeader).trim().toLowerCase();
+        const headerExists = headers.some(h => h.toLowerCase() === targetHeader);
+        
+        if (headerExists) {
+          // نحتفظ بالاسم كمرجع ديناميكي للمحرك السفلي لتحديد الموقع وقت التنفيذ
+          copy.after = copy.afterHeader; 
         }
       }
 
@@ -153,24 +172,26 @@ export class ExcelModifier {
   }
 
   /* ============================================================
-     🧱 ترتيب العمليات حسب الأولوية السيادية
+     🧱 ترتيب العمليات (Domino Effect Prevention)
      ============================================================ */
   orderOperations(operations) {
     const priority = {
+      // 1. تغيير الهيكل (الأولوية القصوى لتثبيت الإحداثيات الجديدة)
       add_column: 1,
       delete_column: 1,
-
       add_row: 2,
+      delete_row: 2,
 
-      add_validation: 3,
-      add_style: 3,
+      // 2. تعبئة البيانات وتعديلها
+      update_cell: 3,
+      add_formula: 4, // المعادلات تأتي بعد الهيكل لضمان صحة المراجع
 
-      add_formula: 4,
-
-      update_cell: 5,
-
+      // 3. التنسيق والقيود (تعمل على الهيكل النهائي)
+      add_validation: 5,
+      add_style: 5,
       format_table: 6,
-
+      
+      // 4. التحليلات
       pivot: 7
     };
 
