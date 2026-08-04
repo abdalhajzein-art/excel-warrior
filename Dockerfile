@@ -1,7 +1,7 @@
 # بيئة Node حديثة
 FROM node:22
 
-# تثبيت أدوات النظام + Python 3 + pip ومكتبات البيانات الكبرى (Pandas, Openpyxl)
+# تثبيت أدوات النظام الأساسية ومعالجة المستندات
 RUN apt-get update && apt-get install -y \
     libreoffice \
     ghostscript \
@@ -10,8 +10,6 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     python3 \
     python3-pip \
-    python3-pandas \
-    python3-openpyxl \
     && rm -rf /var/lib/apt/lists/*
 
 # مجلد العمل الرئيسي
@@ -21,7 +19,11 @@ WORKDIR /app
 COPY package*.json /app/
 RUN npm install
 
-# 2. نسخ ملفات التطبيق
+# 2. نسخ متطلبات بايثون وتثبيتها بشكل آمن ومباشر
+COPY requirements.txt /app/
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+
+# 3. نسخ ملفات التطبيق بالكامل
 COPY api /app/api
 COPY js /app/js
 COPY index.html /app/index.html
