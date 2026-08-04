@@ -4,6 +4,8 @@
  * ✅ دعم openpyxl لتنفيذ عمليات التعديل المتقدمة.
  * ✅ تحسين سرعة المعاينة (قراءة أول 10 صفوف فقط).
  * ✅ إصلاح مشكلة Template Literal و StyleProxy.
+ * ✅ إصلاح مشكلة autofit_columns مع MergedCells
+ * ✅ إصلاح مشكلة add_validation بدون target_col
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -19,7 +21,6 @@ const execAsync = promisify(exec);
 
 /**
  * ✅ تنفيذ عمليات على ملف Excel عبر Python (openpyxl)
- * تم إصلاح مشكلة Template Literal و StyleProxy
  */
 async function executeWithPython(filePath, operations) {
     try {
@@ -49,6 +50,8 @@ async function executeWithPython(filePath, operations) {
             '            headers[str(val).strip()] = col',
             ''
         ];
+
+        let lastAddedCol = null;
 
         for (const op of operations) {
             switch (op.type) {
@@ -94,6 +97,8 @@ async function executeWithPython(filePath, operations) {
                     pythonLines.push(`                )`);
                     pythonLines.push(`            if source_cell.number_format:`);
                     pythonLines.push(`                target_cell.number_format = source_cell.number_format`);
+                    pythonLines.push(`    last_added_col = target_col`);
+                    lastAddedCol = true;
                     break;
                 }
                 case 'add_validation': {
@@ -104,27 +109,32 @@ async function executeWithPython(filePath, operations) {
                     pythonLines.push(`    ws.add_data_validation(dv)`);
                     if (address) {
                         pythonLines.push(`    dv.add('${address}')`);
+                    } else if (lastAddedCol) {
+                        pythonLines.push(`    col_letter = get_column_letter(last_added_col)`);
+                        pythonLines.push(`    dv.add(f"{col_letter}{header_row + 1}:{col_letter}{ws.max_row}")`);
                     } else {
-                        pythonLines.push(`    if target_col:`);
-                        pythonLines.push(`        col_letter = get_column_letter(target_col)`);
-                        pythonLines.push(`        dv.add(f"{col_letter}{header_row + 1}:{col_letter}{ws.max_row}")`);
+                        pythonLines.push(`    col_letter = get_column_letter(ws.max_column)`);
+                        pythonLines.push(`    dv.add(f"{col_letter}{header_row + 1}:{col_letter}{ws.max_row}")`);
                     }
                     break;
                 }
-                case 'autofit_columns':
-                    pythonLines.push(`    # ضبط عرض الأعمدة تلقائياً`);
+                case 'autofit_columns': {
+                    pythonLines.push(`    # ضبط عرض الأعمدة تلقائياً (مع دعم MergedCells)`);
                     pythonLines.push(`    for col in ws.columns:`);
+                    pythonLines.push(`        if not col:`);
+                    pythonLines.push(`            continue`);
                     pythonLines.push(`        max_length = 0`);
-                    pythonLines.push(`        column = col[0].column_letter`);
                     pythonLines.push(`        for cell in col:`);
                     pythonLines.push(`            try:`);
-                    pythonLines.push(`                if len(str(cell.value)) > max_length:`);
+                    pythonLines.push(`                if cell.value and len(str(cell.value)) > max_length:`);
                     pythonLines.push(`                    max_length = len(str(cell.value))`);
                     pythonLines.push(`            except:`);
                     pythonLines.push(`                pass`);
-                    pythonLines.push(`        adjusted_width = (max_length + 2)`);
-                    pythonLines.push(`        ws.column_dimensions[column].width = min(adjusted_width, 50)`);
+                    pythonLines.push(`        if max_length > 0:`);
+                    pythonLines.push(`            adjusted_width = min(max_length + 2, 50)`);
+                    pythonLines.push(`            ws.column_dimensions[get_column_letter(col[0].column)].width = adjusted_width`);
                     break;
+                }
                 default:
                     pythonLines.push(`    # عملية غير مدعومة: ${op.type}`);
             }
