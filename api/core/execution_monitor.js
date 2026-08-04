@@ -1,6 +1,7 @@
 /**
  * api/core/execution_monitor.js – Sovereign Execution & Token Audit Guard (Advanced Edition)
  * ✅ مراقب سيادي متقدم يتتبع استهلاك التوكنز ويعرض المتبقي
+ * ✅ إصلاح مشكلة isLocal الافتراضية
  */
 
 import fs from 'fs';
@@ -22,7 +23,7 @@ const USAGE_FILE = path.join(__dirname, '../../.token-usage.json');
 // ============================================================
 
 function getToday() {
-    return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    return new Date().toISOString().split('T')[0];
 }
 
 function loadUsage() {
@@ -72,7 +73,6 @@ function updateUsage(usage, action, tokens, target) {
         timestamp: new Date().toISOString()
     });
     
-    // الاحتفاظ بآخر 100 عملية فقط
     if (usage[today].actions.length > 100) {
         usage[today].actions = usage[today].actions.slice(-100);
     }
@@ -81,14 +81,17 @@ function updateUsage(usage, action, tokens, target) {
 }
 
 // ============================================================
-// 3. الوظيفة الرئيسية للتدقيق
+// 3. الوظيفة الرئيسية للتدقيق (مع إصلاح isLocal)
 // ============================================================
 
-export function auditExecution({ action, target = "Unknown File", isLocal = true, usage = null }) {
+export function auditExecution({ action, target = "Unknown File", isLocal = null, usage = null }) {
     const timestamp = new Date().toLocaleTimeString("en-GB");
     
+    // ✅ تحديد ما إذا كانت العملية محلية بناءً على وجود usage
+    const isLocalExecution = isLocal !== null ? isLocal : !usage;
+    
     // 🔹 العمليات المحلية (بدون توكنز)
-    if (isLocal) {
+    if (isLocalExecution) {
         console.log(`\x1b[32m[ALATHEER AUDIT @ ${timestamp}]\x1b[0m 🛡️ [LOCAL SOVEREIGN EXECUTION]`);
         console.log(`   ├─ Target File : \x1b[35m${target}\x1b[0m`);
         console.log(`   ├─ Action      : \x1b[36m${action}\x1b[0m`);
@@ -99,18 +102,15 @@ export function auditExecution({ action, target = "Unknown File", isLocal = true
     // 🔸 عمليات LLM (تستهلك توكنز)
     const tokens = usage?.total_tokens || usage?.totalTokenCount || 0;
     
-    // تحديث سجل الاستهلاك
     let usageData = loadUsage();
     usageData = updateUsage(usageData, action, tokens, target);
     saveUsage(usageData);
     
-    // حساب الإحصائيات
     const today = getToday();
     const dailyStats = usageData[today] || { totalTokens: 0, requests: 0 };
     const remaining = DAILY_LIMIT - dailyStats.totalTokens;
     const percentage = ((dailyStats.totalTokens / DAILY_LIMIT) * 100).toFixed(1);
     
-    // عرض تقرير الاستهلاك
     console.log(`\x1b[33m[ALATHEER AUDIT @ ${timestamp}]\x1b[0m 🧠 [LLM INFERENCE TRIGGERED]`);
     console.log(`   ├─ Target File : \x1b[35m${target}\x1b[0m`);
     console.log(`   ├─ Action      : \x1b[36m${action}\x1b[0m`);
@@ -119,14 +119,13 @@ export function auditExecution({ action, target = "Unknown File", isLocal = true
     console.log(`   ├─ Requests    : \x1b[33m${dailyStats.requests}\x1b[0m`);
     console.log(`   └─ Remaining   : \x1b[${remaining < 10000 ? '31' : '32'}m${remaining}\x1b[0m Tokens${remaining < 10000 ? ' ⚠️' : ''}\n`);
     
-    // تحذير عند اقتراب الحد
     if (remaining < 10000) {
-        console.warn(`⚠️ [Token Alert] تبقى فقط ${remaining} توكن! قم بتقليل الاستخدام أو الترقية لحساب مدفوع.`);
+        console.warn(`⚠️ [Token Alert] تبقى فقط ${remaining} توكن!`);
     }
 }
 
 // ============================================================
-// 4. دوال مساعدة للاستعلام عن الاستهلاك
+// 4. دوال مساعدة
 // ============================================================
 
 export function getTokenUsage() {
@@ -164,10 +163,6 @@ export function getTokenHistory(days = 7) {
     return history;
 }
 
-// ============================================================
-// 5. عرض التقرير عند الطلب
-// ============================================================
-
 export function printTokenReport() {
     const stats = getTokenUsage();
     console.log('\n📊 [Token Usage Report]');
@@ -187,10 +182,6 @@ export function printTokenReport() {
     }
 }
 
-// ============================================================
-// 6. إعادة ضبط الاستهلاك (للاختبار)
-// ============================================================
-
 export function resetTokenUsage() {
     try {
         if (fs.existsSync(USAGE_FILE)) {
@@ -202,11 +193,6 @@ export function resetTokenUsage() {
     }
 }
 
-// ============================================================
-// 7. تنفيذ التقرير عند التشغيل المباشر
-// ============================================================
-
 if (import.meta.url === `file://${process.argv[1]}`) {
-    // إذا تم تشغيل الملف مباشرة، اعرض التقرير
     printTokenReport();
         }
