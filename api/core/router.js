@@ -1,25 +1,30 @@
-// api/core/router.js – Sovereign Router (Advanced Edition)
-// يعمل كبوابة سيادية ذكية: يراقب، يحمي من الانهيار، ويوجّه للعقل الأعلى
+// api/core/router.js – Sovereign Router (Excel Warrior Edition)
+// يربط العقل السيادي مع محرك Excel (الجسر) ويضمن الاستقرار الكامل
 
-import globalOrchestrator from "./conversation_orchestrator.js"; // أو conversation_orchestrator.js حسب تسميتك
+import globalOrchestrator from "./conversation_orchestrator.js";
 import memory from "./memory.js";
 import executionMonitor from "./execution_monitor.js";
 import errorGuard from "./error_guard.js";
+import { spawn } from "child_process";
+import path from "path";
 
 export default {
   async route(sessionId, message, ctx = {}) {
-    // 1. بدء تتبع العملية (تسجيل توقيت البدء لمراقبة الأداء)
-    const transactionId = executionMonitor.startTransaction('Router_Gateway');
-    
+    const transactionId = executionMonitor.startTransaction("Router_Gateway");
+
     try {
-      // 2. ضمان وجود جلسة صحيحة أو إنشائها إن لم تكن موجودة
-      const session = memory.getSession(sessionId) || memory.createSession(sessionId);
+      // 1) ضمان وجود جلسة
+      const session =
+        memory.getSession(sessionId) || memory.createSession(sessionId);
 
-      // 3. تحليل أولي سريع (هل يوجد ملفات؟ هل هو استعلام عن بيانات؟)
       const hasFiles = ctx.files && ctx.files.length > 0;
-      executionMonitor.log(transactionId, `[Incoming Request] Session: ${sessionId} | Files Attached: ${hasFiles}`);
 
-      // 4. إثراء السياق (Enriching Context) ليكون جاهزاً للعقل السيادي
+      executionMonitor.log(
+        transactionId,
+        `[Router] Incoming Request | Session: ${sessionId} | Files: ${hasFiles}`
+      );
+
+      // 2) بناء السياق للعقل السيادي
       const context = {
         ...ctx,
         message,
@@ -27,42 +32,110 @@ export default {
         transactionId,
         hasFiles,
         timestamp: Date.now(),
-        // إعطاء العقل الأعلى مرجعاً عن الذاكرة المرتبطة
-        memoryState: session.memoryState || 'active' 
+        memoryState: session.memoryState || "active",
       };
 
-      // 5. التوجيه المباشر للعقل السيادي الأعلى
+      // 3) العقل السيادي يولّد خطة العمليات
       const result = await globalOrchestrator(sessionId, message, context);
 
-      // 6. إنهاء التتبع وتغليف الرد النهائي بنجاح
-      executionMonitor.endTransaction(transactionId, 'Success');
-      
+      // إذا العقل السيادي قرر أن الجسر يجب أن يعمل
+      if (result?.excelOperations) {
+        const operations = result.excelOperations;
+        const filePath = ctx.filePath;
+
+        if (!filePath) {
+          throw new Error(
+            "لم يتم تمرير مسار الملف إلى الجسر. يجب توفير ctx.filePath."
+          );
+        }
+
+        executionMonitor.log(
+          transactionId,
+          `[Router] Executing Excel Operations (${operations.length})`
+        );
+
+        // 4) تنفيذ الجسر عبر Python
+        const bridgePath = path.resolve("api/core/excel_bridge.py");
+
+        const python = spawn("python3", [
+          bridgePath,
+          filePath,
+          JSON.stringify(operations),
+        ]);
+
+        let output = "";
+        let errorOutput = "";
+
+        python.stdout.on("data", (data) => {
+          output += data.toString();
+        });
+
+        python.stderr.on("data", (data) => {
+          errorOutput += data.toString();
+        });
+
+        const bridgeResult = await new Promise((resolve) => {
+          python.on("close", () => {
+            try {
+              const parsed = JSON.parse(output);
+              resolve(parsed);
+            } catch (err) {
+              resolve({
+                success: false,
+                error: "فشل تحليل نتيجة الجسر.",
+                raw: output,
+                stderr: errorOutput,
+              });
+            }
+          });
+        });
+
+        executionMonitor.log(
+          transactionId,
+          `[Router] Bridge Execution Completed`
+        );
+
+        return {
+          ok: true,
+          output: result.reply,
+          excel: bridgeResult,
+          metadata: {
+            executionTime: executionMonitor.getDuration(transactionId),
+            operationsCount: operations.length,
+          },
+        };
+      }
+
+      // 5) إذا ما في عمليات Excel
+      executionMonitor.endTransaction(transactionId, "Success");
+
       return {
         ok: true,
         output: result.reply,
         raw: result,
         metadata: {
-           executionTime: executionMonitor.getDuration(transactionId),
-           filesProcessed: hasFiles ? ctx.files.length : 0
-        }
+          executionTime: executionMonitor.getDuration(transactionId),
+        },
       };
-
     } catch (err) {
-      // 7. التدخل السيادي لاحتواء الأخطاء (Self-Healing Fallback)
       console.error(`🔥 [Router Critical Error] Session: ${sessionId}:`, err);
-      
-      // درع الأخطاء يقوم بتقييم الخطأ ومحاولة التعافي أو توليد رسالة لطيفة للمستخدم
-      const recoveryPlan = await errorGuard.handleError(err, 'Router_Gateway', { sessionId, message });
 
-      executionMonitor.endTransaction(transactionId, 'Failed');
+      const recoveryPlan = await errorGuard.handleError(
+        err,
+        "Router_Gateway",
+        { sessionId, message }
+      );
+
+      executionMonitor.endTransaction(transactionId, "Failed");
 
       return {
         ok: false,
-        // الرد المهذب بدلاً من الأخطاء التقنية المزعجة
-        output: recoveryPlan.userMessage || "⚠️ واجه 'الأثير' تحدياً غير متوقع أثناء التوجيه. جاري إعادة ضبط المسار بأمان.",
+        output:
+          recoveryPlan.userMessage ||
+          "⚠️ حدث خلل أثناء التوجيه، تم تفعيل بروتوكول الحماية.",
         error: err.message,
-        recoveryStrategy: recoveryPlan.strategy || 'unknown'
+        recoveryStrategy: recoveryPlan.strategy || "unknown",
       };
     }
-  }
+  },
 };
