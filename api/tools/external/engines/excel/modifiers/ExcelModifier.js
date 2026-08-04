@@ -1,190 +1,111 @@
 /**
- * excel/modifiers/ExcelModifier.js – التعديل السيادي المتقدم (محدث بحماية ضد ضياع الملفات ومسارات persistent_uploads)
- * 🔥 يدعم: عمليات متعددة، تراجع حقيقي، نسخ احتياطي، تنفيذ ذكي مرتب بالأولويات
+ * excel/modifiers/ExcelModifier.js – Sovereign Excel Modifier
+ * تعديل سيادي متقدم مع نسخ احتياطي وتراجع، متوافق مع ExcelAdapter/ExcelJSAdapter.
  */
 
-import fs from 'fs';
-import path from 'path';
-import { ErrorHandler } from '../utils/ErrorHandler.js';
-import { FileUtils } from '../utils/FileUtils.js';
-import { OPERATION_TYPES } from '../types/ExcelTypes.js';
+import fs from "fs";
+import path from "path";
+import { FileUtils } from "../utils/FileUtils.js";
 
 export class ExcelModifier {
-    constructor(adapter) {
-        this.adapter = adapter;
-        this.backupPath = null;
-    }
-    
-    /**
-     * ✏️ تعديل الملف مع إنشاء نسخة احتياطية آمنة
-     */
-    async modifyWithBackup(filePath, operations, params = {}) {
-        return ErrorHandler.execute('modifyWithBackup', async () => {
-            // ✅ تحقق سيادي من وجود الملف قبل أي عملية
-            const resolvedPath = this.resolveFilePath(filePath);
-            
-            // ✅ إنشاء نسخة احتياطية أولاً قبل أي لمس للملف
-            this.backupPath = await this.createBackup(resolvedPath);
-            
-            // ✅ ترتيب العمليات حسَب الأولوية لضمان سلامة الصيغ والصفوف
-            const sortedOperations = this.orderOperations(operations || []);
-            
-            const result = await this.adapter.modify(resolvedPath, { operations: sortedOperations, ...params });
-            
-            return {
-                ...result,
-                backupPath: this.backupPath
-            };
-        }, { filePath, operations });
-    }
-    
-    /**
-     * 🔍 حل وتصحيح مسار الملف (دعم المسارات المطلقة ومجلدات التخزين المستدام والمؤقت)
-     */
-    resolveFilePath(filePath) {
-        if (!filePath) {
-            throw new Error('[Alatheer Sovereign Error] مسار الملف غير مدخل أو فارغ.');
-        }
-        
-        // إذا كان المسار مطلقاً وموجوداً مباشرة
-        if (fs.existsSync(filePath)) {
-            return filePath;
-        }
-        
-        const fileName = path.basename(filePath);
-        
-        // فحص مجلدات الرفع المستدامة والمؤقتة بترتيب الأولوية السيادية
-        const searchDirectories = [
-            '/app/persistent_uploads',
-            '/app/uploads',
-            process.cwd()
-        ];
-        
-        for (const dir of searchDirectories) {
-            const resolved = path.resolve(dir, fileName);
-            if (fs.existsSync(resolved)) {
-                console.log(`📁 [ExcelModifier] تم العثور على الملف في المسار السيادي: ${resolved}`);
-                return resolved;
-            }
-        }
-        
-        // إذا لم يوجد نهائياً
-        throw new Error(`[Alatheer Sovereign Error] الملف المستهدف غير موجود على القرص: ${filePath}. يرجى التحقق من مسار التخزين المستدام.`);
+  constructor(adapter) {
+    this.adapter = adapter;
+    this.backupPath = null;
+  }
+
+  // ✏️ تعديل مع نسخة احتياطية
+  async modifyWithBackup(filePath, operations, params = {}) {
+    const resolvedPath = this.resolveFilePath(filePath);
+
+    this.backupPath = await this.createBackup(resolvedPath);
+
+    const sortedOperations = this.orderOperations(operations || []);
+
+    const result = await this.adapter.modify(resolvedPath, {
+      operations: sortedOperations,
+      ...params
+    });
+
+    return {
+      ...result,
+      backupPath: this.backupPath
+    };
+  }
+
+  // 🔍 حل مسار الملف
+  resolveFilePath(filePath) {
+    if (!filePath) {
+      throw new Error("مسار الملف غير مدخل أو فارغ.");
     }
 
-    /**
-     * 💾 إنشاء نسخة احتياطية آمنة
-     */
-    async createBackup(filePath) {
-        if (!fs.existsSync(filePath)) {
-            throw new Error(`[Alatheer Sovereign Error] تعذر إنشاء نسخة احتياطية، الملف غير موجود: ${filePath}`);
-        }
-        const backupPath = FileUtils.getTempPath('backup');
-        const data = await FileUtils.readFile(filePath);
-        await FileUtils.writeFile(backupPath, data);
-        return backupPath;
+    if (fs.existsSync(filePath)) return filePath;
+
+    const fileName = path.basename(filePath);
+    const searchDirs = [
+      path.resolve(process.cwd(), "persistent_uploads"),
+      path.resolve(process.cwd(), "uploads"),
+      process.cwd()
+    ];
+
+    for (const dir of searchDirs) {
+      const candidate = path.resolve(dir, fileName);
+      if (fs.existsSync(candidate)) {
+        console.log(`📁 [ExcelModifier] تم العثور على الملف في: ${candidate}`);
+        return candidate;
+      }
     }
-    
-    /**
-     * ↩️ التراجع الحقيقي عن آخر تعديل واستعادة الملف
-     */
-    async undo(targetFilePath) {
-        if (!this.backupPath || !fs.existsSync(this.backupPath)) {
-            throw new Error('لا توجد نسخة احتياطية متاحة للتراجع.');
-        }
-        
-        const resolvedTarget = targetFilePath ? this.resolveFilePath(targetFilePath) : this.backupPath;
-        
-        const backupData = await FileUtils.readFile(this.backupPath);
-        await FileUtils.writeFile(resolvedTarget, backupData);
-        
-        return { 
-            success: true, 
-            message: "تم التراجع عن التعديل واستعادة النسخة السابقة بنجاح." 
-        };
+
+    throw new Error(`الملف غير موجود على القرص: ${filePath}`);
+  }
+
+  // 💾 إنشاء نسخة احتياطية
+  async createBackup(filePath) {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`تعذر إنشاء نسخة احتياطية، الملف غير موجود: ${filePath}`);
     }
-    
-    /**
-     * 🎯 تنفيذ عمليات متعددة بذكاء وعلى حسب الأولوية البرمجية
-     */
-    async applySmartOperations(worksheet, operations) {
-        const orderedOps = this.orderOperations(operations);
-        
-        for (const op of orderedOps) {
-            await this.applyOperation(worksheet, op);
-        }
+    const backupPath = FileUtils.getTempPath("backup");
+    const data = await FileUtils.readFile(filePath);
+    await FileUtils.writeFile(backupPath, data);
+    return backupPath;
+  }
+
+  // ↩️ تراجع عن آخر تعديل
+  async undo(targetFilePath) {
+    if (!this.backupPath || !fs.existsSync(this.backupPath)) {
+      throw new Error("لا توجد نسخة احتياطية متاحة للتراجع.");
     }
-    
-    /**
-     * 📊 مصفوفة ترتيب أولويات تنفيذ العمليات
-     */
-    orderOperations(operations) {
-        const priority = {
-            'add_column': 1,
-            'add_row': 1,
-            'add_validation': 2,
-            'add_formula': 2,
-            'update_cell': 3,
-            'format_range': 4,
-            'color_cells': 4,
-            'highlight': 4,
-            'add_filter': 5
-        };
-        
-        return [...operations].sort((a, b) => (priority[a.type] || 99) - (priority[b.type] || 99));
-    }
-    
-    /**
-     * 🛠️ توجيه وتنفيد عملية فردية عبر Adapter
-     */
-    async applyOperation(worksheet, op) {
-        switch(op.type) {
-            case OPERATION_TYPES.ADD_COLUMN:
-            case 'add_column':
-                this.addColumnSmart(worksheet, op);
-                break;
-            case OPERATION_TYPES.ADD_ROW:
-            case 'add_row':
-                this.addRowSmart(worksheet, op);
-                break;
-            case OPERATION_TYPES.UPDATE_CELL:
-            case 'update_cell':
-                this.updateCellSmart(worksheet, op);
-                break;
-            case OPERATION_TYPES.COLOR_CELLS:
-            case 'color_cells':
-            case 'highlight':
-                this.colorCellsSmart(worksheet, op);
-                break;
-            case OPERATION_TYPES.FORMAT_RANGE:
-            case 'format_range':
-                this.formatRangeSmart(worksheet, op);
-                break;
-            case OPERATION_TYPES.ADD_FORMULA:
-            case 'add_formula':
-                this.addFormulaSmart(worksheet, op);
-                break;
-            case OPERATION_TYPES.ADD_VALIDATION:
-            case 'dropdown':
-                this.addValidationSmart(worksheet, op);
-                break;
-            case OPERATION_TYPES.ADD_FILTER:
-            case 'add_filter':
-                this.addFilterSmart(worksheet, op);
-                break;
-            default:
-                console.warn(`⚠️ [ExcelModifier] نوع عملية غير معروف: ${op.type}`);
-        }
-    }
-    
-    addColumnSmart(worksheet, op) { if (this.adapter.addColumn) this.adapter.addColumn(worksheet, op); }
-    addRowSmart(worksheet, op) { if (this.adapter.addRow) this.adapter.addRow(worksheet, op); }
-    updateCellSmart(worksheet, op) { if (this.adapter.updateCell) this.adapter.updateCell(worksheet, op); }
-    colorCellsSmart(worksheet, op) { if (this.adapter.colorCells) this.adapter.colorCells(worksheet, op); }
-    formatRangeSmart(worksheet, op) { if (this.adapter.formatRange) this.adapter.formatRange(worksheet, op); }
-    addFormulaSmart(worksheet, op) { if (this.adapter.addFormula) this.adapter.addFormula(worksheet, op); }
-    addValidationSmart(worksheet, op) { if (this.adapter.addValidation) this.adapter.addValidation(worksheet, op); }
-    addFilterSmart(worksheet, op) { if (this.adapter.addFilter) this.adapter.addFilter(worksheet, op); }
+
+    const target = targetFilePath
+      ? this.resolveFilePath(targetFilePath)
+      : this.backupPath;
+
+    const backupData = await FileUtils.readFile(this.backupPath);
+    await FileUtils.writeFile(target, backupData);
+
+    return {
+      success: true,
+      message: "تم التراجع عن التعديل واستعادة النسخة السابقة بنجاح."
+    };
+  }
+
+  // 🎯 ترتيب العمليات حسب الأولوية
+  orderOperations(operations) {
+    const priority = {
+      add_column: 1,
+      add_row: 1,
+      add_validation: 2,
+      add_formula: 2,
+      update_cell: 3,
+      format_range: 4,
+      color_cells: 4,
+      highlight: 4,
+      add_filter: 5
+    };
+
+    return [...operations].sort(
+      (a, b) => (priority[a.type] || 99) - (priority[b.type] || 99)
+    );
+  }
 }
 
 export default ExcelModifier;
