@@ -72,10 +72,14 @@ ${SYSTEM_PROMPT}
 
     try {
         console.log(`🧠 [Kernel] معالجة الطلب في جيميني...`);
+
+        // ⭐⭐ التعديل الحاسم هنا ⭐⭐
         const rawReply = await geminiService.chat(conversationMessages, {
             fileName,
             extractedContent,
+            systemInstruction: systemContent   // ← هذا هو التعديل المطلوب
         });
+
         finalReplyText = rawReply || "تم يا شريكي، جهزتلك المطلوب.";
 
         // استخراج operations من JSON
@@ -99,10 +103,9 @@ ${SYSTEM_PROMPT}
         finalReplyText = finalReplyText.replace(/```json[\s\S]*?```/g, "").trim();
 
         if (message.includes("عمود") && operations.length === 0) {
-            console.warn(
-                "⚠️ [Kernel] طلب المستخدم تعديلاً لكن نموذج جيميني لم يولّد عمليات JSON."
-            );
+            console.warn("⚠️ [Kernel] طلب المستخدم تعديلاً لكن نموذج جيميني لم يولّد عمليات JSON.");
         }
+
     } catch (error) {
         console.error("❌ [Kernel] خطأ:", error);
         finalReplyText = `معليش يا شريكي، صار في خطأ بالاتصال أو التنفيذ: ${error.message}`;
@@ -119,4 +122,4 @@ ${SYSTEM_PROMPT}
         fileBase64,
         operations,
     };
-    }
+}
