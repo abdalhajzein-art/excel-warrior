@@ -1,11 +1,14 @@
 # api/core/excel_bridge.py
 import sys
 import json
+import difflib
 import openpyxl
 import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter, column_index_from_string
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.formatting.rule import CellIsRule
+from openpyxl.chart import BarChart, LineChart, PieChart, Reference
 
 # =========================
 # أدوات مساعدة عامة
@@ -50,14 +53,40 @@ def find_header_column(ws, header_name, search_rows=6):
                 return r, c
     return None, None
 
+def find_sheet_flexible(wb, target_name):
+    """بحث مرن عن اسم الشيت يتجاهل الفروقات البسيطة مثل المسافات والشرطات"""
+    if not target_name:
+        return None
+        
+    available = wb.sheetnames
+    if target_name in available:
+        return target_name
+    
+    # توحيد شكل النصوص (استبدال الشرطات بمسافات)
+    clean_target = str(target_name).replace("_", " ").replace("-", " ").strip().lower()
+    clean_available = [s.replace("_", " ").replace("-", " ").strip().lower() for s in available]
+    
+    if clean_target in clean_available:
+        idx = clean_available.index(clean_target)
+        return available[idx]
+    
+    # البحث عن أقرب تطابق بنسبة 65%
+    matches = difflib.get_close_matches(clean_target, clean_available, n=1, cutoff=0.65)
+    if matches:
+        idx = clean_available.index(matches[0])
+        return available[idx]
+    
+    return None
+
 def get_sheet(wb, op):
     """تحديد الشيت المستهدف من العملية، أو الشيت النشط كافتراضي"""
-    sheet_name = op.get("sheet")
+    sheet_name = op.get("sheet") or op.get("sheet_name")
     if sheet_name:
-        if sheet_name in wb.sheetnames:
-            return wb[sheet_name]
+        matched = find_sheet_flexible(wb, sheet_name)
+        if matched:
+            return wb[matched]
         else:
-            raise ValueError(f"الشيت المطلوب غير موجود: {sheet_name}")
+            raise ValueError(f"الشيت المطلوب غير موجود ولا يوجد اسم مقارب له: {sheet_name}")
     return wb.active
 
 # =========================
@@ -188,41 +217,52 @@ def op_unmerge_cells(wb, ws, op, log):
     log.append(f"تم فك دمج النطاق {range_ref}.")
 
 # =========================
-# عمليات الشيتات
+# عمليات الشيتات (مرنة وحصينة)
 # =========================
 
 def op_sheet_select(wb, ws, op, log):
-    sheet_name = op.get("sheet")
+    sheet_name = op.get("sheet") or op.get("sheet_name")
     if not sheet_name:
         raise ValueError("يجب توفير اسم الشيت لاختياره.")
-    if sheet_name not in wb.sheetnames:
-        raise ValueError(f"الشيت المطلوب غير موجود: {sheet_name}")
-    log.append(f"تم اختيار الشيت '{sheet_name}'.")
-    return wb[sheet_name]
+    
+    matched = find_sheet_flexible(wb, sheet_name)
+    if not matched:
+        raise ValueError(f"الشيت المطلوب غير موجود ولا يوجد اسم مقارب له: {sheet_name}")
+    
+    if matched != sheet_name:
+        log.append(f"تم المطابقة المرنة وتحديد الشيت '{matched}' بدلاً من '{sheet_name}'.")
+    else:
+        log.append(f"تم اختيار الشيت '{matched}'.")
+        
+    return wb[matched]
 
 def op_sheet_create(wb, ws, op, log):
-    sheet_name = op.get("sheet_name", "Sheet_New")
-    if sheet_name in wb.sheetnames:
-        log.append(f"الشيت '{sheet_name}' موجود مسبقاً، لن يتم إنشاؤه مرة أخرى.")
-        return wb[sheet_name]
+    sheet_name = op.get("sheet_name") or op.get("sheet") or "Sheet_New"
+    matched = find_sheet_flexible(wb, sheet_name)
+    if matched:
+        log.append(f"الشيت '{matched}' موجود مسبقاً، سيتُم اختياره بدلاً من إعادة الإنشاء.")
+        return wb[matched]
     new_ws = wb.create_sheet(title=sheet_name)
     log.append(f"تم إنشاء الشيت الجديد '{sheet_name}'.")
     return new_ws
 
 def op_sheet_delete(wb, ws, op, log):
-    sheet_name = op.get("sheet_name")
+    sheet_name = op.get("sheet_name") or op.get("sheet")
     if not sheet_name:
         raise ValueError("يجب توفير sheet_name لحذف الشيت.")
-    if sheet_name not in wb.sheetnames:
+    
+    matched = find_sheet_flexible(wb, sheet_name)
+    if not matched:
         log.append(f"الشيت '{sheet_name}' غير موجود، لن يتم حذفه.")
         return ws
-    target_ws = wb[sheet_name]
+        
+    target_ws = wb[matched]
     wb.remove(target_ws)
-    log.append(f"تم حذف الشيت '{sheet_name}'.")
+    log.append(f"تم حذف الشيت '{matched}'.")
     return wb.active
 
 # =========================
-# عمليات النطاقات الأساسية والمتقدمة
+# عمليات النطاقات والتنسيق الشرطي
 # =========================
 
 def op_clear_range(wb, ws, op, log):
@@ -262,64 +302,68 @@ def op_border_range(wb, ws, op, log):
             cell.border = border
     log.append(f"تم إضافة حدود للنطاق {range_ref}.")
 
-def op_fill_range(wb, ws, op, log):
+def op_conditional_formatting(wb, ws, op, log):
+    """تنسيق شرطي حركي بناءً على قيم أو نصوص الخلايا"""
     range_ref = op.get("range")
-    value = op.get("value", "")
+    operator = op.get("operator", "equal")  # equal, greaterThan, lessThan, containsText
+    formula_val = op.get("value", "")
+    bg_color = op.get("bg_color", "FFC7CE")  # أحمر خفيف افتراضي
+    text_color = op.get("text_color", "9C0006")  # أحمر غامق للنص
+    
     if not range_ref:
-        raise ValueError("يجب توفير range لتعبئة النطاق.")
-    for row in ws[range_ref]:
-        for cell in row:
-            cell.value = value
-    log.append(f"تم تعبئة النطاق {range_ref} بالقيمة '{value}'.")
+        raise ValueError("يجب توفير range للتنسيق الشرطي.")
+        
+    red_fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
+    font_color = Font(color=text_color, bold=True)
+    
+    rule = CellIsRule(operator=operator, formula=[f'"{formula_val}"' if isinstance(formula_val, str) else str(formula_val)],
+                      stopIfTrue=True, fill=red_fill, font=font_color)
+    
+    ws.conditional_formatting.add(range_ref, rule)
+    log.append(f"تم تطبيق التنسيق الشرطي على النطاق {range_ref} بحسب الشرط: {operator} {formula_val}.")
 
 # =========================
-# تنسيق جداول بسيطة
+# إضافة مخططات بيانية (Charts)
 # =========================
 
-def op_format_table_simple(wb, ws, op, log):
-    range_ref = op.get("range")
-    header_row = op.get("header_row", None)
-    if not range_ref:
-        raise ValueError("يجب توفير range لتنسيق الجدول.")
-    rows = list(ws[range_ref])
-    if not rows:
-        return
-    if header_row is None:
-        header_row = rows[0][0].row
-
-    # رؤوس غامقة وخلفية خفيفة
-    header_fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
-    header_font = Font(bold=True)
-    for cell in ws[header_row]:
-        cell.fill = header_fill
-        cell.font = header_font
-
-    # صفوف متناوبة
-    alt_fill = PatternFill(start_color="F7F7F7", end_color="F7F7F7", fill_type="solid")
-    for row in rows[1:]:
-        if row[0].row % 2 == 0:
-            for cell in row:
-                cell.fill = alt_fill
-
-    log.append(f"تم تنسيق الجدول في النطاق {range_ref} بشكل بسيط.")
+def op_add_chart(wb, ws, op, log):
+    chart_type = op.get("chart_type", "bar").lower()  # bar, line, pie
+    title = op.get("title", "تقرير بياني")
+    min_col = op.get("min_col", 1)
+    min_row = op.get("min_row", 1)
+    max_col = op.get("max_col", ws.max_column)
+    max_row = op.get("max_row", ws.max_row)
+    cell_position = op.get("cell_position", "E2")
+    
+    if chart_type == "line":
+        chart = LineChart()
+    elif chart_type == "pie":
+        chart = PieChart()
+    else:
+        chart = BarChart()
+        
+    chart.title = title
+    data = Reference(ws, min_col=min_col, min_row=min_row, max_col=max_col, max_row=max_row)
+    chart.add_data(data, titles_from_data=True)
+    
+    ws.add_chart(chart, cell_position)
+    log.append(f"تم إنشاء مخطط بياني من نوع ({chart_type}) في الخلية {cell_position}.")
 
 # =========================
-# عمليات تحليلية عبر pandas (Pivot / GroupBy / Summary)
+# تحليل عبر pandas
 # =========================
 
 def op_pandas_pivot_to_sheet(wb, ws, op, log):
-    """
-    قراءة الشيت الحالي إلى pandas، تنفيذ Pivot أو GroupBy،
-    ثم كتابة النتيجة في شيت جديد.
-    """
-    sheet_name = op.get("sheet") or ws.title
+    sheet_name = op.get("sheet") or op.get("sheet_name") or ws.title
+    matched_sheet = find_sheet_flexible(wb, sheet_name) or ws.title
+    source_ws = wb[matched_sheet]
+    
     index_cols = op.get("index") or []
     value_cols = op.get("values") or []
     aggfunc = op.get("aggfunc", "sum")
     new_sheet_name = op.get("target_sheet", "Pivot_Result")
 
-    # قراءة الشيت إلى DataFrame
-    data = ws.values
+    data = source_ws.values
     cols = next(data)
     df = pd.DataFrame(data, columns=cols)
 
@@ -328,21 +372,20 @@ def op_pandas_pivot_to_sheet(wb, ws, op, log):
 
     pivot_df = pd.pivot_table(df, index=index_cols, values=value_cols, aggfunc=aggfunc)
 
-    # إنشاء شيت جديد وكتابة النتيجة
-    if new_sheet_name in wb.sheetnames:
-        target_ws = wb[new_sheet_name]
-        # مسح محتواه
+    target_sheet_name = find_sheet_flexible(wb, new_sheet_name) or new_sheet_name
+    if target_sheet_name in wb.sheetnames:
+        target_ws = wb[target_sheet_name]
         for row in target_ws[target_ws.dimensions]:
             for cell in row:
                 cell.value = None
     else:
-        target_ws = wb.create_sheet(title=new_sheet_name)
+        target_ws = wb.create_sheet(title=target_sheet_name)
 
     for r_idx, row in enumerate(pivot_df.reset_index().itertuples(index=False), start=1):
         for c_idx, value in enumerate(row, start=1):
             target_ws.cell(row=r_idx, column=c_idx, value=value)
 
-    log.append(f"تم تنفيذ Pivot عبر pandas من الشيت '{sheet_name}' إلى الشيت '{new_sheet_name}'.")
+    log.append(f"تم تنفيذ Pivot عبر pandas من الشيت '{matched_sheet}' إلى الشيت '{target_sheet_name}'.")
 
 # =========================
 # تنفيذ كود ديناميكي
@@ -357,7 +400,8 @@ def op_execute_code(wb, ws, op, log):
         "Font": Font, "PatternFill": PatternFill, "Alignment": Alignment,
         "Border": Border, "Side": Side, "DataValidation": DataValidation,
         "get_column_letter": get_column_letter,
-        "column_index_from_string": column_index_from_string
+        "column_index_from_string": column_index_from_string,
+        "BarChart": BarChart, "LineChart": LineChart, "PieChart": PieChart, "Reference": Reference
     }
     exec(code_snippet, {"__builtins__": __builtins__}, local_scope)
     log.append("تم تنفيذ السكريبت البرمجي الديناميكي بنجاح.")
@@ -391,14 +435,12 @@ OPERATION_MAP = {
     "sheet_create": op_sheet_create,
     "sheet_delete": op_sheet_delete,
 
-    # نطاقات
+    # نطاقات وتنسيق شرطي ومخططات
     "clear_range": op_clear_range,
     "color_range": op_color_range,
     "border_range": op_border_range,
-    "fill_range": op_fill_range,
-
-    # تنسيق جدول بسيط
-    "format_table_simple": op_format_table_simple,
+    "conditional_formatting": op_conditional_formatting,
+    "add_chart": op_add_chart,
 
     # تحليل عبر pandas
     "pandas_pivot_to_sheet": op_pandas_pivot_to_sheet,
@@ -417,18 +459,21 @@ def execute_operations(file_path, operations):
         for idx, op in enumerate(operations):
             op_type = op.get("type")
 
+            # استهداف الشيت المناسب لكل عملية قبل التنفيذ
+            target_ws = get_sheet(wb, op) if op_type != "sheet_select" else ws
+
             # إذا أرسل جيميني كود بايثون مباشر
             if op_type == "execute_code" or ("code" in op and op_type is None):
-                op_execute_code(wb, ws, op, execution_log)
+                op_execute_code(wb, target_ws, op, execution_log)
                 continue
 
             handler = OPERATION_MAP.get(op_type)
             if not handler:
                 raise ValueError(f"نوع العملية غير معروف أو غير مدعوم: {op_type}")
 
-            result = handler(wb, ws, op, execution_log)
+            result = handler(wb, target_ws, op, execution_log)
             if isinstance(result, openpyxl.worksheet.worksheet.Worksheet):
-                ws = result  # تحديث الشيت النشط إذا رجعت العملية شيت جديد
+                ws = result  # تحديث الشيت النشط إذا غيرته دالة اختيار الشيتات
 
         wb.save(file_path)
         return {
@@ -453,7 +498,7 @@ if __name__ == "__main__":
         print(json.dumps({
             "success": False,
             "error": "المعلمات غير كافية، يرجى تمرير مسار الملف وسلسلة العمليات بصيغة JSON."
-        }))
+        }, ensure_ascii=False))
         sys.exit(1)
 
     file_path = sys.argv[1]
@@ -465,8 +510,9 @@ if __name__ == "__main__":
         print(json.dumps({
             "success": False,
             "error": f"خطأ في تحليل صيغة JSON: {str(jde)}"
-        }))
+        }, ensure_ascii=False))
         sys.exit(1)
 
     result = execute_operations(file_path, operations)
     print(json.dumps(result, ensure_ascii=False))
+
