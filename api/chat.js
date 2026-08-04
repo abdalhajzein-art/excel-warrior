@@ -3,7 +3,7 @@
  * ✅ تواصل مباشر مع جيميني ومعالجة مريحة مع دعم المعاينة الفورية لبيانات الإكسل.
  * ✅ دعم openpyxl لتنفيذ عمليات التعديل المتقدمة.
  * ✅ تحسين سرعة المعاينة (قراءة أول 10 صفوف فقط).
- * ✅ إصلاح مشكلة Template Literal في كود Python.
+ * ✅ إصلاح مشكلة Template Literal و StyleProxy.
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -19,11 +19,10 @@ const execAsync = promisify(exec);
 
 /**
  * ✅ تنفيذ عمليات على ملف Excel عبر Python (openpyxl)
- * تم إصلاح مشكلة Template Literal
+ * تم إصلاح مشكلة Template Literal و StyleProxy
  */
 async function executeWithPython(filePath, operations) {
     try {
-        // ✅ بناء كود Python باستخدام مصفوفة لتجنب مشاكل Template Literal
         const pythonLines = [
             'import openpyxl',
             'from openpyxl.utils import get_column_letter',
@@ -37,7 +36,7 @@ async function executeWithPython(filePath, operations) {
             '',
             '    # البحث عن صف العناوين',
             '    header_row = 1',
-            '    for row in range(1, 4):',
+            '    for row in range(1, min(4, ws.max_row + 1)):',
             '        if ws.cell(row=row, column=1).value:',
             '            header_row = row',
             '            break',
@@ -51,7 +50,6 @@ async function executeWithPython(filePath, operations) {
             ''
         ];
 
-        // إضافة العمليات
         for (const op of operations) {
             switch (op.type) {
                 case 'add_column': {
@@ -63,32 +61,53 @@ async function executeWithPython(filePath, operations) {
                     pythonLines.push(`        target_col = headers["${after}"] + 1`);
                     pythonLines.push(`    ws.insert_cols(target_col)`);
                     pythonLines.push(`    ws.cell(row=header_row, column=target_col, value="${header}")`);
-                    pythonLines.push(`    # نسخ التنسيق من العمود المجاور`);
+                    pythonLines.push(`    # نسخ التنسيق من العمود المجاور (بدون StyleProxy)`);
                     pythonLines.push(`    source_col = target_col - 1 if target_col > 1 else target_col + 1`);
                     pythonLines.push(`    if source_col <= ws.max_column:`);
                     pythonLines.push(`        for row in range(header_row + 1, ws.max_row + 1):`);
                     pythonLines.push(`            source_cell = ws.cell(row=row, column=source_col)`);
                     pythonLines.push(`            target_cell = ws.cell(row=row, column=target_col)`);
+                    pythonLines.push(`            # نسخ خصائص التنسيق بشكل فردي لتجنب StyleProxy`);
                     pythonLines.push(`            if source_cell.font:`);
-                    pythonLines.push(`                target_cell.font = source_cell.font`);
+                    pythonLines.push(`                f = source_cell.font`);
+                    pythonLines.push(`                target_cell.font = openpyxl.styles.Font(`);
+                    pythonLines.push(`                    name=f.name, size=f.size, bold=f.bold, italic=f.italic, color=f.color`);
+                    pythonLines.push(`                )`);
                     pythonLines.push(`            if source_cell.fill:`);
-                    pythonLines.push(`                target_cell.fill = source_cell.fill`);
+                    pythonLines.push(`                target_cell.fill = openpyxl.styles.PatternFill(`);
+                    pythonLines.push(`                    fill_type=source_cell.fill.fill_type,`);
+                    pythonLines.push(`                    start_color=source_cell.fill.start_color,`);
+                    pythonLines.push(`                    end_color=source_cell.fill.end_color`);
+                    pythonLines.push(`                )`);
                     pythonLines.push(`            if source_cell.alignment:`);
-                    pythonLines.push(`                target_cell.alignment = source_cell.alignment`);
+                    pythonLines.push(`                target_cell.alignment = openpyxl.styles.Alignment(`);
+                    pythonLines.push(`                    horizontal=source_cell.alignment.horizontal,`);
+                    pythonLines.push(`                    vertical=source_cell.alignment.vertical,`);
+                    pythonLines.push(`                    wrap_text=source_cell.alignment.wrap_text`);
+                    pythonLines.push(`                )`);
                     pythonLines.push(`            if source_cell.border:`);
-                    pythonLines.push(`                target_cell.border = source_cell.border`);
+                    pythonLines.push(`                target_cell.border = openpyxl.styles.Border(`);
+                    pythonLines.push(`                    left=source_cell.border.left,`);
+                    pythonLines.push(`                    right=source_cell.border.right,`);
+                    pythonLines.push(`                    top=source_cell.border.top,`);
+                    pythonLines.push(`                    bottom=source_cell.border.bottom`);
+                    pythonLines.push(`                )`);
                     pythonLines.push(`            if source_cell.number_format:`);
                     pythonLines.push(`                target_cell.number_format = source_cell.number_format`);
                     break;
                 }
                 case 'add_validation': {
-                    const formulae = op.formulae || 'خيار1,خيار2,خيار3';
+                    const formulae = op.formulae || 'مرضي,إجازة طارئة,بدون إذن,مهمة عمل';
                     const address = op.address || '';
                     pythonLines.push(`    # إضافة قائمة منسدلة`);
                     pythonLines.push(`    dv = DataValidation(type="list", formula1="${formulae}", allow_blank=True)`);
                     pythonLines.push(`    ws.add_data_validation(dv)`);
                     if (address) {
                         pythonLines.push(`    dv.add('${address}')`);
+                    } else {
+                        pythonLines.push(`    if target_col:`);
+                        pythonLines.push(`        col_letter = get_column_letter(target_col)`);
+                        pythonLines.push(`        dv.add(f"{col_letter}{header_row + 1}:{col_letter}{ws.max_row}")`);
                     }
                     break;
                 }
@@ -118,14 +137,11 @@ async function executeWithPython(filePath, operations) {
 
         const pythonCode = pythonLines.join('\n');
 
-        // كتابة الكود في ملف مؤقت
         const tempPyPath = path.join('/tmp', `python_${Date.now()}.py`);
         fs.writeFileSync(tempPyPath, pythonCode);
 
-        // تنفيذ الكود
         const { stdout, stderr } = await execAsync(`python3 "${tempPyPath}"`);
         
-        // تنظيف
         try { fs.unlinkSync(tempPyPath); } catch(e) {}
         
         if (stderr && !stderr.includes('Warning') && !stderr.includes('DeprecationWarning')) {
@@ -145,7 +161,7 @@ async function executeWithPython(filePath, operations) {
 }
 
 /**
- * ✅ استخراج معاينة الملف عبر Python (pandas) - محسّن للسرعة
+ * ✅ استخراج معاينة الملف عبر Python (pandas)
  */
 function extractPreview(filePath) {
     try {
@@ -193,7 +209,6 @@ export default async function handler(req, res) {
         let finalFileBase64 = null;
         let finalFileName = fileName;
 
-        // 1. التعامل مع الملفات المرفوعة وتخزينها بأمان
         if (fileData && fileName) {
             const persistentDir = path.join(__dirname, '../persistent_uploads');
             if (!fs.existsSync(persistentDir)) fs.mkdirSync(persistentDir, { recursive: true });
@@ -215,7 +230,6 @@ export default async function handler(req, res) {
                 console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
             }
 
-            // استخراج معاينة سريعة
             const previewData = extractPreview(sovereignFilePath);
             if (!previewData.error) {
                 extractedContent = {
@@ -236,11 +250,10 @@ export default async function handler(req, res) {
                 };
             }
 
-            // ✅ تنفيذ العمليات عبر Python (openpyxl) إذا وجدت
             if (operations && operations.length > 0) {
                 console.log(`🔧 [chat.js] تنفيذ ${operations.length} عملية عبر Python (openpyxl)`);
                 const result = await executeWithPython(sovereignFilePath, operations);
-                if (result.success) {
+                if (result && result.success) {
                     modifiedResult = { success: true };
                     console.log(`✅ [chat.js] تم تنفيذ العمليات بنجاح عبر Python`);
                     
@@ -248,12 +261,12 @@ export default async function handler(req, res) {
                     finalFileBase64 = modifiedBuffer.toString('base64');
                     finalFileName = `modified_${Date.now()}-${fileName}`;
                 } else {
-                    console.error(`❌ [chat.js] فشل تنفيذ العمليات عبر Python:`, result.error);
+                    const errorMsg = result?.error || 'فشل التنفيذ بدون تفاصيل';
+                    console.error(`❌ [chat.js] فشل تنفيذ العمليات عبر Python:`, errorMsg);
                 }
             }
         }
 
-        // 2. إعداد السياق وتسليمه للموجه
         const orchestratorInput = {
             fileData, 
             fileName, 
@@ -299,4 +312,4 @@ export default async function handler(req, res) {
             reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}`
         });
     }
-                                     }
+                }
