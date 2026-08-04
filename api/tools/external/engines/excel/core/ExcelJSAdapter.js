@@ -1,6 +1,6 @@
 /**
- * excel/core/ExcelJSAdapter.js – Sovereign Advanced Excel Engine
- * النسخة السيادية المتقدمة المتوافقة مع Kernel و Operations Schema
+ * excel/core/ExcelJSAdapter.js – Sovereign Advanced Excel Engine (Sovereign Edition)
+ * محرك ExcelJS سيادي متقدم، متوافق مع Kernel و Operations Schema، وواعٍ للجداول.
  */
 
 import ExcelJS from "exceljs";
@@ -17,7 +17,7 @@ export class ExcelJSAdapter {
   }
 
   /* ============================================================
-     📖 القراءة
+     📖 القراءة – كاملة
      ============================================================ */
 
   async read(filePath, params = {}) {
@@ -28,12 +28,111 @@ export class ExcelJSAdapter {
 
     return {
       ok: true,
-      reply: "تمت قراءة الملف بنجاح",
+      reply: "تمت قراءة الملف بنجاح عبر ExcelJS",
       data: sheets,
       metadata: this.buildMetadata(sheets),
       filePath
     };
   }
+
+  /* ============================================================
+     ⚡ قراءة سريعة – نفس read حالياً، جاهزة للتوسعة
+     ============================================================ */
+
+  async readFast(filePath, params = {}) {
+    return this.read(filePath, params);
+  }
+
+  /* ============================================================
+     🎯 قراءة ميتاداتا فقط
+     ============================================================ */
+
+  async readMetadata(filePath) {
+    const core = await this.read(filePath);
+    return core.metadata;
+  }
+
+  /* ============================================================
+     🎯 قراءة نطاق محدد من أول ورقة
+     ============================================================ */
+
+  async readRange(filePath, range, params = {}) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+
+    const ws = workbook.getWorksheet(1);
+    if (!ws) throw new Error("لا توجد أوراق عمل في الملف");
+
+    const extracted = this.extractRangeFromWorksheet(ws, range);
+
+    return {
+      ok: true,
+      data: extracted,
+      range
+    };
+  }
+
+  /* ============================================================
+     📋 قراءة أوراق محددة بالاسم
+     ============================================================ */
+
+  async readSheets(filePath, sheetNames = [], params = {}) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+
+    const sheets = workbook.worksheets
+      .filter(ws => sheetNames.includes(ws.name))
+      .map(ws => this.extractSheet(ws));
+
+    return {
+      ok: true,
+      data: sheets,
+      metadata: this.buildMetadata(sheets),
+      filePath
+    };
+  }
+
+  /* ============================================================
+     🧩 كشف الجداول / الهيدر / الدمج
+     ============================================================ */
+
+  async detectTables(filePath, params = {}) {
+    const core = await this.read(filePath, params);
+    const firstSheet = core.data?.[0];
+    if (!firstSheet) return null;
+
+    // نستخدم TableDetector فوق بيانات ExcelJS
+    const tableInfo = ExcelTableDetector.detectMainTable({
+      data: firstSheet.data
+    });
+
+    return {
+      sheetName: firstSheet.name,
+      table: tableInfo
+    };
+  }
+
+  async detectHeaders(filePath, params = {}) {
+    const core = await this.read(filePath, params);
+    const firstSheet = core.data?.[0];
+    if (!firstSheet) return [];
+
+    return firstSheet.data?.[0] || [];
+  }
+
+  async detectMergedRegions(filePath, params = {}) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+
+    const ws = workbook.getWorksheet(1);
+    if (!ws) return [];
+
+    return ws._merges ? Array.from(ws._merges.keys()) : [];
+  }
+
+  /* ============================================================
+     📖 استخراج ورقة واحدة – مع صيغ/تعليقات/أنماط
+     ============================================================ */
 
   extractSheet(ws) {
     const rows = [];
@@ -125,7 +224,7 @@ export class ExcelJSAdapter {
 
     return {
       ok: true,
-      reply: "تم تنفيذ التعديلات بنجاح",
+      reply: "تم تنفيذ التعديلات بنجاح عبر ExcelJS",
       filePath: outPath,
       fileBase64: await FileUtils.fileToBase64(outPath),
       fileName: "modified.xlsx"
@@ -167,7 +266,7 @@ export class ExcelJSAdapter {
   }
 
   /* ============================================================
-     🧩 عمليات الأعمدة
+     🧩 الأعمدة
      ============================================================ */
 
   addColumn(ws, op) {
@@ -219,7 +318,7 @@ export class ExcelJSAdapter {
     const headerRow = ws.getRow(1).values;
     const rowData = [];
 
-    for (const key of Object.keys(op.data)) {
+    for (const key of Object.keys(op.data || {})) {
       const colIndex = headerRow.indexOf(key);
       if (colIndex > -1) rowData[colIndex - 1] = op.data[key];
     }
@@ -261,7 +360,7 @@ export class ExcelJSAdapter {
      ============================================================ */
 
   addValidation(ws, op) {
-    const formula = `"${op.values.join(",")}"`;
+    const formula = `"${(op.values || []).join(",")}"`;
     const range = ws.getCells(op.range);
 
     range.forEach(cell => {
@@ -278,11 +377,12 @@ export class ExcelJSAdapter {
      ============================================================ */
 
   formatTable(ws, op) {
-    ws.autoFilter = { from: op.range.split(":")[0], to: op.range.split(":")[1] };
+    const [from, to] = op.range.split(":");
+    ws.autoFilter = { from, to };
   }
 
   /* ============================================================
-     📈 Pivot
+     📈 Pivot (نسخة مبسطة)
      ============================================================ */
 
   createPivot(ws, op) {
@@ -290,4 +390,29 @@ export class ExcelJSAdapter {
     const sheet = ws.workbook.addWorksheet(op.targetSheet || "PivotSheet");
     sheet.getCell("A1").value = "Pivot غير مدعوم بالكامل في ExcelJS";
   }
-}
+
+  /* ============================================================
+     📐 استخراج نطاق من Worksheet
+     ============================================================ */
+
+  extractRangeFromWorksheet(ws, range) {
+    const [start, end] = range.split(":");
+    const startRow = parseInt(start.match(/\d+/)[0], 10);
+    const endRow = parseInt(end.match(/\d+/)[0], 10);
+    const startCol = start.charCodeAt(0) - 64;
+    const endCol = end.charCodeAt(0) - 64;
+
+    const extracted = [];
+
+    for (let r = startRow; r <= endRow; r++) {
+      const row = ws.getRow(r);
+      const rowData = [];
+      for (let c = startCol; c <= endCol; c++) {
+        rowData.push(ws.getCell(r, c).value ?? "");
+      }
+      extracted.push(rowData);
+    }
+
+    return extracted;
+  }
+      }
