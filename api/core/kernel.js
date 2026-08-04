@@ -1,52 +1,12 @@
 /**
- * api/core/kernel.js – Alatheer Sovereign Kernel (Final Balanced Edition)
- * ✅ تنظيف الرد وإخفاء كتلة الـ JSON عن الواجهة نهائياً.
- * ✅ توافق كامل مع مخرجات Orchestrator (ctx + activeFile).
- * ✅ تزويد Gemini بمخطط العمليات المدعومة الحقيقي لمنع الهلوسة.
- * ✅ دعم اللهجة السورية وتأكيد شخصية "الزميل المعماري".
+ * api/core/kernel.js – Alatheer Sovereign Kernel (Direct Python-Ready Edition)
+ * ✅ تواصل مباشر مع جيميني واستجابة سليمة خالية من العقد.
+ * ✅ توافق تام مع اللهجة السورية وأسلوب "الزميل المعماري".
  */
 
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
-
-/**
- * 🛠️ استخراج العمليات من رد Gemini مع تنظيف الرد النصي منها بصرامة
- */
-function parseAndCleanReply(reply) {
-    let operations = [];
-    let cleanReply = reply || "";
-
-    try {
-        // 1. البحث عن الـ JSON في كتل الماركداون ```json ... ```
-        const jsonMatch = cleanReply.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-        
-        if (jsonMatch) {
-            const data = JSON.parse(jsonMatch[1].trim());
-            if (data.operations && Array.isArray(data.operations)) {
-                operations = data.operations;
-            }
-            cleanReply = cleanReply.replace(jsonMatch[0], '').trim();
-        } else {
-            // 2. البحث عن JSON عارٍ يحتوي على operations
-            const jsonMatch2 = cleanReply.match(/\{[\s\S]*?"operations"[\s\S]*?\}/);
-            if (jsonMatch2) {
-                const data = JSON.parse(jsonMatch2[0]);
-                if (data.operations && Array.isArray(data.operations)) {
-                    operations = data.operations;
-                }
-                cleanReply = cleanReply.replace(jsonMatch2[0], '').trim();
-            }
-        }
-    } catch (e) {
-        console.warn('⚠️ [Kernel] لم يتم استخراج عمليات من الرد (إما لا يوجد أو الصيغة غير مكتملة):', e.message);
-    }
-
-    return { 
-        operations, 
-        cleanReply: cleanReply.replace(/\n{3,}/g, '\n\n').trim() 
-    };
-}
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const message = (rawMessage || "").trim();
@@ -59,12 +19,10 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         };
     }
 
-    // 🎯 إصلاح الربط: التوافق التام مع سياق Orchestrator
     const activeFile = ctx.activeFile || null;
     const extractedContent = ctx.extractedContent || activeFile?.extractedContent || null;
     const fileName = ctx.fileName || activeFile?.fileName || "الملف النشط";
 
-    // ✅ بناء سياق الملف مع توسيع استيعاب البيانات
     let fileContext = ctx.activeFileSummary || "";
     if (!fileContext && extractedContent && !extractedContent.error) {
         const meta = extractedContent.metadata || {};
@@ -73,93 +31,21 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         const MAX_CHARS = 25000;
         fileContext = `
 📄 **معلومات الملف النشط:** [${fileName}]
-📊 **الأبعاد:** ${meta.rows || 0} صف، ${meta.columns || 0} عمود، ${meta.sheets || 1} أوراق عمل.
+📊 **الأبعاد:** ${meta.rows || 0} صف، ${meta.columns || 0} عمود.
 
-📝 **عينة البيانات المتاحة:**
-${text.slice(0, MAX_CHARS)}${text.length > MAX_CHARS ? '\n... (تم اختصار المحتوى لحماية الذاكرة، ولكن يمكنك طلب تعديل أي جزء منه)' : ''}
+📝 **عينة البيانات:**
+${text.slice(0, MAX_CHARS)}
 `;
     }
 
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
     
-    // 🛡️ هندسة الأوامر السيادية - المخطط القياسي للعمليات المدعومة (متطابق مع المحرك)
     let systemContent = `
 ${SYSTEM_PROMPT}
 
 [التوجيهات الصارمة لشخصيتك]:
 - أنت زميل ومهندس معماري لمنصة "الأثير". خاطب المستخدم دائماً بروح الزميل باللهجة السورية المهنية المحببة (يا شريكي، يا هندسة، تكرم عينك، إلخ).
-- إياك أن تظهر للمستخدم أي كود JSON أو تفاصيل برمجية تخص العمليات في نصك المرئي. الرد النصي يجب أن يكون طبيعياً يخبره بما فعلت.
-
-[تعليمات التحكم في الملفات - Structured JSON Schema]:
-إذا طلب المستخدم تعديلاً عملياً على ملف Excel، قم بتذييل ردك بكتلة JSON بالصيغة التالية حصراً:
-
-\`\`\`json
-{
-  "operations": [
-    {
-      "type": "add_column",
-      "header": "اسم الهيدر الجديد",
-      "after": "اسم عمود موجود (اختياري)",
-      "validation": ["قيمة1", "قيمة2"],
-      "style": "match_existing"
-    },
-    {
-      "type": "delete_column",
-      "header": "اسم العمود المراد حذفه"
-    },
-    {
-      "type": "update_cell",
-      "address": "B2",
-      "value": "قيمة جديدة"
-    },
-    {
-      "type": "add_validation",
-      "range": "C2:C100",
-      "values": ["خيار1", "خيار2", "خيار3"]
-    },
-    {
-      "type": "add_style",
-      "range": "A1:D1",
-      "style": {
-        "bold": true,
-        "backgroundColor": "#FFD700"
-      }
-    },
-    {
-      "type": "add_formula",
-      "address": "E2",
-      "formula": "SUM(B2:D2)"
-    },
-    {
-      "type": "add_row",
-      "sheet": "Sheet1",
-      "data": {
-        "الاسم": "أحمد",
-        "الغياب": 0
-      }
-    },
-    {
-      "type": "format_table",
-      "range": "A1:F100",
-      "style": "TableStyleMedium2"
-    },
-    {
-      "type": "pivot",
-      "sourceRange": "A1:F100",
-      "targetSheet": "PivotSheet",
-      "config": {
-        "rows": ["الاسم"],
-        "values": ["الغياب"]
-      }
-    }
-  ]
-}
-\`\`\`
-
-إذا لم يكن هناك أي تعديل عملي مطلوب على الملف، أرجِع:
-\`\`\`json
-{ "operations": [] }
-\`\`\`
+- قدم إجابات واضحة ومباشرة وساعد المستخدم بكل ما يطلبه لراحة بصره وتوفير وقته.
 `;
 
     if (fileContext) {
@@ -173,35 +59,14 @@ ${SYSTEM_PROMPT}
     ];
 
     let finalReplyText = "";
-    let returnedFileName = null;
-    let fileBase64 = null;
-    let operations = [];
 
     try {
-        console.log(`🧠 [Kernel] يتم الآن العصف الذهني ومعالجة الطلب في جيميني...`);
-
-        const rawReply = await geminiService.chat(conversationMessages, {
-            fileName,
-            extractedContent
-        });
-
-        // تنظيف الرد وفصل الـ JSON عن النص المرئي
-        const parsed = parseAndCleanReply(rawReply);
-        finalReplyText = parsed.cleanReply;
-        operations = parsed.operations;
-
-        if (operations.length > 0) {
-            console.log(`⚡ [Kernel] تم استخراج ${operations.length} عملية لتنفيذها على ملف: ${fileName}`);
-            returnedFileName = fileName; 
-        }
-
-        if (!finalReplyText) {
-            finalReplyText = "تم يا شريكي، جهزتلك التعديلات المطلوبة على الملف.";
-        }
-
+        console.log(`🧠 [Kernel] معالجة الطلب في جيميني...`);
+        const rawReply = await geminiService.chat(conversationMessages, { fileName, extractedContent });
+        finalReplyText = rawReply || "تم يا شريكي، جهزتلك المطلوب.";
     } catch (error) {
-        console.error("❌ [Kernel] خطأ أثناء استدعاء جيميني:", error);
-        finalReplyText = `معليش يا شريكي، صار في خطأ تقني بالاتصال: ${error.message}`;
+        console.error("❌ [Kernel] خطأ:", error);
+        finalReplyText = `معليش يا شريكي، صار في خطأ بالاتصال: ${error.message}`;
     }
 
     memory.appendSovereignHistory(sessionId, {
@@ -211,8 +76,9 @@ ${SYSTEM_PROMPT}
 
     return {
         reply: finalReplyText,
-        fileName: returnedFileName,
-        fileBase64,
-        operations: operations
+        fileName: fileName,
+        fileBase64: null,
+        operations: []
     };
-        }
+}
+
