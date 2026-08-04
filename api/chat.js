@@ -1,9 +1,8 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Direct Gemini Engine Edition)
  * ✅ تواصل مباشر مع جيميني ومعالجة مريحة مع دعم المعاينة الفورية لبيانات الإكسل.
- * ✅ دعم headless-excel لتنفيذ عمليات التعديل المتقدمة.
- * ✅ تحسين سرعة المعاينة (قراءة أول 10 صفوف فقط)
- * ✅ إضافة pyarrow لتسريع pandas
+ * ✅ دعم openpyxl لتنفيذ عمليات التعديل المتقدمة (بدلاً من headless-excel).
+ * ✅ تحسين سرعة المعاينة (قراءة أول 10 صفوف فقط).
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -18,48 +17,113 @@ const __dirname = path.dirname(__filename);
 const execAsync = promisify(exec);
 
 /**
- * ✅ تنفيذ عمليات على ملف Excel عبر headless-excel
+ * ✅ تنفيذ عمليات على ملف Excel عبر Python (openpyxl)
+ * تم إصلاح مشكلة استيراد headless-excel
  */
-async function executeWithHeadlessExcel(filePath, operations) {
+async function executeWithPython(filePath, operations) {
     try {
-        // بناء كود Python لتنفيذ العمليات
+        // بناء كود Python لتنفيذ العمليات باستخدام openpyxl
         let pythonCode = `
-import headless_excel
-from headless_excel import ExcelEngine
+import openpyxl
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 import json
+import sys
 
-engine = ExcelEngine('${filePath}')
+try:
+    # تحميل الملف
+    wb = openpyxl.load_workbook('${filePath}')
+    ws = wb.active
+    
+    # البحث عن صف العناوين (أول صف غير فارغ)
+    header_row = 1
+    for row in range(1, 4):
+        if ws.cell(row=row, column=1).value:
+            header_row = row
+            break
+    
+    # البحث عن أسماء الأعمدة
+    headers = {}
+    for col in range(1, ws.max_column + 1):
+        val = ws.cell(row=header_row, column=col).value
+        if val:
+            headers[str(val).strip()] = col
 `;
+
         // إضافة العمليات
         for (const op of operations) {
             switch (op.type) {
                 case 'add_column':
                     const after = op.after || '';
-                    pythonCode += `engine.add_column('${op.header}', after='${after}')\n`;
+                    pythonCode += `
+    # إضافة عمود جديد بعد عمود "${after}"
+    target_col = ws.max_column + 1
+    if "${after}" in headers:
+        target_col = headers["${after}"] + 1
+    
+    ws.insert_cols(target_col)
+    ws.cell(row=header_row, column=target_col, value="${op.header || 'عمود جديد'}")
+    
+    # نسخ التنسيق من العمود المجاور
+    source_col = target_col - 1 if target_col > 1 else target_col + 1
+    if source_col <= ws.max_column:
+        for row in range(header_row + 1, ws.max_row + 1):
+            source_cell = ws.cell(row=row, column=source_col)
+            target_cell = ws.cell(row=row, column=target_col)
+            if source_cell.font:
+                target_cell.font = source_cell.font
+            if source_cell.fill:
+                target_cell.fill = source_cell.fill
+            if source_cell.alignment:
+                target_cell.alignment = source_cell.alignment
+            if source_cell.border:
+                target_cell.border = source_cell.border
+            if source_cell.number_format:
+                target_cell.number_format = source_cell.number_format
+`;
                     break;
+                    
                 case 'add_validation':
-                    pythonCode += `engine.add_validation('${op.address}', '${op.formulae || "خيار1,خيار2,خيار3"}')\n`;
+                    pythonCode += `
+    # إضافة قائمة منسدلة
+    dv = DataValidation(type="list", formula1='"${op.formulae || 'خيار1,خيار2,خيار3"}"', allow_blank=True)
+    ws.add_data_validation(dv)
+    ${op.address ? `dv.add('${op.address}')` : ''}
+`;
                     break;
-                case 'sync':
-                    pythonCode += `engine.sync()\n`;
+                    
+                case 'autofit_columns':
+                    pythonCode += `
+    # ضبط عرض الأعمدة تلقائياً
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = (max_length + 2)
+        ws.column_dimensions[column].width = min(adjusted_width, 50)
+`;
                     break;
-                case 'add_row':
-                    pythonCode += `engine.add_row(${JSON.stringify(op.data || [])})\n`;
-                    break;
-                case 'merge_cells':
-                    pythonCode += `engine.merge_cells('${op.range}')\n`;
-                    break;
-                case 'set_column_width':
-                    pythonCode += `engine.set_column_width('${op.column}', ${op.width})\n`;
-                    break;
+                    
                 default:
-                    console.warn(`⚠️ عملية غير مدعومة في headless-excel: ${op.type}`);
+                    pythonCode += `    # عملية غير مدعومة: ${op.type}\n`;
             }
         }
-        pythonCode += `engine.save()\n`;
+
+        pythonCode += `
+    # حفظ الملف
+    wb.save('${filePath}')
+    print(json.dumps({"success": True, "message": "تم التنفيذ بنجاح"}))
+except Exception as e:
+    print(json.dumps({"success": False, "error": str(e)}))
+`;
 
         // كتابة الكود في ملف مؤقت
-        const tempPyPath = path.join('/tmp', `headless_${Date.now()}.py`);
+        const tempPyPath = path.join('/tmp', `python_${Date.now()}.py`);
         fs.writeFileSync(tempPyPath, pythonCode);
 
         // تنفيذ الكود
@@ -69,13 +133,17 @@ engine = ExcelEngine('${filePath}')
         try { fs.unlinkSync(tempPyPath); } catch(e) {}
         
         if (stderr && !stderr.includes('Warning')) {
-            console.error('❌ Headless Excel Error:', stderr);
+            console.error('❌ Python Error:', stderr);
             return { success: false, error: stderr };
         }
         
-        return { success: true, output: stdout };
+        try {
+            return JSON.parse(stdout);
+        } catch {
+            return { success: true, output: stdout };
+        }
     } catch (error) {
-        console.error('❌ Headless Excel Exception:', error);
+        console.error('❌ Python Exception:', error);
         return { success: false, error: error.message };
     }
 }
@@ -91,7 +159,6 @@ import json
 import sys
 
 try:
-    # ✅ قراءة أول 10 صفوف فقط لتسريع المعاينة
     df = pd.read_excel(sys.argv[1], nrows=10)
     print(json.dumps({
         "rows": len(df),
@@ -104,7 +171,7 @@ except Exception as e:
 `;
         const stdout = execFileSync('python3', ['-c', pyScript, filePath], { 
             encoding: 'utf8',
-            maxBuffer: 10 * 1024 * 1024 // 10MB
+            maxBuffer: 10 * 1024 * 1024
         });
         return JSON.parse(stdout);
     } catch (error) {
@@ -152,7 +219,7 @@ export default async function handler(req, res) {
                 console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
             }
 
-            // ✅ استخراج معاينة سريعة (10 صفوف فقط)
+            // استخراج معاينة سريعة
             const previewData = extractPreview(sovereignFilePath);
             if (!previewData.error) {
                 extractedContent = {
@@ -166,7 +233,6 @@ export default async function handler(req, res) {
                 };
                 console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح (${previewData.rows} صف).`);
             } else {
-                // ✅ إذا فشلت المعاينة، نستخدم نصاً بديلاً سريعاً
                 console.warn(`⚠️ [الأثير Preview] فشلت المعاينة: ${previewData.error}`);
                 extractedContent = {
                     text: `[تم استلام الملف بنجاح وجاهز للمراجعة: ${fileName}]`,
@@ -174,20 +240,19 @@ export default async function handler(req, res) {
                 };
             }
 
-            // ✅ تنفيذ العمليات عبر headless-excel إذا وجدت
+            // ✅ تنفيذ العمليات عبر Python (openpyxl) إذا وجدت
             if (operations && operations.length > 0) {
-                console.log(`🔧 [chat.js] تنفيذ ${operations.length} عملية عبر headless-excel`);
-                const result = await executeWithHeadlessExcel(sovereignFilePath, operations);
+                console.log(`🔧 [chat.js] تنفيذ ${operations.length} عملية عبر Python (openpyxl)`);
+                const result = await executeWithPython(sovereignFilePath, operations);
                 if (result.success) {
                     modifiedResult = { success: true };
-                    console.log(`✅ [chat.js] تم تنفيذ العمليات بنجاح عبر headless-excel`);
+                    console.log(`✅ [chat.js] تم تنفيذ العمليات بنجاح عبر Python`);
                     
-                    // إعادة قراءة الملف بعد التعديل
                     const modifiedBuffer = fs.readFileSync(sovereignFilePath);
                     finalFileBase64 = modifiedBuffer.toString('base64');
                     finalFileName = `modified_${Date.now()}-${fileName}`;
                 } else {
-                    console.error(`❌ [chat.js] فشل تنفيذ العمليات عبر headless-excel:`, result.error);
+                    console.error(`❌ [chat.js] فشل تنفيذ العمليات عبر Python:`, result.error);
                 }
             }
         }
@@ -209,7 +274,6 @@ export default async function handler(req, res) {
         let fileBase64 = finalFileBase64 || output?.fileBase64 || null;
         let returnedFileName = finalFileName || output?.fileName || fileName || "modified_file.xlsx";
 
-        // إذا كان هناك ملف تم تعديله محلياً ولم يتم تحويله إلى Base64 بعد
         if (sovereignFilePath && fs.existsSync(sovereignFilePath) && !fileBase64 && modifiedResult?.success) {
             try {
                 const fileBuffer = fs.readFileSync(sovereignFilePath);
@@ -239,4 +303,4 @@ export default async function handler(req, res) {
             reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}`
         });
     }
-                      }
+}
