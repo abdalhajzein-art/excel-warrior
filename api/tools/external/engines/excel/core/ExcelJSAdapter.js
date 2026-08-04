@@ -1,6 +1,6 @@
 /**
- * excel/core/ExcelJSAdapter.js – Sovereign Unified ExcelJS Adapter
- * النسخة السيادية المتوافقة مع ExcelEngine الموحد
+ * excel/core/ExcelJSAdapter.js – Sovereign Advanced Excel Engine
+ * النسخة السيادية المتقدمة المتوافقة مع Kernel و Operations Schema
  */
 
 import ExcelJS from "exceljs";
@@ -136,113 +136,158 @@ export class ExcelJSAdapter {
     switch (op.type) {
       case "add_column":
         return this.addColumn(ws, op);
+
+      case "delete_column":
+        return this.deleteColumn(ws, op);
+
       case "add_row":
         return this.addRow(ws, op);
+
       case "update_cell":
         return this.updateCell(ws, op);
-      case "color_cells":
-        return this.colorCells(ws, op);
-      case "format_range":
-        return this.formatRange(ws, op);
+
+      case "add_style":
+        return this.addStyle(ws, op);
+
       case "add_formula":
         return this.addFormula(ws, op);
+
       case "add_validation":
         return this.addValidation(ws, op);
-      case "merge_cells":
-        return ws.mergeCells(op.range);
-      case "unmerge_cells":
-        return ws.unMergeCells(op.range);
-      case "add_comment":
-        return this.addComment(ws, op);
-      case "set_column_width":
-        return ws.getColumn(op.column).width = op.width;
-      case "set_row_height":
-        return ws.getRow(op.row).height = op.height;
-      case "add_filter":
-        return this.addFilter(ws, op);
+
+      case "format_table":
+        return this.formatTable(ws, op);
+
+      case "pivot":
+        return this.createPivot(ws, op);
+
       default:
         console.warn(`⚠️ عملية غير معروفة: ${op.type}`);
     }
   }
 
   /* ============================================================
-     🧩 عمليات الأعمدة والصفوف
+     🧩 عمليات الأعمدة
      ============================================================ */
 
   addColumn(ws, op) {
     const headerRow = ws.getRow(1);
-    const insertIndex = headerRow.cellCount + 1;
+
+    let insertIndex = headerRow.cellCount + 1;
+
+    if (op.after) {
+      const afterIndex = headerRow.values.indexOf(op.after);
+      if (afterIndex > -1) insertIndex = afterIndex + 1;
+    }
 
     ws.spliceColumns(insertIndex, 0, []);
     ws.getCell(1, insertIndex).value = op.header || "عمود جديد";
+
+    if (op.style) {
+      ws.getCell(1, insertIndex).font = { bold: true };
+      ws.getCell(1, insertIndex).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFD700" }
+      };
+    }
+
+    if (op.validation && Array.isArray(op.validation)) {
+      const formula = `"${op.validation.join(",")}"`;
+      ws.getColumn(insertIndex).eachCell((cell, rowNumber) => {
+        if (rowNumber === 1) return;
+        cell.dataValidation = {
+          type: "list",
+          formulae: [formula],
+          showErrorMessage: true
+        };
+      });
+    }
   }
 
+  deleteColumn(ws, op) {
+    const headerRow = ws.getRow(1);
+    const index = headerRow.values.indexOf(op.header);
+    if (index > -1) ws.spliceColumns(index, 1);
+  }
+
+  /* ============================================================
+     🧩 الصفوف
+     ============================================================ */
+
   addRow(ws, op) {
-    ws.addRow(op.data || []);
+    const headerRow = ws.getRow(1).values;
+    const rowData = [];
+
+    for (const key of Object.keys(op.data)) {
+      const colIndex = headerRow.indexOf(key);
+      if (colIndex > -1) rowData[colIndex - 1] = op.data[key];
+    }
+
+    ws.addRow(rowData);
   }
 
   updateCell(ws, op) {
-    const cell = ws.getCell(op.address);
-    cell.value = op.value;
+    ws.getCell(op.address).value = op.value;
   }
 
   /* ============================================================
      🎨 تنسيق
      ============================================================ */
 
-  colorCells(ws, op) {
-    const { range, color } = op;
-    const cells = ws.getCells(range);
+  addStyle(ws, op) {
+    const cells = ws.getCells(op.range);
     if (!cells) return;
 
     cells.forEach(cell => {
-      cell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: color || "FFFFFF00" }
-      };
+      if (op.style.fill) cell.fill = op.style.fill;
+      if (op.style.font) cell.font = op.style.font;
+      if (op.style.alignment) cell.alignment = op.style.alignment;
+      if (op.style.border) cell.border = op.style.border;
+      if (op.style.numFmt) cell.numFmt = op.style.numFmt;
     });
   }
 
-  formatRange(ws, op) {
-    const { range, style } = op;
-    const cells = ws.getCells(range);
-    if (!cells) return;
-
-    cells.forEach(cell => {
-      if (style.fill) cell.fill = style.fill;
-      if (style.font) cell.font = style.font;
-      if (style.alignment) cell.alignment = style.alignment;
-      if (style.border) cell.border = style.border;
-      if (style.numFmt) cell.numFmt = style.numFmt;
-    });
-  }
+  /* ============================================================
+     ➗ صيغ
+     ============================================================ */
 
   addFormula(ws, op) {
     ws.getCell(op.address).value = { formula: op.formula };
   }
 
+  /* ============================================================
+     ✔️ قوائم منسدلة
+     ============================================================ */
+
   addValidation(ws, op) {
-    const cell = ws.getCell(op.address);
-    cell.dataValidation = {
-      type: "list",
-      formulae: op.formulae || ['"خيار1,خيار2,خيار3"'],
-      showErrorMessage: true
-    };
+    const formula = `"${op.values.join(",")}"`;
+    const range = ws.getCells(op.range);
+
+    range.forEach(cell => {
+      cell.dataValidation = {
+        type: "list",
+        formulae: [formula],
+        showErrorMessage: true
+      };
+    });
   }
 
-  addComment(ws, op) {
-    const cell = ws.getCell(op.address);
-    cell.comment = {
-      text: op.text || "تعليق",
-      author: op.author || "Alatheer"
-    };
+  /* ============================================================
+     📊 تنسيق الجداول
+     ============================================================ */
+
+  formatTable(ws, op) {
+    ws.autoFilter = { from: op.range.split(":")[0], to: op.range.split(":")[1] };
   }
 
-  addFilter(ws, op) {
-    ws.autoFilter = {
-      from: op.from || "A1",
-      to: op.to || "Z100"
-    };
+  /* ============================================================
+     📈 Pivot
+     ============================================================ */
+
+  createPivot(ws, op) {
+    console.warn("⚠️ Pivot غير مدعوم بالكامل في ExcelJS، سيتم تنفيذ نسخة مبسطة.");
+    const sheet = ws.workbook.addWorksheet(op.targetSheet || "PivotSheet");
+    sheet.getCell("A1").value = "Pivot غير مدعوم بالكامل في ExcelJS";
   }
-            }
+}
