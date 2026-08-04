@@ -1,8 +1,8 @@
 /**
- * api/core/kernel.js – Alatheer Sovereign Kernel (Advanced Architecture)
- * ✅ تنظيف الرد وإخفاء كتلة الـ JSON عن الواجهة نهائياً باحترافية.
- * ✅ توافق كامل مع مخرجات Orchestrator (سواء مرت بـ ctx المباشر أو عبر activeFile).
- * ✅ تزويد Gemini بمخطط العمليات المدعومة (Operations Schema) لمنع الهلوسة.
+ * api/core/kernel.js – Alatheer Sovereign Kernel (Final Balanced Edition)
+ * ✅ تنظيف الرد وإخفاء كتلة الـ JSON عن الواجهة نهائياً.
+ * ✅ توافق كامل مع مخرجات Orchestrator (ctx + activeFile).
+ * ✅ تزويد Gemini بمخطط العمليات المدعومة الحقيقي لمنع الهلوسة.
  * ✅ دعم اللهجة السورية وتأكيد شخصية "الزميل المعماري".
  */
 
@@ -82,7 +82,7 @@ ${text.slice(0, MAX_CHARS)}${text.length > MAX_CHARS ? '\n... (تم اختصار
 
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
     
-    // 🛡️ هندسة الأوامر السيادية - المخطط القياسي للعمليات المدعومة
+    // 🛡️ هندسة الأوامر السيادية - المخطط القياسي للعمليات المدعومة (متطابق مع المحرك)
     let systemContent = `
 ${SYSTEM_PROMPT}
 
@@ -91,18 +91,75 @@ ${SYSTEM_PROMPT}
 - إياك أن تظهر للمستخدم أي كود JSON أو تفاصيل برمجية تخص العمليات في نصك المرئي. الرد النصي يجب أن يكون طبيعياً يخبره بما فعلت.
 
 [تعليمات التحكم في الملفات - Structured JSON Schema]:
-إذا طلب المستخدم تعديلاً على الملف، قم بتذييل ردك بكتلة JSON بالصيغة التالية حصراً:
+إذا طلب المستخدم تعديلاً عملياً على ملف Excel، قم بتذييل ردك بكتلة JSON بالصيغة التالية حصراً:
+
 \`\`\`json
 {
-    "operations": [
-        {"type": "add_column", "header": "اسم العمود", "after": "اسم عمود سابق (اختياري)"},
-        {"type": "add_validation", "address": "A2:A100", "formulae": ["\\"خيار1,خيار2\\""]},
-        {"type": "add_row", "data": {"الاسم": "أحمد", "العنوان": "دمشق"}},
-        {"type": "highlight", "range": "A1:Z1", "color": "#FFD700"}
-    ]
+  "operations": [
+    {
+      "type": "add_column",
+      "header": "اسم الهيدر الجديد",
+      "after": "اسم عمود موجود (اختياري)",
+      "validation": ["قيمة1", "قيمة2"],
+      "style": "match_existing"
+    },
+    {
+      "type": "delete_column",
+      "header": "اسم العمود المراد حذفه"
+    },
+    {
+      "type": "update_cell",
+      "address": "B2",
+      "value": "قيمة جديدة"
+    },
+    {
+      "type": "add_validation",
+      "range": "C2:C100",
+      "values": ["خيار1", "خيار2", "خيار3"]
+    },
+    {
+      "type": "add_style",
+      "range": "A1:D1",
+      "style": {
+        "bold": true,
+        "backgroundColor": "#FFD700"
+      }
+    },
+    {
+      "type": "add_formula",
+      "address": "E2",
+      "formula": "SUM(B2:D2)"
+    },
+    {
+      "type": "add_row",
+      "sheet": "Sheet1",
+      "data": {
+        "الاسم": "أحمد",
+        "الغياب": 0
+      }
+    },
+    {
+      "type": "format_table",
+      "range": "A1:F100",
+      "style": "TableStyleMedium2"
+    },
+    {
+      "type": "pivot",
+      "sourceRange": "A1:F100",
+      "targetSheet": "PivotSheet",
+      "config": {
+        "rows": ["الاسم"],
+        "values": ["الغياب"]
+      }
+    }
+  ]
 }
 \`\`\`
-(إذا لم يطلب المستخدم أي تعديل عملي على الملف، أرجع المصفوفة فارغة: {"operations": []}).
+
+إذا لم يكن هناك أي تعديل عملي مطلوب على الملف، أرجِع:
+\`\`\`json
+{ "operations": [] }
+\`\`\`
 `;
 
     if (fileContext) {
@@ -158,5 +215,4 @@ ${SYSTEM_PROMPT}
         fileBase64,
         operations: operations
     };
-}
-
+        }
