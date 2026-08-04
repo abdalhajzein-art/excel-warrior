@@ -1,6 +1,7 @@
 /**
- * excel/readers/ExcelReader.js – Sovereign Unified Excel Reader
- * متوافق بالكامل مع ExcelEngine الموحد وطبقة المحركات الجديدة.
+ * excel/readers/ExcelReader.js – Sovereign Unified Excel Reader (Generalized)
+ * قارئ سيادي عام، يعمل فوق أي Adapter (ExcelJS / SheetJS / غيره)،
+ * ومتوافق بالكامل مع ExcelEngine الموحد وطبقة المحركات الجديدة.
  */
 
 export class ExcelReader {
@@ -9,7 +10,7 @@ export class ExcelReader {
   }
 
   /* ============================================================
-     📖 قراءة كاملة
+     📖 قراءة كاملة – تعتمد فقط على واجهة الـ Adapter
      ============================================================ */
   async readFull(filePath, params = {}) {
     try {
@@ -37,31 +38,45 @@ export class ExcelReader {
   }
 
   /* ============================================================
-     ⚡ قراءة سريعة
+     ⚡ قراءة سريعة – تدعم Adapters مختلفة
      ============================================================ */
   async readFast(filePath, params = {}) {
     try {
-      const core = await this.adapter.readFast(filePath, params);
+      if (typeof this.adapter.readFast === "function") {
+        const core = await this.adapter.readFast(filePath, params);
+        return { ok: true, data: core };
+      }
+
+      // fallback: استخدام read العادية إذا ما في readFast
+      const core = await this.adapter.read(filePath, params);
       return { ok: true, data: core };
     } catch (err) {
+      console.error(`❌ [ExcelReader] خطأ في readFast:`, err);
       return { ok: false, error: err.message, data: null };
     }
   }
 
   /* ============================================================
-     🔍 قراءة ميتاداتا
+     🔍 قراءة ميتاداتا – عامة لأي Adapter
      ============================================================ */
-  async readMetadata(filePath) {
+  async readMetadata(filePath, params = {}) {
     try {
-      const core = await this.adapter.readMetadata(filePath);
-      return { ok: true, data: core };
+      if (typeof this.adapter.readMetadata === "function") {
+        const core = await this.adapter.readMetadata(filePath, params);
+        return { ok: true, data: core };
+      }
+
+      // fallback: استنتاج الميتاداتا من readFull
+      const core = await this.adapter.read(filePath, params);
+      return { ok: true, data: core.metadata || {} };
     } catch (err) {
+      console.error(`❌ [ExcelReader] خطأ في readMetadata:`, err);
       return { ok: false, error: err.message, data: null };
     }
   }
 
   /* ============================================================
-     🎯 قراءة نطاق محدد
+     🎯 قراءة نطاق محدد – عامة، بدون افتراض شكل الملف
      ============================================================ */
   async readRange(filePath, range, params = {}) {
     try {
@@ -69,17 +84,18 @@ export class ExcelReader {
       const extracted = this.extractRange(core, range);
       return { ok: true, data: extracted };
     } catch (err) {
+      console.error(`❌ [ExcelReader] خطأ في readRange:`, err);
       return { ok: false, error: err.message, data: null };
     }
   }
 
   /* ============================================================
-     📋 قراءة أوراق محددة
+     📋 قراءة أوراق محددة – عامة لأي محرك
      ============================================================ */
   async readSheets(filePath, sheetNames, params = {}) {
     try {
       const core = await this.adapter.read(filePath, params);
-      const filtered = core.data.filter(s => sheetNames.includes(s.name));
+      const filtered = (core.data || []).filter(s => sheetNames.includes(s.name));
 
       return {
         ok: true,
@@ -89,12 +105,13 @@ export class ExcelReader {
         }
       };
     } catch (err) {
+      console.error(`❌ [ExcelReader] خطأ في readSheets:`, err);
       return { ok: false, error: err.message, data: null };
     }
   }
 
   /* ============================================================
-     📈 تحليل أولي
+     📈 تحليل أولي – يعمل فوق أي شكل بيانات (ExcelJS / SheetJS)
      ============================================================ */
   initialAnalysis(core) {
     const sheets = core.data || [];
@@ -136,7 +153,7 @@ export class ExcelReader {
   }
 
   /* ============================================================
-     🔍 كشف نوع العمود
+     🔍 كشف نوع العمود – عامة لأي مصدر بيانات
      ============================================================ */
   detectColumnType(data) {
     const nonEmpty = data.filter(v => v !== null && v !== undefined && v !== "");
@@ -145,7 +162,9 @@ export class ExcelReader {
     const numbers = nonEmpty.map(v => parseFloat(v)).filter(v => !isNaN(v));
     if (numbers.length === nonEmpty.length) return "number";
 
-    const dates = nonEmpty.map(v => new Date(v)).filter(v => !isNaN(v));
+    const dates = nonEmpty
+      .map(v => (v instanceof Date ? v : new Date(v)))
+      .filter(v => !isNaN(v));
     if (dates.length === nonEmpty.length) return "date";
 
     const bools = nonEmpty.map(v =>
@@ -157,16 +176,16 @@ export class ExcelReader {
   }
 
   /* ============================================================
-     📊 ملخص الملف
+     📊 ملخص الملف – عام، يعتمد فقط على metadata
      ============================================================ */
   generateSummary(core, analysis) {
     const meta = core.metadata || {};
     const summary = [];
 
     summary.push(`📊 **ملخص الملف:**`);
-    summary.push(`- عدد الأوراق: ${meta.sheets}`);
-    summary.push(`- إجمالي الصفوف: ${meta.totalRows}`);
-    summary.push(`- إجمالي الأعمدة: ${meta.totalColumns}`);
+    summary.push(`- عدد الأوراق: ${meta.sheets ?? "غير معروف"}`);
+    summary.push(`- إجمالي الصفوف: ${meta.totalRows ?? "غير معروف"}`);
+    summary.push(`- إجمالي الأعمدة: ${meta.totalColumns ?? "غير معروف"}`);
     summary.push(`- يحتوي على صيغ: ${meta.hasFormulas ? "نعم" : "لا"}`);
 
     if (analysis.suggestions?.length) {
@@ -178,7 +197,7 @@ export class ExcelReader {
   }
 
   /* ============================================================
-     📐 استخراج نطاق
+     📐 استخراج نطاق – دعم أعمدة متعددة الأحرف (AA, AB, ...)، عام
      ============================================================ */
   extractRange(core, range) {
     const sheets = core.data || [];
@@ -187,16 +206,30 @@ export class ExcelReader {
     const sheet = sheets[0].data || [];
 
     const [start, end] = range.split(":");
-    const startRow = parseInt(start.match(/\d+/)[0], 10);
-    const endRow = parseInt(end.match(/\d+/)[0], 10);
-    const startCol = start.charCodeAt(0) - 64;
-    const endCol = end.charCodeAt(0) - 64;
+
+    const parseCell = (ref) => {
+      const match = ref.match(/^([A-Z]+)(\d+)$/i);
+      if (!match) return null;
+      const [, colLetters, rowStr] = match;
+      const row = parseInt(rowStr, 10);
+
+      let col = 0;
+      for (let i = 0; i < colLetters.length; i++) {
+        col = col * 26 + (colLetters.toUpperCase().charCodeAt(i) - 64);
+      }
+
+      return { row, col };
+    };
+
+    const startCell = parseCell(start);
+    const endCell = parseCell(end);
+    if (!startCell || !endCell) return [];
 
     const extracted = [];
 
-    for (let r = startRow - 1; r < endRow; r++) {
+    for (let r = startCell.row - 1; r < endCell.row; r++) {
       const rowData = [];
-      for (let c = startCol - 1; c < endCol; c++) {
+      for (let c = startCell.col - 1; c < endCell.col; c++) {
         rowData.push(sheet[r]?.[c] ?? "");
       }
       extracted.push(rowData);
