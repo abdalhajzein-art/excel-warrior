@@ -1,6 +1,8 @@
 /**
- * excel/core/ExcelJSAdapter.js – Sovereign Advanced Excel Engine (Sovereign Edition)
+ * api/tools/external/engines/excel/core/ExcelJSAdapter.js 
+ * Sovereign Advanced Excel Engine (Sovereign Edition - Alatheer AI Suite)
  * محرك ExcelJS سيادي متقدم، متوافق مع Kernel و Operations Schema، وواعٍ للجداول.
+ * محصن ضد أخطاء النطاقات، ويدعم العمليات المتقدمة (الجداول، التنسيق الشرطي، الحماية).
  */
 
 import ExcelJS from "exceljs";
@@ -17,44 +19,36 @@ export class ExcelJSAdapter {
   }
 
   /* ============================================================
-     📖 القراءة – كاملة
+     📖 القراءة – شاملة وآمنة
      ============================================================ */
 
   async read(filePath, params = {}) {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
+    try {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(filePath);
 
-    const sheets = workbook.worksheets.map(ws => this.extractSheet(ws));
+      const sheets = workbook.worksheets.map(ws => this.extractSheet(ws));
 
-    return {
-      ok: true,
-      reply: "تمت قراءة الملف بنجاح عبر ExcelJS",
-      data: sheets,
-      metadata: this.buildMetadata(sheets),
-      filePath
-    };
+      return {
+        ok: true,
+        reply: "تمت قراءة الملف بنجاح وبدقة عالية عبر ExcelJS",
+        data: sheets,
+        metadata: this.buildMetadata(sheets),
+        filePath
+      };
+    } catch (error) {
+      return { ok: false, error: `فشل في قراءة الملف: ${error.message}` };
+    }
   }
-
-  /* ============================================================
-     ⚡ قراءة سريعة – نفس read حالياً، جاهزة للتوسعة
-     ============================================================ */
 
   async readFast(filePath, params = {}) {
     return this.read(filePath, params);
   }
 
-  /* ============================================================
-     🎯 قراءة ميتاداتا فقط
-     ============================================================ */
-
   async readMetadata(filePath) {
     const core = await this.read(filePath);
-    return core.metadata;
+    return core.metadata || null;
   }
-
-  /* ============================================================
-     🎯 قراءة نطاق محدد من أول ورقة
-     ============================================================ */
 
   async readRange(filePath, range, params = {}) {
     const workbook = new ExcelJS.Workbook();
@@ -71,10 +65,6 @@ export class ExcelJSAdapter {
       range
     };
   }
-
-  /* ============================================================
-     📋 قراءة أوراق محددة بالاسم
-     ============================================================ */
 
   async readSheets(filePath, sheetNames = [], params = {}) {
     const workbook = new ExcelJS.Workbook();
@@ -101,7 +91,6 @@ export class ExcelJSAdapter {
     const firstSheet = core.data?.[0];
     if (!firstSheet) return null;
 
-    // نستخدم TableDetector فوق بيانات ExcelJS
     const tableInfo = ExcelTableDetector.detectMainTable({
       data: firstSheet.data
     });
@@ -123,15 +112,13 @@ export class ExcelJSAdapter {
   async detectMergedRegions(filePath, params = {}) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
-
     const ws = workbook.getWorksheet(1);
     if (!ws) return [];
-
-    return ws._merges ? Array.from(ws._merges.keys()) : [];
+    return ws._merges ? Object.keys(ws._merges) : []; // Fix: _merges is an object in ExcelJS
   }
 
   /* ============================================================
-     📖 استخراج ورقة واحدة – مع صيغ/تعليقات/أنماط
+     📖 استخراج ورقة واحدة – بأعلى كفاءة
      ============================================================ */
 
   extractSheet(ws) {
@@ -140,26 +127,29 @@ export class ExcelJSAdapter {
     const styles = [];
     const comments = [];
 
-    ws.eachRow((row) => {
+    // استخدام actualRowCount لتجنب الدوران في مساحات فارغة ضخمة
+    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
       const rowData = [];
       const rowStyles = [];
 
-      row.eachCell((cell) => {
-        rowData.push(cell.value || "");
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        // تعبئة البيانات الفارغة للحفاظ على الترتيب الهيكلي
+        while (rowData.length < colNumber - 1) rowData.push("");
 
-        if (cell.formula) {
+        rowData.push(cell.value ?? "");
+
+        if (cell.formula || (cell.value && cell.value.formula)) {
           formulas.push({
             address: cell.address,
-            formula: cell.formula,
-            value: cell.value
+            formula: cell.formula || cell.value.formula,
+            result: cell.value?.result
           });
         }
 
-        if (cell.comment) {
+        if (cell.note || cell.comment) { // ExcelJS uses note for comments sometimes
           comments.push({
             address: cell.address,
-            text: cell.comment.text,
-            author: cell.comment.author
+            text: cell.note || cell.comment?.text
           });
         }
 
@@ -173,13 +163,16 @@ export class ExcelJSAdapter {
         });
       });
 
-      rows.push(rowData);
+      rows[rowNumber - 1] = rowData;
       styles.push(rowStyles);
     });
 
+    // تنظيف الصفوف الفارغة (الناتجة عن تخطي صفوف في eachRow)
+    const cleanRows = Array.from(rows, item => item || []);
+
     return {
       name: ws.name,
-      data: rows,
+      data: cleanRows,
       formulas,
       styles,
       comments
@@ -195,73 +188,74 @@ export class ExcelJSAdapter {
 
     return {
       sheets: sheets.length,
+      sheetNames: sheets.map(s => s.name),
       totalRows,
       totalColumns,
       hasFormulas: sheets.some(s => s.formulas.length > 0),
       hasComments: sheets.some(s => s.comments.length > 0),
-      engines: ["exceljs"]
+      engine: "ExcelJS Sovereign"
     };
   }
 
   /* ============================================================
-     ✏️ التعديل
+     ✏️ التعديل – محرك العمليات التراكمي
      ============================================================ */
 
   async modify(filePath, params = {}) {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
+    try {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(filePath);
 
-    const ws = workbook.getWorksheet(1);
-    if (!ws) throw new Error("لا توجد أوراق عمل في الملف");
+      const targetSheetName = params.sheetName;
+      const ws = targetSheetName ? workbook.getWorksheet(targetSheetName) : workbook.getWorksheet(1);
+      
+      if (!ws) throw new Error("ورقة العمل غير موجودة!");
 
-    const ops = params.operations || [];
-    for (const op of ops) {
-      await this.applyOperation(ws, op);
+      const ops = params.operations || [];
+      const executionLogs = [];
+
+      for (const op of ops) {
+        try {
+          await this.applyOperation(ws, op);
+          executionLogs.push({ op: op.type, status: "success" });
+        } catch (opError) {
+          console.error(`⚠️ فشل في تنفيذ العملية ${op.type}:`, opError.message);
+          executionLogs.push({ op: op.type, status: "failed", error: opError.message });
+          // لا نوقف المحرك، بل نتخطى العملية الفاسدة ونكمل (Agentic Resilience)
+        }
+      }
+
+      const outPath = FileUtils.getTempPath("modified", ".xlsx");
+      await workbook.xlsx.writeFile(outPath);
+
+      return {
+        ok: true,
+        reply: "تم تنفيذ التعديلات بنجاح مع العزل الآمن للأخطاء",
+        logs: executionLogs,
+        filePath: outPath,
+        fileBase64: await FileUtils.fileToBase64(outPath),
+        fileName: `modified_${Date.now()}.xlsx`
+      };
+    } catch (error) {
+      return { ok: false, error: `فشل التعديل الشامل: ${error.message}` };
     }
-
-    const outPath = FileUtils.getTempPath("modified");
-    await workbook.xlsx.writeFile(outPath);
-
-    return {
-      ok: true,
-      reply: "تم تنفيذ التعديلات بنجاح عبر ExcelJS",
-      filePath: outPath,
-      fileBase64: await FileUtils.fileToBase64(outPath),
-      fileName: "modified.xlsx"
-    };
   }
 
   async applyOperation(ws, op) {
     switch (op.type) {
-      case "add_column":
-        return this.addColumn(ws, op);
-
-      case "delete_column":
-        return this.deleteColumn(ws, op);
-
-      case "add_row":
-        return this.addRow(ws, op);
-
-      case "update_cell":
-        return this.updateCell(ws, op);
-
-      case "add_style":
-        return this.addStyle(ws, op);
-
-      case "add_formula":
-        return this.addFormula(ws, op);
-
-      case "add_validation":
-        return this.addValidation(ws, op);
-
-      case "format_table":
-        return this.formatTable(ws, op);
-
-      case "pivot":
-        return this.createPivot(ws, op);
-
+      case "add_column": return this.addColumn(ws, op);
+      case "delete_column": return this.deleteColumn(ws, op);
+      case "add_row": return this.addRow(ws, op);
+      case "update_cell": return this.updateCell(ws, op);
+      case "add_style": return this.addStyle(ws, op);
+      case "add_formula": return this.addFormula(ws, op);
+      case "add_validation": return this.addValidation(ws, op);
+      case "format_table": return this.formatTable(ws, op);
+      case "conditional_format": return this.addConditionalFormatting(ws, op);
+      case "protect_sheet": return this.protectSheet(ws, op);
+      case "pivot": return this.createPivot(ws, op);
       default:
-        console.warn(`⚠️ عملية غير معروفة: ${op.type}`);
+        throw new Error(`عملية غير مدعومة في المحرك: ${op.type}`);
     }
   }
 
@@ -271,43 +265,42 @@ export class ExcelJSAdapter {
 
   addColumn(ws, op) {
     const headerRow = ws.getRow(1);
-
-    let insertIndex = headerRow.cellCount + 1;
+    // Values array is 1-indexed in ExcelJS. values[1] is column A.
+    let insertIndex = headerRow.values ? headerRow.values.length : 1; 
 
     if (op.after) {
-      const afterIndex = headerRow.values.indexOf(op.after);
-      if (afterIndex > -1) insertIndex = afterIndex + 1;
+      const afterIndex = (headerRow.values || []).indexOf(op.after);
+      if (afterIndex > 0) insertIndex = afterIndex + 1;
     }
 
     ws.spliceColumns(insertIndex, 0, []);
     ws.getCell(1, insertIndex).value = op.header || "عمود جديد";
 
     if (op.style) {
-      ws.getCell(1, insertIndex).font = { bold: true };
-      ws.getCell(1, insertIndex).fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFD700" }
-      };
+      ws.getCell(1, insertIndex).font = op.style.font || { bold: true };
+      if (op.style.fill) ws.getCell(1, insertIndex).fill = op.style.fill;
     }
 
     if (op.validation && Array.isArray(op.validation)) {
       const formula = `"${op.validation.join(",")}"`;
-      ws.getColumn(insertIndex).eachCell((cell, rowNumber) => {
-        if (rowNumber === 1) return;
-        cell.dataValidation = {
+      // نطبق على 1000 صف افتراضياً كحد أقصى لتجنب تضخم الملف
+      for (let r = 2; r <= 1000; r++) {
+        ws.getCell(r, insertIndex).dataValidation = {
           type: "list",
+          allowBlank: true,
           formulae: [formula],
-          showErrorMessage: true
+          showErrorMessage: true,
+          errorStyle: "error"
         };
-      });
+      }
     }
   }
 
   deleteColumn(ws, op) {
     const headerRow = ws.getRow(1);
-    const index = headerRow.values.indexOf(op.header);
-    if (index > -1) ws.spliceColumns(index, 1);
+    const index = (headerRow.values || []).indexOf(op.header);
+    if (index > 0) ws.spliceColumns(index, 1);
+    else throw new Error(`لم يتم العثور على العمود: ${op.header}`);
   }
 
   /* ============================================================
@@ -315,12 +308,12 @@ export class ExcelJSAdapter {
      ============================================================ */
 
   addRow(ws, op) {
-    const headerRow = ws.getRow(1).values;
+    const headerRow = ws.getRow(1).values || [];
     const rowData = [];
 
     for (const key of Object.keys(op.data || {})) {
       const colIndex = headerRow.indexOf(key);
-      if (colIndex > -1) rowData[colIndex - 1] = op.data[key];
+      if (colIndex > 0) rowData[colIndex] = op.data[key];
     }
 
     ws.addRow(rowData);
@@ -331,88 +324,159 @@ export class ExcelJSAdapter {
   }
 
   /* ============================================================
-     🎨 تنسيق
+     🎨 التنسيق والمجالات (Ranges)
      ============================================================ */
 
   addStyle(ws, op) {
-    const cells = ws.getCells(op.range);
-    if (!cells) return;
-
-    cells.forEach(cell => {
-      if (op.style.fill) cell.fill = op.style.fill;
-      if (op.style.font) cell.font = op.style.font;
-      if (op.style.alignment) cell.alignment = op.style.alignment;
-      if (op.style.border) cell.border = op.style.border;
-      if (op.style.numFmt) cell.numFmt = op.style.numFmt;
-    });
+    const { startCol, startRow, endCol, endRow } = this.parseRange(op.range);
+    
+    for (let r = startRow; r <= endRow; r++) {
+      for (let c = startCol; c <= endCol; c++) {
+        const cell = ws.getCell(r, c);
+        if (op.style.fill) cell.fill = op.style.fill;
+        if (op.style.font) cell.font = op.style.font;
+        if (op.style.alignment) cell.alignment = op.style.alignment;
+        if (op.style.border) cell.border = op.style.border;
+        if (op.style.numFmt) cell.numFmt = op.style.numFmt;
+      }
+    }
   }
 
   /* ============================================================
-     ➗ صيغ
+     ➗ المعادلات والقيود
      ============================================================ */
 
   addFormula(ws, op) {
     ws.getCell(op.address).value = { formula: op.formula };
   }
 
-  /* ============================================================
-     ✔️ قوائم منسدلة
-     ============================================================ */
-
   addValidation(ws, op) {
     const formula = `"${(op.values || []).join(",")}"`;
-    const range = ws.getCells(op.range);
+    const { startCol, startRow, endCol, endRow } = this.parseRange(op.range);
 
-    range.forEach(cell => {
-      cell.dataValidation = {
-        type: "list",
-        formulae: [formula],
-        showErrorMessage: true
-      };
+    for (let r = startRow; r <= endRow; r++) {
+      for (let c = startCol; c <= endCol; c++) {
+        ws.getCell(r, c).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [formula],
+          showErrorMessage: true
+        };
+      }
+    }
+  }
+
+  /* ============================================================
+     📊 الجداول الرسمية (Native Tables)
+     ============================================================ */
+
+  formatTable(ws, op) {
+    // دعم أصلي للجداول في ExcelJS
+    const tableName = op.tableName || `Table_${Date.now()}`;
+    const headerRow = ws.getRow(1).values || [];
+    const columns = [];
+    
+    for (let i = 1; i < headerRow.length; i++) {
+      columns.push({ name: headerRow[i] || `Col${i}`, filterButton: true });
+    }
+
+    if (columns.length === 0) throw new Error("لا توجد أعمدة لإنشاء الجدول");
+
+    ws.addTable({
+      name: tableName,
+      ref: op.range || 'A1', // مثال: 'A1:D10'
+      headerRow: true,
+      totalsRow: op.totalsRow || false,
+      style: {
+        theme: op.theme || 'TableStyleMedium2', // ثيم إكسل الاحترافي
+        showRowStripes: true,
+      },
+      columns: columns,
+      rows: [] // البيانات موجودة أصلاً في الشيت، نحدد الإطار فقط
     });
   }
 
   /* ============================================================
-     📊 تنسيق الجداول
+     ✨ تنسيق شرطي وحماية (ميزات سيادية جديدة)
      ============================================================ */
 
-  formatTable(ws, op) {
-    const [from, to] = op.range.split(":");
-    ws.autoFilter = { from, to };
+  addConditionalFormatting(ws, op) {
+    ws.addConditionalFormatting({
+      ref: op.range,
+      rules: [
+        {
+          type: op.ruleType || 'cellIs', // 'expression', 'cellIs', 'top10'
+          operator: op.operator || 'greaterThan',
+          formulae: op.formulae || [],
+          style: op.style
+        }
+      ]
+    });
+  }
+
+  async protectSheet(ws, op) {
+    const password = op.password || 'AlatheerSecured';
+    await ws.protect(password, {
+      selectLockedCells: true,
+      selectUnlockedCells: true,
+      formatCells: false,
+      insertRows: false
+    });
   }
 
   /* ============================================================
-     📈 Pivot (نسخة مبسطة)
+     📈 Pivot (القيود)
      ============================================================ */
 
   createPivot(ws, op) {
-    console.warn("⚠️ Pivot غير مدعوم بالكامل في ExcelJS، سيتم تنفيذ نسخة مبسطة.");
-    const sheet = ws.workbook.addWorksheet(op.targetSheet || "PivotSheet");
-    sheet.getCell("A1").value = "Pivot غير مدعوم بالكامل في ExcelJS";
+    console.warn("⚠️ Pivot غير مدعوم بالكامل في ExcelJS. يتم تجهيز البيانات للتحليل لاحقاً.");
+    const sheetName = op.targetSheet || "Pivot_Summary";
+    let sheet = ws.workbook.getWorksheet(sheetName);
+    if (!sheet) sheet = ws.workbook.addWorksheet(sheetName);
+    sheet.getCell("A1").value = "تم طلب Pivot. ExcelJS لا يولد محرك Pivot أصلي. استخدم Pandas للتحليل.";
   }
 
   /* ============================================================
-     📐 استخراج نطاق من Worksheet
+     🛠️ أدوات مساعدة متقدمة للمحرك (Engine Helpers)
      ============================================================ */
 
-  extractRangeFromWorksheet(ws, range) {
-    const [start, end] = range.split(":");
-    const startRow = parseInt(start.match(/\d+/)[0], 10);
-    const endRow = parseInt(end.match(/\d+/)[0], 10);
-    const startCol = start.charCodeAt(0) - 64;
-    const endCol = end.charCodeAt(0) - 64;
+  parseRange(rangeStr) {
+    const [start, end] = rangeStr.split(":");
+    const startMatch = start.match(/([a-zA-Z]+)(\d+)/);
+    const endMatch = end ? end.match(/([a-zA-Z]+)(\d+)/) : startMatch;
 
+    if (!startMatch) throw new Error(`نطاق غير صالح: ${rangeStr}`);
+
+    return {
+      startCol: this.colToInt(startMatch[1]),
+      startRow: parseInt(startMatch[2], 10),
+      endCol: this.colToInt(endMatch[1]),
+      endRow: parseInt(endMatch[2], 10)
+    };
+  }
+
+  colToInt(colLetters) {
+    let num = 0;
+    for (let i = 0; i < colLetters.length; i++) {
+      num = num * 26 + (colLetters.toUpperCase().charCodeAt(i) - 64);
+    }
+    return num;
+  }
+
+  extractRangeFromWorksheet(ws, range) {
+    const { startCol, startRow, endCol, endRow } = this.parseRange(range);
     const extracted = [];
 
     for (let r = startRow; r <= endRow; r++) {
-      const row = ws.getRow(r);
       const rowData = [];
       for (let c = startCol; c <= endCol; c++) {
-        rowData.push(ws.getCell(r, c).value ?? "");
+        const cell = ws.getCell(r, c);
+        rowData.push(cell.value ?? "");
       }
       extracted.push(rowData);
     }
 
     return extracted;
   }
-      }
+}
+
