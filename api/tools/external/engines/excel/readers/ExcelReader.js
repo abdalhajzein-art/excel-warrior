@@ -1,248 +1,209 @@
 /**
- * excel/readers/ExcelReader.js – القراءة السيادية المتقدمة
- * 🔥 تدعم: صيغ، تنسيق، ميتاداتا، تحليل أولي
- * ✅ تم إصلاح مشكلة الـ ok:true في النجاح
+ * excel/readers/ExcelReader.js – Sovereign Unified Excel Reader
+ * متوافق بالكامل مع ExcelEngine الموحد وطبقة المحركات الجديدة.
  */
 
-import { ErrorHandler } from '../utils/ErrorHandler.js';
-import { MAX_TEXT_LENGTH } from '../types/ExcelTypes.js';
-
 export class ExcelReader {
-    constructor(adapter) {
-        this.adapter = adapter;
-    }
-    
-    /**
-     * 📖 قراءة كاملة للملف
-     */
-    async readFull(filePath, params = {}) {
-        try {
-            console.log(`📖 [ExcelReader] بدء قراءة الملف: ${filePath}`);
-            
-            const data = await this.adapter.read(filePath, params);
-            
-            console.log(`📖 [ExcelReader] تمت قراءة الملف بنجاح`);
-            
-            // ✅ تحليل أولي
-            const analysis = this.initialAnalysis(data);
-            
-            // ✅ إرجاع البيانات مع ok: true
-            return {
-                ok: true,
-                data: {
-                    ...data,
-                    analysis,
-                    summary: this.generateSummary(data)
-                }
-            };
-        } catch (err) {
-            console.error(`❌ [ExcelReader] خطأ في readFull:`, err.message);
-            console.error(`❌ [ExcelReader] Stack:`, err.stack);
-            return {
-                ok: false,
-                error: err.message || 'فشل قراءة الملف',
-                data: null
-            };
+  constructor(adapter) {
+    this.adapter = adapter;
+  }
+
+  /* ============================================================
+     📖 قراءة كاملة
+     ============================================================ */
+  async readFull(filePath, params = {}) {
+    try {
+      console.log(`📖 [ExcelReader] قراءة كاملة للملف: ${filePath}`);
+
+      const core = await this.adapter.read(filePath, params);
+
+      const analysis = this.initialAnalysis(core);
+      const summary = this.generateSummary(core, analysis);
+
+      return {
+        ok: true,
+        reply: core.reply,
+        data: {
+          sheets: core.data,
+          metadata: core.metadata,
+          analysis,
+          summary
         }
+      };
+    } catch (err) {
+      console.error(`❌ [ExcelReader] خطأ في readFull:`, err);
+      return { ok: false, error: err.message, data: null };
     }
-    
-    /**
-     * 📊 قراءة سريعة (بدون صيغ وتنسيق)
-     */
-    async readFast(filePath, params = {}) {
-        try {
-            // استخدام XLSX للسرعة
-            const XLSXAdapter = (await import('../core/XLSXAdapter.js')).XLSXAdapter;
-            const fastAdapter = new XLSXAdapter();
-            const data = await fastAdapter.read(filePath, params);
-            return {
-                ok: true,
-                data: data
-            };
-        } catch (err) {
-            console.error(`❌ [ExcelReader] خطأ في readFast:`, err.message);
-            return {
-                ok: false,
-                error: err.message || 'فشل القراءة السريعة',
-                data: null
-            };
+  }
+
+  /* ============================================================
+     ⚡ قراءة سريعة
+     ============================================================ */
+  async readFast(filePath, params = {}) {
+    try {
+      const core = await this.adapter.readFast(filePath, params);
+      return { ok: true, data: core };
+    } catch (err) {
+      return { ok: false, error: err.message, data: null };
+    }
+  }
+
+  /* ============================================================
+     🔍 قراءة ميتاداتا
+     ============================================================ */
+  async readMetadata(filePath) {
+    try {
+      const core = await this.adapter.readMetadata(filePath);
+      return { ok: true, data: core };
+    } catch (err) {
+      return { ok: false, error: err.message, data: null };
+    }
+  }
+
+  /* ============================================================
+     🎯 قراءة نطاق محدد
+     ============================================================ */
+  async readRange(filePath, range, params = {}) {
+    try {
+      const core = await this.adapter.read(filePath, params);
+      const extracted = this.extractRange(core, range);
+      return { ok: true, data: extracted };
+    } catch (err) {
+      return { ok: false, error: err.message, data: null };
+    }
+  }
+
+  /* ============================================================
+     📋 قراءة أوراق محددة
+     ============================================================ */
+  async readSheets(filePath, sheetNames, params = {}) {
+    try {
+      const core = await this.adapter.read(filePath, params);
+      const filtered = core.data.filter(s => sheetNames.includes(s.name));
+
+      return {
+        ok: true,
+        data: {
+          sheets: filtered,
+          metadata: core.metadata
         }
+      };
+    } catch (err) {
+      return { ok: false, error: err.message, data: null };
     }
-    
-    /**
-     * 🔍 قراءة ميتاداتا فقط
-     */
-    async readMetadata(filePath) {
-        try {
-            const data = await this.adapter.read(filePath);
-            return {
-                ok: true,
-                data: {
-                    sheets: data.metadata.sheets,
-                    totalRows: data.metadata.totalRows,
-                    totalColumns: data.metadata.totalColumns,
-                    hasFormulas: data.metadata.hasFormulas,
-                    engines: data.metadata.engines
-                }
-            };
-        } catch (err) {
-            console.error(`❌ [ExcelReader] خطأ في readMetadata:`, err.message);
-            return {
-                ok: false,
-                error: err.message || 'فشل قراءة الميتاداتا',
-                data: null
-            };
-        }
+  }
+
+  /* ============================================================
+     📈 تحليل أولي
+     ============================================================ */
+  initialAnalysis(core) {
+    const sheets = core.data || [];
+    if (!sheets.length) return {};
+
+    const firstSheet = sheets[0].data || [];
+    if (firstSheet.length <= 1) return {};
+
+    const headers = firstSheet[0];
+    const analysis = {
+      dataTypes: {},
+      nullCounts: {},
+      uniqueCounts: {},
+      suggestions: []
+    };
+
+    headers.forEach((header, index) => {
+      const columnData = firstSheet.slice(1).map(row => row[index]);
+      const nonEmpty = columnData.filter(v => v !== null && v !== undefined && v !== "");
+
+      analysis.dataTypes[header] = this.detectColumnType(columnData);
+      analysis.nullCounts[header] = columnData.length - nonEmpty.length;
+      analysis.uniqueCounts[header] = new Set(nonEmpty).size;
+
+      if (analysis.nullCounts[header] > columnData.length * 0.3) {
+        analysis.suggestions.push(
+          `🔍 العمود "${header}" يحتوي على نسبة عالية من القيم الفارغة`
+        );
+      }
+
+      if (analysis.uniqueCounts[header] <= 10 && analysis.uniqueCounts[header] > 1) {
+        analysis.suggestions.push(
+          `📋 العمود "${header}" مناسب لقائمة منسدلة (قيم فريدة قليلة)`
+        );
+      }
+    });
+
+    return analysis;
+  }
+
+  /* ============================================================
+     🔍 كشف نوع العمود
+     ============================================================ */
+  detectColumnType(data) {
+    const nonEmpty = data.filter(v => v !== null && v !== undefined && v !== "");
+    if (!nonEmpty.length) return "empty";
+
+    const numbers = nonEmpty.map(v => parseFloat(v)).filter(v => !isNaN(v));
+    if (numbers.length === nonEmpty.length) return "number";
+
+    const dates = nonEmpty.map(v => new Date(v)).filter(v => !isNaN(v));
+    if (dates.length === nonEmpty.length) return "date";
+
+    const bools = nonEmpty.map(v =>
+      ["نعم", "لا", "true", "false", "TRUE", "FALSE"].includes(String(v))
+    );
+    if (bools.every(b => b)) return "boolean";
+
+    return "text";
+  }
+
+  /* ============================================================
+     📊 ملخص الملف
+     ============================================================ */
+  generateSummary(core, analysis) {
+    const meta = core.metadata || {};
+    const summary = [];
+
+    summary.push(`📊 **ملخص الملف:**`);
+    summary.push(`- عدد الأوراق: ${meta.sheets}`);
+    summary.push(`- إجمالي الصفوف: ${meta.totalRows}`);
+    summary.push(`- إجمالي الأعمدة: ${meta.totalColumns}`);
+    summary.push(`- يحتوي على صيغ: ${meta.hasFormulas ? "نعم" : "لا"}`);
+
+    if (analysis.suggestions?.length) {
+      summary.push(`\n💡 **اقتراحات:**`);
+      analysis.suggestions.forEach(s => summary.push(`- ${s}`));
     }
-    
-    /**
-     * 🎯 قراءة نطاق محدد
-     */
-    async readRange(filePath, range, params = {}) {
-        try {
-            const data = await this.adapter.read(filePath, params);
-            const extracted = this.extractRange(data, range);
-            return {
-                ok: true,
-                data: extracted
-            };
-        } catch (err) {
-            console.error(`❌ [ExcelReader] خطأ في readRange:`, err.message);
-            return {
-                ok: false,
-                error: err.message || 'فشل قراءة النطاق',
-                data: null
-            };
-        }
+
+    return summary.join("\n");
+  }
+
+  /* ============================================================
+     📐 استخراج نطاق
+     ============================================================ */
+  extractRange(core, range) {
+    const sheets = core.data || [];
+    if (!sheets.length) return [];
+
+    const sheet = sheets[0].data || [];
+
+    const [start, end] = range.split(":");
+    const startRow = parseInt(start.match(/\d+/)[0], 10);
+    const endRow = parseInt(end.match(/\d+/)[0], 10);
+    const startCol = start.charCodeAt(0) - 64;
+    const endCol = end.charCodeAt(0) - 64;
+
+    const extracted = [];
+
+    for (let r = startRow - 1; r < endRow; r++) {
+      const rowData = [];
+      for (let c = startCol - 1; c < endCol; c++) {
+        rowData.push(sheet[r]?.[c] ?? "");
+      }
+      extracted.push(rowData);
     }
-    
-    /**
-     * 📋 قراءة أوراق محددة
-     */
-    async readSheets(filePath, sheetNames, params = {}) {
-        try {
-            const data = await this.adapter.read(filePath, params);
-            const filteredSheets = data.sheets.filter(s => sheetNames.includes(s.name));
-            return {
-                ok: true,
-                data: {
-                    ...data,
-                    sheets: filteredSheets,
-                    data: filteredSheets.map(s => s.data)
-                }
-            };
-        } catch (err) {
-            console.error(`❌ [ExcelReader] خطأ في readSheets:`, err.message);
-            return {
-                ok: false,
-                error: err.message || 'فشل قراءة الأوراق',
-                data: null
-            };
-        }
-    }
-    
-    /**
-     * 📈 تحليل أولي للبيانات
-     */
-    initialAnalysis(data) {
-        const analysis = {
-            dataTypes: {},
-            nullCounts: {},
-            uniqueCounts: {},
-            suggestions: []
-        };
-        
-        if (data.data && data.data[0] && data.data[0].length > 0) {
-            const firstSheet = data.data[0];
-            if (firstSheet.length > 1) {
-                const headers = firstSheet[0] || [];
-                
-                headers.forEach((header, index) => {
-                    const columnData = firstSheet.slice(1).map(row => row[index]);
-                    const nonEmpty = columnData.filter(v => v !== null && v !== undefined && v !== '');
-                    
-                    analysis.dataTypes[header] = this.detectColumnType(columnData);
-                    analysis.nullCounts[header] = columnData.length - nonEmpty.length;
-                    analysis.uniqueCounts[header] = new Set(nonEmpty).size;
-                    
-                    // اقتراحات ذكية
-                    if (analysis.nullCounts[header] > columnData.length * 0.3) {
-                        analysis.suggestions.push(`🔍 العمود "${header}" به ${analysis.nullCounts[header]} خلايا فارغة (${Math.round(analysis.nullCounts[header]/columnData.length*100)}%)`);
-                    }
-                    
-                    if (analysis.uniqueCounts[header] <= 10 && analysis.uniqueCounts[header] > 1) {
-                        analysis.suggestions.push(`📋 العمود "${header}" يحتوي على ${analysis.uniqueCounts[header]} قيم فريدة (قد يكون مناسباً لقائمة منسدلة)`);
-                    }
-                });
-            }
-        }
-        
-        return analysis;
-    }
-    
-    /**
-     * 🔍 كشف نوع العمود
-     */
-    detectColumnType(data) {
-        const nonEmpty = data.filter(v => v !== null && v !== undefined && v !== '');
-        if (nonEmpty.length === 0) return 'empty';
-        
-        // تحقق من الأرقام
-        const numbers = nonEmpty.map(v => parseFloat(v)).filter(v => !isNaN(v));
-        if (numbers.length === nonEmpty.length) return 'number';
-        
-        // تحقق من التواريخ
-        const dates = nonEmpty.map(v => new Date(v)).filter(v => !isNaN(v));
-        if (dates.length === nonEmpty.length) return 'date';
-        
-        // تحقق من البوليان
-        const bools = nonEmpty.map(v => ['نعم', 'لا', 'true', 'false', 'TRUE', 'FALSE'].includes(String(v)));
-        if (bools.every(b => b === true)) return 'boolean';
-        
-        return 'text';
-    }
-    
-    /**
-     * 📊 توليد ملخص
-     */
-    generateSummary(data) {
-        const summary = [];
-        summary.push(`📊 **ملخص الملف:**`);
-        summary.push(`- عدد الأوراق: ${data.metadata.sheets}`);
-        summary.push(`- إجمالي الصفوف: ${data.metadata.totalRows}`);
-        summary.push(`- إجمالي الأعمدة: ${data.metadata.totalColumns}`);
-        summary.push(`- يحتوي على صيغ: ${data.metadata.hasFormulas ? 'نعم ✅' : 'لا ❌'}`);
-        
-        if (data.analysis && data.analysis.suggestions.length > 0) {
-            summary.push(`\n💡 **اقتراحات:**`);
-            data.analysis.suggestions.forEach(s => summary.push(`- ${s}`));
-        }
-        
-        return summary.join('\n');
-    }
-    
-    /**
-     * 📐 استخراج نطاق محدد
-     */
-    extractRange(data, range) {
-        // تنفيذ استخراج النطاق
-        const [start, end] = range.split(':');
-        const startRow = parseInt(start.match(/\d+/)[0]);
-        const endRow = parseInt(end.match(/\d+/)[0]);
-        const startCol = start.charCodeAt(0) - 64;
-        const endCol = end.charCodeAt(0) - 64;
-        
-        const extracted = [];
-        for (let row = startRow - 1; row < endRow; row++) {
-            const rowData = [];
-            for (let col = startCol - 1; col < endCol; col++) {
-                rowData.push(data.data[0][row]?.[col] || '');
-            }
-            extracted.push(rowData);
-        }
-        
-        return extracted;
-    }
+
+    return extracted;
+  }
 }
 
 export default ExcelReader;
