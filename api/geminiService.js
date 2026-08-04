@@ -41,7 +41,7 @@ async function executeWithRetry(fn) {
   throw lastError;
 }
 
-const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 /* ============================================================
    🧠 وضع المحادثة السيادي
