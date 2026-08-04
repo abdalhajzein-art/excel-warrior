@@ -1,16 +1,19 @@
 /**
- * api/core/kernel.js – Alatheer Sovereign Kernel (Adaptive Smart Edition)
+ * api/core/kernel.js – Alatheer Sovereign Kernel (Clean & Lean Edition)
  */
 
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
+import { execFileSync } from "child_process";
+import fs from "fs";
+import path from "path";
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const message = (rawMessage || "").trim();
     if (!message) {
         return {
-            reply: "هلا والله يا صديقي... آمرني، شو عنا شغل اليوم؟",
+            reply: "هلا والله يا شريكي... آمرني، شو عنا شغل اليوم؟",
             fileBase64: null,
             fileName: null,
             operations: []
@@ -20,7 +23,9 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const activeFile = ctx.activeFile || null;
     const extractedContent = ctx.extractedContent || activeFile?.extractedContent || null;
     const fileName = ctx.fileName || activeFile?.fileName || "الملف النشط";
+    const filePath = activeFile?.filePath || null;
 
+    // بناء سياق الملف فقط (دون توجيهات إضافية)
     let fileContext = ctx.activeFileSummary || "";
     if (!fileContext && extractedContent && !extractedContent.error) {
         const meta = extractedContent.metadata || {};
@@ -39,29 +44,13 @@ ${text.slice(0, MAX_CHARS)}
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
 
     /* ============================================================
-       🧠 نظام تعليمات ذكي غير خانق
+       🧠 بناء التعليمات النهائية (دمج البرومبت الأساسي مع سياق الملف)
        ============================================================ */
-    let systemContent = `
-${SYSTEM_PROMPT}
+    let systemContent = SYSTEM_PROMPT; // استخدام البرومبت النظيف من system.js
 
-[قواعد تشغيلك السيادية]:
-
-- أنت زميل ومهندس ملفات في منصة "الأثير"، وتخاطب المستخدم بروح الزمالة باللهجة السورية المهنية (يا شريكي، يا صديقي…).
-
-- إذا فهمت من سياق كلام المستخدم أنه يطلب **تعديل ملف Excel** (مثل: إضافة، حذف، تعديل، تنسيق، دمج، صيغ، Pivot، نطاقات، صفوف، أعمدة، شيتات…)،  
-  عندها فقط يجب عليك إرجاع كتلة JSON في نهاية الرد تحتوي على مفتاح "operations".
-
-- العمليات يجب أن تكون من الأنواع المدعومة في المنصة، وتختارها أنت حسب سياق الطلب، وليس عبر مثال ثابت.
-
-- إذا كان طلب المستخدم **توليد محتوى، شرح، تحليل، كتابة نص، أو أي شيء غير تعديل ملف**،  
-  عندها يجب أن يكون الرد نصياً فقط بدون JSON.
-
-- لا تستخدم أمثلة ثابتة، ولا تفرض عملية واحدة.  
-  اختر العملية المناسبة حسب فهمك لسياق كلام المستخدم.
-`;
-
+    // إضافة سياق الملف فقط إذا كان موجوداً
     if (fileContext) {
-        systemContent += `\n\n${fileContext}`;
+        systemContent += `\n\n[سياق الملف الحالي للرجوع إليه]:\n${fileContext}`;
     }
 
     const conversationMessages = [
@@ -86,7 +75,7 @@ ${SYSTEM_PROMPT}
 
         finalReplyText = rawReply || "تم يا شريكي.";
 
-        // استخراج JSON إذا كان موجود
+        // استخراج JSON (لا تغيير هنا)
         const jsonMatch =
             finalReplyText.match(/```json\s*([\s\S]*?)\s*```/) ||
             finalReplyText.match(/\{[\s\S]*"operations"[\s\S]*\}/);
@@ -104,12 +93,34 @@ ${SYSTEM_PROMPT}
             }
         }
 
-        // تنظيف الرد من كتلة JSON
         finalReplyText = finalReplyText.replace(/```json[\s\S]*?```/g, "").trim();
+
+        /* ============================================================
+           ⚙️ تنفيذ جسر بايثون
+           ============================================================ */
+        if (operations.length > 0 && filePath && fs.existsSync(filePath)) {
+            const scriptPath = path.join(process.cwd(), "api/core/excel_bridge.py");
+            const opsJson = JSON.stringify(operations);
+            
+            console.log(`⚡ [Python Bridge] تنفيذ ${operations.length} عملية على الملف...`);
+            
+            // تمرير العمليات للجسر
+            const stdout = execFileSync("python3", [scriptPath, filePath, opsJson], { encoding: "utf8" });
+            const res = JSON.parse(stdout);
+            
+            if (res.success) {
+                finalReplyText += `\n\n✅ تم التنفيذ بنجاح يا شريكي، والملف جاهز للتحميل!`;
+                const updatedBuffer = fs.readFileSync(filePath);
+                fileBase64 = updatedBuffer.toString("base64");
+            } else {
+                finalReplyText += `\n⚠️ صار خطأ أثناء التنفيذ البرمجي: ${res.error}`;
+                console.error("❌ [Python Error]:", res.error);
+            }
+        }
 
     } catch (error) {
         console.error("❌ [Kernel] خطأ:", error);
-        finalReplyText = `معليش يا شريكي، صار في خطأ: ${error.message}`;
+        finalReplyText = `معليش يا شريكي، صار في خطأ بالاتصال: ${error.message}`;
     }
 
     memory.appendSovereignHistory(sessionId, {
@@ -124,3 +135,4 @@ ${SYSTEM_PROMPT}
         operations,
     };
 }
+
