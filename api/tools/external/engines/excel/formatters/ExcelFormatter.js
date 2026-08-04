@@ -1,7 +1,10 @@
 /**
- * excel/formatters/ExcelFormatter.js – Sovereign Unified Excel Formatter
- * تنسيق تلقائي سيادي متقدم متوافق مع ExcelEngine الموحد.
+ * api/tools/external/engines/excel/formatters/ExcelFormatter.js
+ * Sovereign Unified Excel Formatter (Enterprise Edition)
+ * منسق سيادي ذكي، يتكامل مع الرادار، يدعم الأعمدة اللانهائية، ويعتمد هوية الأثير البصرية.
  */
+
+import { ExcelTableDetector } from "../core/ExcelTableDetector.js";
 
 export class ExcelFormatter {
   constructor(adapter) {
@@ -9,167 +12,132 @@ export class ExcelFormatter {
   }
 
   /* ============================================================
-     🎨 تنسيق تلقائي كامل
+     🎨 التنسيق التلقائي الذكي (Auto-Format)
      ============================================================ */
   async autoFormat(filePath, params = {}) {
     const core = await this.adapter.read(filePath, params);
+    let allOperations = [];
 
-    const operations = [
-      ...this.formatTable(core),
-      ...this.formatHeaders(core),
-      ...this.formatByType(core),
-      ...this.formatNumbers(core),
-      ...this.formatDates(core),
-      ...this.autoConditionalFormat(core),
-      {
-        type: "add_filter",
-        from: "A1",
-        to: `Z${core.metadata.totalRows + 1}`
-      }
-    ];
+    const sheets = core.data || [];
+    
+    // نمر على كل ورقة، ونستخرج النطاق الحقيقي، ثم نبني عمليات التنسيق دفعة واحدة
+    for (const sheet of sheets) {
+      const tableInfo = ExcelTableDetector.detectMainTable(sheet);
+      if (!tableInfo) continue; // تخطي الأوراق الفارغة
 
-    const result = await this.adapter.modify(filePath, { operations });
+      const sheetOps = this.buildSheetFormattingOps(sheet.data, tableInfo, sheet.name);
+      allOperations = allOperations.concat(sheetOps);
+    }
+
+    if (allOperations.length === 0) {
+      return { ok: false, error: "لم يتم العثور على جداول قابلة للتنسيق في الملف." };
+    }
+
+    // 🚀 تنفيذ التعديلات عبر المحرك
+    const result = await this.adapter.modify(filePath, { operations: allOperations });
 
     return {
       ...result,
-      summary: this.generateFormatSummary(operations),
-      operationsApplied: operations.length
+      summary: this.generateFormatSummary(allOperations),
+      operationsApplied: allOperations.length
     };
   }
 
   /* ============================================================
-     📋 تنسيق الجدول
+     🏗️ بناء عمليات التنسيق لورقة محددة (Single Pass Optimization)
      ============================================================ */
-  formatTable(core) {
+  buildSheetFormattingOps(data, tableInfo, sheetName) {
     const ops = [];
-    const rows = core.metadata.totalRows || 10;
-    const cols = core.metadata.totalColumns || 10;
-    const lastCol = String.fromCharCode(64 + cols);
+    const { headerRowNum, dataStartRow, dataEndRow, totalCols } = tableInfo;
+    
+    const firstColLetter = "A"; // افتراضياً نبدأ من A (يمكن تطويرها لاحقاً لتبدأ من النطاق المكتشف)
+    const lastColLetter = this.getExcelColumnLetter(totalCols - 1);
+    
+    const headerRowIdx = headerRowNum - 1;
+    const headers = data[headerRowIdx] || [];
+    const dataRows = data.slice(dataStartRow - 1, dataEndRow);
 
+    // 1. 🖌️ تنسيق الرؤوس (هوية الأثير: أسود وذهبي)
     ops.push({
       type: "format_range",
-      range: `A1:${lastCol}${rows + 1}`,
+      sheet: sheetName,
+      range: `${firstColLetter}${headerRowNum}:${lastColLetter}${headerRowNum}`,
+      style: {
+        fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF111111" } }, // أسود داكن
+        font: { bold: true, color: { argb: "FFD4AF37" }, size: 12 }, // ذهبي
+        alignment: { horizontal: "center", vertical: "middle" },
+        border: { bottom: { style: "medium", color: { argb: "FFD4AF37" } } }
+      }
+    });
+
+    // 2. 🔲 تنسيق حدود الجدول بالكامل وتفعيل الفلتر
+    ops.push({
+      type: "format_range",
+      sheet: sheetName,
+      range: `${firstColLetter}${headerRowNum}:${lastColLetter}${dataEndRow}`,
       style: {
         border: {
-          top: { style: "thin" },
-          bottom: { style: "thin" },
-          left: { style: "thin" },
-          right: { style: "thin" }
+          top: { style: "thin" }, bottom: { style: "thin" },
+          left: { style: "thin" }, right: { style: "thin" }
         }
       }
     });
 
-    for (let r = 2; r <= rows + 1; r += 2) {
-      ops.push({
-        type: "format_range",
-        range: `A${r}:${lastCol}${r}`,
-        style: {
-          fill: {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: "FFF5F5F5" }
+    ops.push({
+      type: "add_filter",
+      sheet: sheetName,
+      from: `${firstColLetter}${headerRowNum}`,
+      to: `${lastColLetter}${dataEndRow}`
+    });
+
+    // 3. 🏁 تلوين الصفوف المتعاقبة (Zebra Striping)
+    for (let r = dataStartRow; r <= dataEndRow; r++) {
+      if (r % 2 === 0) {
+        ops.push({
+          type: "format_range",
+          sheet: sheetName,
+          range: `${firstColLetter}${r}:${lastColLetter}${r}`,
+          style: {
+            fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFF9F9F9" } }
           }
-        }
-      });
+        });
+      }
     }
 
-    return ops;
-  }
-
-  /* ============================================================
-     📋 تنسيق الرؤوس
-     ============================================================ */
-  formatHeaders(core) {
-    const cols = core.metadata.totalColumns || 10;
-    const lastCol = String.fromCharCode(64 + cols);
-
-    return [
-      {
-        type: "format_range",
-        range: `A1:${lastCol}1`,
-        style: {
-          fill: {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: "FF4F81BD" }
-          },
-          font: {
-            bold: true,
-            color: { argb: "FFFFFFFF" },
-            size: 12
-          },
-          alignment: {
-            horizontal: "center",
-            vertical: "middle"
-          }
-        }
-      }
-    ];
-  }
-
-  /* ============================================================
-     📋 تنسيق حسب نوع البيانات
-     ============================================================ */
-  formatByType(core) {
-    const ops = [];
-    const sheets = core.data || [];
-    if (!sheets.length) return ops;
-
-    const sheet = sheets[0].data || [];
-    if (sheet.length < 2) return ops;
-
-    const headers = sheet[0];
-    const rows = sheet.slice(1);
-
+    // 4. 🧠 التنسيق الذكي حسب نوع البيانات (Data-Type Formatting)
     headers.forEach((header, index) => {
-      const col = index + 1;
-      const colLetter = String.fromCharCode(64 + col);
-      const colData = rows.map(r => r[index]).filter(v => v !== null && v !== undefined);
-
-      const type = this.detectColumnType(colData);
-
-      const alignment =
-        type === "number"
-          ? "right"
-          : type === "date"
-          ? "center"
-          : "left";
+      if (index >= totalCols) return;
+      
+      const colLetter = this.getExcelColumnLetter(index);
+      const colData = dataRows.map(r => r[index]).filter(v => v !== null && v !== undefined && String(v).trim() !== "");
+      
+      const type = this.detectStrictColumnType(colData);
+      
+      // المحاذاة حسب النوع
+      let alignment = "left";
+      if (type === "number") alignment = "right";
+      if (type === "date" || type === "boolean") alignment = "center";
 
       ops.push({
         type: "format_range",
-        range: `${colLetter}2:${colLetter}${rows.length + 1}`,
+        sheet: sheetName,
+        range: `${colLetter}${dataStartRow}:${colLetter}${dataEndRow}`,
         style: { alignment: { horizontal: alignment } }
       });
-    });
 
-    return ops;
-  }
-
-  /* ============================================================
-     📋 تنسيق الأرقام
-     ============================================================ */
-  formatNumbers(core) {
-    const ops = [];
-    const sheets = core.data || [];
-    if (!sheets.length) return ops;
-
-    const sheet = sheets[0].data || [];
-    if (sheet.length < 2) return ops;
-
-    const headers = sheet[0];
-    const rows = sheet.slice(1);
-
-    headers.forEach((header, index) => {
-      const col = index + 1;
-      const colLetter = String.fromCharCode(64 + col);
-      const colData = rows.map(r => r[index]).filter(v => v !== null && v !== undefined);
-
-      const numeric = colData.map(v => parseFloat(v)).filter(v => !isNaN(v));
-      if (numeric.length === colData.length) {
+      // 5. 🎯 التنسيق الشرطي (لأعمدة الأرقام فقط وتجنب الفوضى البصرية)
+      if (type === "number" && colData.length > 2) {
+        const numeric = colData.map(v => parseFloat(v));
+        const avg = numeric.reduce((a, b) => a + b, 0) / numeric.length;
+        
+        // استخدام ألوان هادئة لتحديد الأرقام التي تتجاوز/تقل عن المتوسط
         ops.push({
-          type: "format_range",
-          range: `${colLetter}2:${colLetter}${rows.length + 1}`,
-          style: { alignment: { horizontal: "right" } }
+          type: "color_cells",
+          sheet: sheetName,
+          range: `${colLetter}${dataStartRow}:${colLetter}${dataEndRow}`,
+          condition: `> ${avg}`,
+          color: "FFE6F4EA", // خلفية خضراء باهتة
+          textColor: "FF137333" // نص أخضر داكن
         });
       }
     });
@@ -178,91 +146,38 @@ export class ExcelFormatter {
   }
 
   /* ============================================================
-     📋 تنسيق التواريخ
+     🧮 تحويل الرقم إلى حرف عمود الإكسل (يدعم AA, AB, XFD)
      ============================================================ */
-  formatDates(core) {
-    const ops = [];
-    const sheets = core.data || [];
-    if (!sheets.length) return ops;
-
-    const sheet = sheets[0].data || [];
-    if (sheet.length < 2) return ops;
-
-    const headers = sheet[0];
-    const rows = sheet.slice(1);
-
-    headers.forEach((header, index) => {
-      const col = index + 1;
-      const colLetter = String.fromCharCode(64 + col);
-      const colData = rows.map(r => r[index]).filter(v => v !== null && v !== undefined);
-
-      const dates = colData.map(v => new Date(v)).filter(v => !isNaN(v));
-      if (dates.length === colData.length) {
-        ops.push({
-          type: "format_range",
-          range: `${colLetter}2:${colLetter}${rows.length + 1}`,
-          style: { alignment: { horizontal: "center" } }
-        });
-      }
-    });
-
-    return ops;
+  getExcelColumnLetter(index) {
+    let temp, letter = '';
+    let col = index + 1; // الإكسل يبدأ من 1
+    while (col > 0) {
+      temp = (col - 1) % 26;
+      letter = String.fromCharCode(temp + 65) + letter;
+      col = (col - temp - 1) / 26;
+    }
+    return letter;
   }
 
   /* ============================================================
-     🎯 تنسيق شرطي تلقائي
+     🔍 كشف نوع العمود الصارم
      ============================================================ */
-  autoConditionalFormat(core) {
-    const ops = [];
-    const sheets = core.data || [];
-    if (!sheets.length) return ops;
+  detectStrictColumnType(nonEmptyData) {
+    if (!nonEmptyData.length) return "empty";
 
-    const sheet = sheets[0].data || [];
-    if (sheet.length < 2) return ops;
+    const isNumber = (v) => !isNaN(parseFloat(v)) && isFinite(v);
+    if (nonEmptyData.every(isNumber)) return "number";
 
-    const headers = sheet[0];
-    const rows = sheet.slice(1);
+    const boolValues = new Set(["نعم", "لا", "true", "false", "1", "0"]);
+    if (nonEmptyData.every(v => boolValues.has(String(v).trim().toLowerCase()))) return "boolean";
 
-    headers.forEach((header, index) => {
-      const col = index + 1;
-      const colLetter = String.fromCharCode(64 + col);
-      const colData = rows.map(r => r[index]).filter(v => v !== null && v !== undefined);
-
-      const numeric = colData.map(v => parseFloat(v)).filter(v => !isNaN(v));
-      if (!numeric.length) return;
-
-      const avg = numeric.reduce((a, b) => a + b, 0) / numeric.length;
-
-      ops.push({
-        type: "color_cells",
-        range: `${colLetter}2:${colLetter}${rows.length + 1}`,
-        color: "FF00FF00",
-        condition: `> ${avg}`
-      });
-
-      ops.push({
-        type: "color_cells",
-        range: `${colLetter}2:${colLetter}${rows.length + 1}`,
-        color: "FFFF0000",
-        condition: `< ${avg}`
-      });
+    const isDate = nonEmptyData.every(v => {
+      if (v instanceof Date) return true;
+      if (isNumber(v)) return false;
+      const dateRegex = /^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/;
+      return dateRegex.test(String(v).trim()) && !isNaN(Date.parse(v));
     });
-
-    return ops;
-  }
-
-  /* ============================================================
-     🔍 كشف نوع العمود
-     ============================================================ */
-  detectColumnType(data) {
-    const nonEmpty = data.filter(v => v !== null && v !== undefined && v !== "");
-    if (!nonEmpty.length) return "empty";
-
-    const numbers = nonEmpty.map(v => parseFloat(v)).filter(v => !isNaN(v));
-    if (numbers.length === nonEmpty.length) return "number";
-
-    const dates = nonEmpty.map(v => new Date(v)).filter(v => !isNaN(v));
-    if (dates.length === nonEmpty.length) return "date";
+    if (isDate) return "date";
 
     return "text";
   }
@@ -272,15 +187,15 @@ export class ExcelFormatter {
      ============================================================ */
   generateFormatSummary(operations) {
     const counts = {};
-    operations.forEach(op => {
-      counts[op.type] = (counts[op.type] || 0) + 1;
-    });
+    operations.forEach(op => { counts[op.type] = (counts[op.type] || 0) + 1; });
 
-    const summary = ["🎨 **ملخص التنسيق التلقائي:**"];
+    const summary = ["🎨 **تم تطبيق التنسيق السيادي (نمط الأثير):**"];
     for (const [type, count] of Object.entries(counts)) {
-      summary.push(`- ${type}: ${count}`);
+      summary.push(`- عملية [${type}]: ${count} مرة.`);
     }
-
     return summary.join("\n");
   }
-        }
+}
+
+export default ExcelFormatter;
+
