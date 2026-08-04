@@ -1,7 +1,9 @@
 /**
  * api/core/kernel.js – Alatheer Sovereign Kernel (Python-Excel Edition)
  * ✅ الاعتماد على Python (openpyxl) للتنفيذ
- * ✅ إصلاح مشكلة Template Literal في كود Python
+ * ✅ إصلاح مشكلة Template Literal
+ * ✅ إصلاح مشكلة StyleProxy (نسخ التنسيق بشكل فردي)
+ * ✅ تحسين معالجة الأخطاء وإضافة fallback
  */
 
 import geminiService from "../geminiService.js";
@@ -16,7 +18,7 @@ const execAsync = promisify(exec);
 
 /**
  * ✅ تنفيذ العمليات عبر Python (openpyxl)
- * تم إصلاح مشكلة Template Literal
+ * تم إصلاح مشكلة Template Literal و StyleProxy
  */
 async function executeWithPython(filePath, operations) {
     try {
@@ -34,7 +36,7 @@ async function executeWithPython(filePath, operations) {
             '',
             '    # البحث عن صف العناوين',
             '    header_row = 1',
-            '    for row in range(1, 4):',
+            '    for row in range(1, min(4, ws.max_row + 1)):',
             '        if ws.cell(row=row, column=1).value:',
             '            header_row = row',
             '            break',
@@ -60,32 +62,55 @@ async function executeWithPython(filePath, operations) {
                     pythonLines.push(`        target_col = headers["${after}"] + 1`);
                     pythonLines.push(`    ws.insert_cols(target_col)`);
                     pythonLines.push(`    ws.cell(row=header_row, column=target_col, value="${header}")`);
-                    pythonLines.push(`    # نسخ التنسيق من العمود المجاور`);
+                    pythonLines.push(`    # نسخ التنسيق من العمود المجاور (بدون StyleProxy)`);
                     pythonLines.push(`    source_col = target_col - 1 if target_col > 1 else target_col + 1`);
                     pythonLines.push(`    if source_col <= ws.max_column:`);
                     pythonLines.push(`        for row in range(header_row + 1, ws.max_row + 1):`);
                     pythonLines.push(`            source_cell = ws.cell(row=row, column=source_col)`);
                     pythonLines.push(`            target_cell = ws.cell(row=row, column=target_col)`);
+                    pythonLines.push(`            # نسخ خصائص التنسيق بشكل فردي لتجنب StyleProxy`);
                     pythonLines.push(`            if source_cell.font:`);
-                    pythonLines.push(`                target_cell.font = source_cell.font`);
+                    pythonLines.push(`                f = source_cell.font`);
+                    pythonLines.push(`                target_cell.font = openpyxl.styles.Font(`);
+                    pythonLines.push(`                    name=f.name, size=f.size, bold=f.bold, italic=f.italic, color=f.color`);
+                    pythonLines.push(`                )`);
                     pythonLines.push(`            if source_cell.fill:`);
-                    pythonLines.push(`                target_cell.fill = source_cell.fill`);
+                    pythonLines.push(`                target_cell.fill = openpyxl.styles.PatternFill(`);
+                    pythonLines.push(`                    fill_type=source_cell.fill.fill_type,`);
+                    pythonLines.push(`                    start_color=source_cell.fill.start_color,`);
+                    pythonLines.push(`                    end_color=source_cell.fill.end_color`);
+                    pythonLines.push(`                )`);
                     pythonLines.push(`            if source_cell.alignment:`);
-                    pythonLines.push(`                target_cell.alignment = source_cell.alignment`);
+                    pythonLines.push(`                target_cell.alignment = openpyxl.styles.Alignment(`);
+                    pythonLines.push(`                    horizontal=source_cell.alignment.horizontal,`);
+                    pythonLines.push(`                    vertical=source_cell.alignment.vertical,`);
+                    pythonLines.push(`                    wrap_text=source_cell.alignment.wrap_text`);
+                    pythonLines.push(`                )`);
                     pythonLines.push(`            if source_cell.border:`);
-                    pythonLines.push(`                target_cell.border = source_cell.border`);
+                    pythonLines.push(`                target_cell.border = openpyxl.styles.Border(`);
+                    pythonLines.push(`                    left=source_cell.border.left,`);
+                    pythonLines.push(`                    right=source_cell.border.right,`);
+                    pythonLines.push(`                    top=source_cell.border.top,`);
+                    pythonLines.push(`                    bottom=source_cell.border.bottom`);
+                    pythonLines.push(`                )`);
                     pythonLines.push(`            if source_cell.number_format:`);
                     pythonLines.push(`                target_cell.number_format = source_cell.number_format`);
                     break;
                 }
                 case 'add_validation': {
-                    const formulae = op.formulae || 'خيار1,خيار2,خيار3';
+                    const formulae = op.formulae || 'مرضي,إجازة طارئة,بدون إذن,مهمة عمل';
                     const address = op.address || '';
                     pythonLines.push(`    # إضافة قائمة منسدلة`);
                     pythonLines.push(`    dv = DataValidation(type="list", formula1="${formulae}", allow_blank=True)`);
                     pythonLines.push(`    ws.add_data_validation(dv)`);
                     if (address) {
                         pythonLines.push(`    dv.add('${address}')`);
+                    } else {
+                        // ✅ إذا لم يتم تحديد نطاق، نطبق على العمود المضاف
+                        pythonLines.push(`    # تطبيق القائمة على العمود المضاف`);
+                        pythonLines.push(`    if target_col:`);
+                        pythonLines.push(`        col_letter = get_column_letter(target_col)`);
+                        pythonLines.push(`        dv.add(f"{col_letter}{header_row + 1}:{col_letter}{ws.max_row}")`);
                     }
                     break;
                 }
@@ -131,7 +156,8 @@ async function executeWithPython(filePath, operations) {
         }
         
         try {
-            return JSON.parse(stdout);
+            const result = JSON.parse(stdout);
+            return result;
         } catch {
             return { success: true, output: stdout };
         }
@@ -227,14 +253,15 @@ ${text.slice(0, MAX_CHARS)}
             
             executionResult = await executeWithPython(filePath, operations);
             
-            if (executionResult.success) {
+            if (executionResult && executionResult.success) {
                 finalReplyText += `\n\n✅ تم التنفيذ بنجاح يا شريكي، والملف جاهز للتحميل!`;
 
                 const updatedBuffer = fs.readFileSync(filePath);
                 fileBase64 = updatedBuffer.toString("base64");
             } else {
-                finalReplyText += `\n\n❌ **فشل التنفيذ:** ${executionResult.error}`;
-                console.error("❌ [Execution Error]:", executionResult.error);
+                const errorMsg = executionResult?.error || 'فشل التنفيذ بدون تفاصيل';
+                finalReplyText += `\n\n❌ **فشل التنفيذ:** ${errorMsg}`;
+                console.error("❌ [Execution Error]:", errorMsg);
             }
         }
 
@@ -255,4 +282,4 @@ ${text.slice(0, MAX_CHARS)}
         operations,
         execution: executionResult
     };
-                        }
+}
