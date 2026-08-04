@@ -1,16 +1,11 @@
 /**
- * api/core/conversation_orchestrator.js – Sovereign Ultra Orchestrator
- * النسخة السيادية الكاملة – Multi‑Engine + Deep Memory + Kernel Delegation
+ * api/core/conversation_orchestrator.js – Sovereign Clean Orchestrator
+ * النسخة السيادية النهائية – إدارة الجلسات والسياق بخفة تامة وبدون أي محركات مكسورة.
  */
 
 import memory from "./memory.js";
 import fusionMemory from "./fusion_memory.js";
 import kernel from "./kernel.js";
-
-// 🛠️ استيراد المحرك السيادي الكامل
-import { ExcelAdapter } from '../tools/external/engines/excel/core/ExcelAdapter.js';
-import { ExcelModifier } from '../tools/external/engines/excel/modifiers/ExcelModifier.js';
-import { FileUtils } from '../tools/external/engines/excel/utils/FileUtils.js';
 
 /* ============================================================
    📊 بناء ملخص سياق الملف للـ Kernel
@@ -22,7 +17,7 @@ function formatFileContextForKernel(activeFile) {
     let summary = `📄 **الملف النشط:** ${fileName}\n`;
 
     if (metadata) {
-        summary += `📊 **الأبعاد:** ${metadata.sheets || 1} شيت | ${metadata.totalRows || 0} صف | ${metadata.totalColumns || 0} عمود\n`;
+        summary += `📊 **الأبعاد:** ${metadata.sheets || 1} شيت | ${metadata.rows || 0} صف | ${metadata.columns || 0} عمود\n`;
     }
 
     if (extractedContent?.text) {
@@ -34,11 +29,11 @@ function formatFileContextForKernel(activeFile) {
 }
 
 /* ============================================================
-   🎛️ الـ Orchestrator السيادي
+   🎛️ الـ Orchestrator السيادي النظيف
    ============================================================ */
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
     try {
-        console.log(`📥 [Orchestrator] جلسة ${sessionId} | "${message.substring(0, 50)}..."`);
+        console.log(`📥 [Orchestrator] جلسة ${sessionId} | "${(message || "").substring(0, 50)}..."`);
 
         const session = memory.getSession(sessionId) || memory.createSession(sessionId);
 
@@ -63,7 +58,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
                 filePath: extraCtx.filePath,
                 metadata: extraCtx.metadata,
                 extractedContent: extraCtx.extractedContent,
-                modifiedResult: extraCtx.modifiedResult,
                 timestamp: Date.now()
             };
         }
@@ -99,40 +93,11 @@ export default async function conversationOrchestrator(sessionId, message, extra
         const kernelOutput = await kernel(sessionId, message, kernelContext);
 
         let reply = kernelOutput.reply || "تم يا شريكي.";
-        let operations = kernelOutput.operations || [];
-        let returnedFileName = kernelOutput.fileName || session.activeFile?.fileName;
-        let fileBase64 = null;
+        let returnedFileName = kernelOutput.fileName || session.activeFile?.fileName || null;
+        let fileBase64 = kernelOutput.fileBase64 || null;
 
         /* ============================================================
-           6) تنفيذ عمليات Excel عبر المحرك السيادي الكامل
-           ============================================================ */
-        if (operations.length > 0 && session.activeFile?.filePath) {
-            try {
-                const adapter = new ExcelAdapter();        // المحرك السيادي الكامل
-                const modifier = new ExcelModifier(adapter);
-
-                const targetFilePath = modifier.resolveFilePath(session.activeFile.filePath);
-
-                console.log(`🛠️ [Orchestrator] تنفيذ ${operations.length} عملية على: ${targetFilePath}`);
-
-                const modifyResult = await modifier.modifyWithBackup(targetFilePath, operations);
-
-                const finalPath = modifyResult.filePath || targetFilePath;
-                session.activeFile.filePath = finalPath;
-
-                const buffer = await FileUtils.readFile(finalPath);
-                fileBase64 = buffer.toString("base64");
-
-                reply += `\n\n📥 جاهز يا شريكي! الملف المعدل صار جاهز للتحميل.`;
-
-            } catch (err) {
-                console.error(`❌ [Orchestrator] خطأ أثناء تنفيذ عمليات الإكسل:`, err);
-                reply += `\n⚠️ صار خطأ أثناء تنفيذ العمليات: ${err.message}`;
-            }
-        }
-
-        /* ============================================================
-           7) حفظ رد المساعد
+           6) حفظ رد المساعد
            ============================================================ */
         memory.appendChatHistory(sessionId, { role: "assistant", content: reply });
 
@@ -141,14 +106,14 @@ export default async function conversationOrchestrator(sessionId, message, extra
             reply,
             fileBase64,
             fileName: returnedFileName,
-            operations
+            operations: []
         };
 
     } catch (err) {
         console.error("🔥 [Orchestrator Critical Error]:", err);
         return {
             ok: false,
-            reply: `⚠️ صار خطأ أثناء تنظيم السياق وتنفيذ العمليات: ${err.message}`,
+            reply: `⚠️ صار خطأ أثناء تنظيم السياق: ${err.message}`,
             error: err.message,
             fileBase64: null,
             fileName: null,
@@ -156,3 +121,4 @@ export default async function conversationOrchestrator(sessionId, message, extra
         };
     }
 }
+
