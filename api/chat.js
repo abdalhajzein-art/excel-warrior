@@ -1,12 +1,13 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Direct Gemini Engine Edition)
- * ✅ تواصل مباشر مع جيميني ومعالجة مريحة بدون تعقيدات مكتبات الإكسل المكسورة.
+ * ✅ تواصل مباشر مع جيميني ومعالجة مريحة مع دعم المعاينة الفورية لبيانات الإكسل.
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,7 +26,7 @@ export default async function handler(req, res) {
         let sovereignFilePath = null;
         let extractedContent = null;
 
-        // 1. التعامل مع الملفات المرفوعة وتخزينها بأمان
+        // 1. التعامل مع الملفات المرفوعة وتخزينها بأمان + استخراج المعاينة الحقيقية عبر بايثون
         if (fileData && fileName) {
             const persistentDir = path.join(__dirname, '../persistent_uploads');
             if (!fs.existsSync(persistentDir)) fs.mkdirSync(persistentDir, { recursive: true });
@@ -47,10 +48,45 @@ export default async function handler(req, res) {
                 console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
             }
 
-            extractedContent = {
-                text: `[تم استلام الملف بنجاح وجاهز للمراجعة: ${fileName}]`,
-                metadata: { fileName }
-            };
+            // استخراج معاينة حقيقية لبيانات الإكسل لتراها الذاكرة والـ Kernel بوضوح
+            try {
+                const pyScript = `
+import pandas as pd, json, sys
+try:
+    df = pd.read_excel(sys.argv[1])
+    print(json.dumps({
+        "rows": len(df),
+        "columns": len(df.columns),
+        "sheets": 1,
+        "text": df.head(30).to_markdown(index=False)
+    }, ensure_ascii=False))
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+`;
+                const stdout = execFileSync('python3', ['-c', pyScript, sovereignFilePath], { encoding: 'utf8' });
+                const previewData = JSON.parse(stdout);
+                
+                if (!previewData.error) {
+                    extractedContent = {
+                        text: previewData.text,
+                        metadata: { 
+                            fileName, 
+                            rows: previewData.rows, 
+                            columns: previewData.columns,
+                            sheets: previewData.sheets || 1 
+                        }
+                    };
+                    console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح (${previewData.rows} صف).`);
+                } else {
+                    throw new Error(previewData.error);
+                }
+            } catch (err) {
+                console.warn("⚠️ تعذر استخراج معاينة الإكسل تلقائياً عبر بايثون:", err.message);
+                extractedContent = {
+                    text: `[تم استلام الملف بنجاح وجاهز للمراجعة: ${fileName}]`,
+                    metadata: { fileName }
+                };
+            }
         }
 
         // 2. إعداد السياق وتسليمه للموجه
@@ -95,4 +131,3 @@ export default async function handler(req, res) {
         });
     }
 }
-
