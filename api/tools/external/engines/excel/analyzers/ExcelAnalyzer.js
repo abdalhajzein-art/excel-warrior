@@ -1,6 +1,6 @@
 /**
- * excel/analyzers/ExcelAnalyzer.js – Sovereign Excel Analyzer
- * تحليل سيادي متقدم متوافق مع ExcelEngine الموحد.
+ * excel/analyzers/ExcelAnalyzer.js – Sovereign Excel Analyzer (Generalized)
+ * تحليل سيادي متقدم، يدعم تعدد الأوراق، ومتوافق مع ExcelEngine الموحد.
  */
 
 export class ExcelAnalyzer {
@@ -8,9 +8,6 @@ export class ExcelAnalyzer {
     this.adapter = adapter;
   }
 
-  /**
-   * 📊 تحليل كامل للبيانات
-   */
   async analyze(filePath, params = {}) {
     const core = await this.adapter.read(filePath, params);
 
@@ -20,63 +17,78 @@ export class ExcelAnalyzer {
     const report = this.generateReport(statistics, patterns, correlations);
     const insights = this.generateInsights(statistics, patterns);
 
-    return {
-      statistics,
-      patterns,
-      correlations,
-      report,
-      insights
-    };
+    return { statistics, patterns, correlations, report, insights };
   }
 
-  /**
-   * 📈 حساب الإحصائيات
-   */
+  /* ============================================================
+     📈 حساب الإحصائيات – على كل الأوراق، مع تجميع
+     ============================================================ */
   calculateStatistics(core) {
     const stats = {
-      numeric: {},
-      categorical: {},
-      overall: {}
+      sheets: {},
+      overall: {
+        totalRows: 0,
+        totalColumns: 0,
+        numericColumns: 0,
+        categoricalColumns: 0
+      }
     };
 
     const sheets = core.data || [];
     if (!sheets.length) return stats;
 
-    const firstSheet = sheets[0].data || [];
-    if (firstSheet.length <= 1) return stats;
+    for (const sheet of sheets) {
+      const name = sheet.name || "Sheet";
+      const data = sheet.data || [];
+      if (data.length <= 1) continue;
 
-    const headers = firstSheet[0] || [];
-    const dataRows = firstSheet.slice(1);
+      const headers = data[0] || [];
+      const dataRows = data.slice(1);
 
-    headers.forEach((header, index) => {
-      const values = dataRows
-        .map(row => row[index])
-        .filter(v => v !== null && v !== undefined);
+      const sheetStats = {
+        numeric: {},
+        categorical: {},
+        totalRows: dataRows.length,
+        totalColumns: headers.length
+      };
 
-      const numericValues = values
-        .map(v => parseFloat(v))
-        .filter(v => !isNaN(v));
+      headers.forEach((header, index) => {
+        const values = dataRows
+          .map(row => row[index])
+          .filter(v => v !== null && v !== undefined && v !== "");
 
-      if (numericValues.length === values.length && values.length > 0) {
-        stats.numeric[header] = this.numericStats(numericValues);
-      } else if (values.length > 0) {
-        stats.categorical[header] = this.categoricalStats(values);
-      }
-    });
+        if (!values.length) return;
 
-    stats.overall = {
-      totalRows: dataRows.length,
-      totalColumns: headers.length,
-      numericColumns: Object.keys(stats.numeric).length,
-      categoricalColumns: Object.keys(stats.categorical).length
-    };
+        const numericValues = values
+          .map(v => parseFloat(v))
+          .filter(v => !isNaN(v));
+
+        const numericRatio = numericValues.length / values.length;
+
+        if (numericRatio >= 0.7) {
+          sheetStats.numeric[header] = this.numericStats(numericValues);
+        } else {
+          sheetStats.categorical[header] = this.categoricalStats(values);
+        }
+      });
+
+      sheetStats.numericColumns = Object.keys(sheetStats.numeric).length;
+      sheetStats.categoricalColumns = Object.keys(sheetStats.categorical).length;
+
+      stats.sheets[name] = sheetStats;
+
+      stats.overall.totalRows += sheetStats.totalRows;
+      stats.overall.totalColumns = Math.max(
+        stats.overall.totalColumns,
+        sheetStats.totalColumns
+      );
+      stats.overall.numericColumns += sheetStats.numericColumns;
+      stats.overall.categoricalColumns += sheetStats.categoricalColumns;
+    }
 
     return stats;
   }
 
-  /**
-   * 📊 إحصائيات رقمية
-   */
   numericStats(values) {
     const sorted = [...values].sort((a, b) => a - b);
     const sum = values.reduce((a, b) => a + b, 0);
@@ -93,9 +105,6 @@ export class ExcelAnalyzer {
     };
   }
 
-  /**
-   * 📊 إحصائيات فئوية
-   */
   categoricalStats(values) {
     const counts = {};
     values.forEach(v => {
@@ -118,9 +127,6 @@ export class ExcelAnalyzer {
     };
   }
 
-  /**
-   * 📐 الانحراف المعياري
-   */
   standardDeviation(values) {
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
     const squaredDiffs = values.map(v => Math.pow(v - avg, 2));
@@ -129,76 +135,66 @@ export class ExcelAnalyzer {
     );
   }
 
-  /**
-   * 🔍 كشف الأنماط
-   */
+  /* ============================================================
+     🔍 الأنماط – حالياً بسيطة، جاهزة للتوسعة
+     ============================================================ */
   detectPatterns(core) {
     const patterns = [];
     const sheets = core.data || [];
     if (!sheets.length) return patterns;
 
-    const firstSheet = sheets[0].data || [];
-
-    const trends = this.detectTrends(firstSheet);
-    if (trends.length) patterns.push({ type: "trends", data: trends });
-
-    const duplicates = this.detectDuplicates(firstSheet);
-    if (duplicates.length) patterns.push({ type: "duplicates", data: duplicates });
-
-    const outliers = this.detectOutliers(firstSheet);
-    if (outliers.length) patterns.push({ type: "outliers", data: outliers });
-
+    // ممكن لاحقاً نستخدم TableDetector هنا
     return patterns;
   }
 
-  detectTrends(data) {
-    // مكان جاهز لتوسعة مستقبلية
-    return [];
-  }
-
-  detectDuplicates(data) {
-    // مكان جاهز لتوسعة مستقبلية
-    return [];
-  }
-
-  detectOutliers(data) {
-    // مكان جاهز لتوسعة مستقبلية
-    return [];
-  }
-
-  /**
-   * 🔗 الارتباطات
-   */
   calculateCorrelations(core) {
-    // يمكن توسعته لاحقاً لحساب الارتباط بين الأعمدة الرقمية
+    // مكان جاهز لتوسعة لاحقة للارتباطات بين الأعمدة الرقمية
     return {};
   }
 
-  /**
-   * 📝 تقرير
-   */
   generateReport(statistics, patterns, correlations) {
     const report = [];
     report.push("# 📊 تقرير تحليل البيانات\n");
 
     report.push("## 📋 ملخص عام");
-    report.push(`- عدد الصفوف: ${statistics.overall?.totalRows || 0}`);
-    report.push(`- عدد الأعمدة: ${statistics.overall?.totalColumns || 0}`);
-    report.push(`- أعمدة رقمية: ${statistics.overall?.numericColumns || 0}`);
-    report.push(
-      `- أعمدة فئوية: ${statistics.overall?.categoricalColumns || 0}\n`
-    );
+    report.push(`- إجمالي الصفوف: ${statistics.overall.totalRows}`);
+    report.push(`- أكبر عدد أعمدة في ورقة: ${statistics.overall.totalColumns}`);
+    report.push(`- إجمالي الأعمدة الرقمية: ${statistics.overall.numericColumns}`);
+    report.push(`- إجمالي الأعمدة الفئوية: ${statistics.overall.categoricalColumns}\n`);
 
-    if (Object.keys(statistics.numeric).length) {
-      report.push("## 📈 الإحصائيات الرقمية");
-      for (const [key, value] of Object.entries(statistics.numeric)) {
-        report.push(`### ${key}`);
-        report.push(`- المتوسط: ${value.average?.toFixed(2) || "N/A"}`);
-        report.push(`- الحد الأدنى: ${value.min ?? "N/A"}`);
-        report.push(`- الحد الأقصى: ${value.max ?? "N/A"}`);
-        report.push(
-          `- الانحراف المعياري: ${value.stdDev?.toFixed(2) || "N/A"}\n`
-        );
+    for (const [sheetName, sheetStats] of Object.entries(statistics.sheets)) {
+      report.push(`## 📄 الورقة: ${sheetName}`);
+      report.push(
+        `- الصفوف: ${sheetStats.totalRows}, الأعمدة: ${sheetStats.totalColumns}`
+      );
+
+      if (Object.keys(sheetStats.numeric).length) {
+        report.push("### 📈 الأعمدة الرقمية");
+        for (const [key, value] of Object.entries(sheetStats.numeric)) {
+          report.push(`#### ${key}`);
+          report.push(`- المتوسط: ${value.average?.toFixed(2) || "N/A"}`);
+          report.push(`- الحد الأدنى: ${value.min ?? "N/A"}`);
+          report.push(`- الحد الأقصى: ${value.max ?? "N/A"}`);
+          report.push(
+            `- الانحراف المعياري: ${value.stdDev?.toFixed(2) || "N/A"}\n`
+          );
+        }
+      }
+
+      if (Object.keys(sheetStats.categorical).length) {
+        report.push("### 📊 الأعمدة الفئوية");
+        for (const [key, value] of Object.entries(sheetStats.categorical)) {
+          report.push(`#### ${key}`);
+          report.push(
+            `- عدد القيم: ${value.count}, عدد القيم الفريدة: ${value.uniqueValues}`
+          );
+          if (value.mostCommon) {
+            report.push(
+              `- الأكثر شيوعاً: "${value.mostCommon.value}" (${value.mostCommon.count})`
+            );
+          }
+          report.push("");
+        }
       }
     }
 
@@ -213,22 +209,19 @@ export class ExcelAnalyzer {
     return report.join("\n");
   }
 
-  /**
-   * 💡 رؤى
-   */
   generateInsights(statistics, patterns) {
     const insights = [];
 
-    if (statistics.numeric) {
-      for (const [key, value] of Object.entries(statistics.numeric)) {
+    for (const [sheetName, sheetStats] of Object.entries(statistics.sheets)) {
+      for (const [key, value] of Object.entries(sheetStats.numeric)) {
         if (value.average > 100) {
           insights.push(
-            `💡 متوسط "${key}" مرتفع (${value.average.toFixed(2)})`
+            `💡 في الورقة "${sheetName}"، متوسط "${key}" مرتفع (${value.average.toFixed(2)})`
           );
         }
         if (value.stdDev > 50) {
           insights.push(
-            `💡 تباين كبير في "${key}" (الانحراف المعياري: ${value.stdDev.toFixed(2)})`
+            `💡 في الورقة "${sheetName}"، تباين كبير في "${key}" (الانحراف المعياري: ${value.stdDev.toFixed(2)})`
           );
         }
       }
@@ -245,4 +238,4 @@ export class ExcelAnalyzer {
 
     return insights;
   }
-                    }
+                      }
