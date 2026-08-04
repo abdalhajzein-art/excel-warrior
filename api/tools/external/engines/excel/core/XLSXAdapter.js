@@ -1,7 +1,7 @@
 /**
- * excel/core/XLSXAdapter.js – Sovereign Legacy XLSX Adapter
- * محرك بسيط لقراءة ملفات XLS/XLSX القديمة فقط.
- * بدون تعديل – بدون تنسيق – بدون صيغ – بدون جداول.
+ * excel/core/XLSXAdapter.js – Sovereign SheetJS Adapter (Advanced Edition)
+ * طبقة قراءة سيادية عامة تعتمد على SheetJS بكامل قدراتها.
+ * بدون تعديل – قراءة فقط – ترجع بيانات غنية جداً.
  */
 
 import XLSX from "xlsx";
@@ -9,7 +9,7 @@ import { FileUtils } from "../utils/FileUtils.js";
 
 export class XLSXAdapter {
   constructor() {
-    this.name = "xlsx";
+    this.name = "sheetjs";
   }
 
   async initialize() {
@@ -17,33 +17,73 @@ export class XLSXAdapter {
   }
 
   /* ============================================================
-     📖 القراءة (القدرات الأساسية فقط)
+     📖 القراءة السيادية – SheetJS بكامل قوتها
      ============================================================ */
 
   async read(filePath, params = {}) {
-    const workbook = XLSX.readFile(filePath);
+    const workbook = XLSX.readFile(filePath, {
+      cellStyles: true,
+      cellDates: true,
+      cellNF: true,
+      sheetStubs: true
+    });
 
     const sheets = workbook.SheetNames.map((sheetName) => {
       const ws = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+      const data = XLSX.utils.sheet_to_json(ws, {
+        header: 1,
+        raw: true,
+        defval: ""
+      });
+
+      const merges = ws["!merges"] || [];
+      const colInfo = ws["!cols"] || [];
+      const rowInfo = ws["!rows"] || [];
+      const sheetProps = ws["!sheetProps"] || {};
+      const hyperlinks = ws["!links"] || [];
+      const comments = ws["!comments"] || [];
+
+      const formulas = [];
+      Object.keys(ws).forEach((cellAddr) => {
+        const cell = ws[cellAddr];
+        if (cell && cell.f) {
+          formulas.push({
+            address: cellAddr,
+            formula: cell.f,
+            value: cell.v
+          });
+        }
+      });
 
       return {
         name: sheetName,
         data,
-        formulas: [],
-        styles: [],
-        comments: []
+        merges,
+        formulas,
+        comments,
+        hyperlinks,
+        colInfo,
+        rowInfo,
+        sheetProps
       };
     });
 
     return {
       ok: true,
-      reply: "تمت قراءة الملف بنجاح عبر محرك XLSX (النسخة القديمة)",
+      reply: "تمت قراءة الملف بنجاح عبر SheetJS (النسخة السيادية)",
       data: sheets,
       metadata: this.buildMetadata(sheets),
+      workbookProps: workbook.Props || {},
+      workbookCustProps: workbook.Custprops || {},
+      workbookWorkbook: workbook.Workbook || {},
       filePath
     };
   }
+
+  /* ============================================================
+     📊 ميتاداتا عامة لأي ملف
+     ============================================================ */
 
   buildMetadata(sheets) {
     const totalRows = sheets.reduce((sum, s) => sum + s.data.length, 0);
@@ -56,37 +96,20 @@ export class XLSXAdapter {
       sheets: sheets.length,
       totalRows,
       totalColumns,
-      hasFormulas: false,
-      hasComments: false,
-      engines: ["xlsx"]
+      hasFormulas: sheets.some(s => s.formulas.length > 0),
+      hasComments: sheets.some(s => s.comments.length > 0),
+      hasMerges: sheets.some(s => s.merges.length > 0),
+      engines: ["sheetjs"]
     };
   }
 
   /* ============================================================
-     ✏️ التعديل (غير مدعوم)
+     ✏️ التعديل غير مدعوم
      ============================================================ */
 
   async modify() {
-    throw new Error("❌ XLSXAdapter لا يدعم التعديل. استخدم ExcelJSAdapter.");
-  }
-
-  async applyOperations() {
-    throw new Error("❌ XLSXAdapter لا يدعم العمليات المتقدمة.");
-  }
-
-  /* ============================================================
-     🏗 إنشاء وتحويل (غير مدعوم)
-     ============================================================ */
-
-  async create() {
-    throw new Error("❌ XLSXAdapter لا يدعم إنشاء ملفات جديدة.");
-  }
-
-  async convertToPdf() {
-    throw new Error("❌ XLSXAdapter لا يدعم التحويل إلى PDF.");
-  }
-
-  async convertToCsv() {
-    throw new Error("❌ XLSXAdapter لا يدعم التحويل إلى CSV.");
+    throw new Error("❌ XLSXAdapter (SheetJS) لا يدعم التعديل. استخدم ExcelJSAdapter.");
   }
 }
+
+export default XLSXAdapter;
