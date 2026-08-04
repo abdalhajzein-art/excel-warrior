@@ -1,62 +1,58 @@
 /**
- * api/geminiService.js – Sovereign Gemini Service (Multi-Key & Native Prompt Edition)
- * ✅ دعم التدوير الآلي لمفاتيح API (Multi-Key Rotation) لتجاوز قيود Rate Limits 429.
- * ✅ التمرير المباشر لـ System Instructions بداخل SDK بدلاً من دمجها في نص المستخدم.
- * ✅ مرونة اسم النموذج واستقرار الاتصال.
- * ✅ تسجيل سجلات الأداء والأداة عبر auditExecution.
+ * api/geminiService.js – Sovereign Gemini Service (Ultra Edition)
+ * Multi‑Key + SystemInstruction + DeepContext + FileAware + OperationAware
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { auditExecution } from "./core/execution_monitor.js";
 
-// 🔑 استخراج المفاتيح ودعم التدوير الآلي (Multi-Key Failover)
 const rawKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";
 const API_KEYS = rawKeys.split(",").map(k => k.trim()).filter(Boolean);
 
-if (API_KEYS.length === 0) {
-  console.warn("⚠️ WARNING: لم يتم العثور على مفاتيح GEMINI_API_KEY في متغيرات البيئة!");
-}
-
 let currentKeyIndex = 0;
 
-/**
- * جلب العميل مع التدوير بين المفاتيح المتاحة
- */
-function getGenAIClient() {
+/* ============================================================
+   🔑 اختيار المفتاح مع Failover ذكي
+   ============================================================ */
+function getClient() {
   const key = API_KEYS[currentKeyIndex % API_KEYS.length];
   currentKeyIndex++;
   return new GoogleGenerativeAI(key);
 }
 
-const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
-
-/**
- * 🛠️ تنفيذ الاستدعاء مع إعادة المحاولة التلقائية عند حدوث ضغط على المفاتيح
- */
+/* ============================================================
+   🔁 تنفيذ مع إعادة المحاولة السيادية
+   ============================================================ */
 async function executeWithRetry(fn) {
   let attempts = 0;
-  const maxAttempts = Math.max(1, API_KEYS.length);
   let lastError = null;
 
-  while (attempts < maxAttempts) {
+  while (attempts < API_KEYS.length) {
     try {
-      const client = getGenAIClient();
+      const client = getClient();
       return await fn(client);
     } catch (err) {
       lastError = err;
-      console.warn(`⚠️ [GeminiService] فشل الطلب بالمفتاح الحالي (المحاولة ${attempts + 1}/${maxAttempts}): ${err.message}`);
       attempts++;
+      console.warn(`⚠️ [GeminiService] فشل المفتاح رقم ${attempts}: ${err.message}`);
     }
   }
+
   throw lastError;
 }
 
-export default async function geminiService(prompt, context = {}) {
+const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+
+/* ============================================================
+   🧠 وضع المحادثة السيادي
+   ============================================================ */
+export default async function geminiService(prompt, ctx = {}) {
   return executeWithRetry(async (client) => {
     const model = client.getGenerativeModel({
       model: MODEL_NAME,
+      systemInstruction: ctx.systemInstruction || "أنت مساعد سيادي في منصة الأثير.",
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.25,
         maxOutputTokens: 4096,
       }
     });
@@ -69,8 +65,7 @@ export default async function geminiService(prompt, context = {}) {
 
     auditExecution({
       action: "llm_inference",
-      target: context.fileName || "General Query",
-      isLocal: false,
+      target: ctx.fileName || "General Query",
       usage: response.usageMetadata || null
     });
 
@@ -78,31 +73,29 @@ export default async function geminiService(prompt, context = {}) {
   });
 }
 
-// ✅ دالة المحادثة التفاعلية (Chat Mode)
+/* ============================================================
+   💬 وضع المحادثة المتعدد الأدوار (Ultra Chat)
+   ============================================================ */
 geminiService.chat = async function(messages, extra = {}) {
   return executeWithRetry(async (client) => {
-    // 1. استخراج رسائل النظام وتمريرها أصلياً لـ systemInstruction
+
+    /* ------------------------------------------------------------
+       1) استخراج رسائل النظام وتمريرها كـ systemInstruction
+       ------------------------------------------------------------ */
     const systemMessages = messages.filter(m => m.role === "system");
-    const systemInstructionText = systemMessages.map(m => m.content).join('\n\n') || `أنت "الأثير" — المساعد الذكي.`;
+    const systemInstruction = systemMessages.map(m => m.content).join("\n\n");
 
-    const model = client.getGenerativeModel({
-      model: MODEL_NAME,
-      systemInstruction: systemInstructionText,
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 4096,
-      }
-    });
-
-    // 2. بناء تاريخ المحادثة دون خلط رسائل النظام مع رسائل المستخدم
+    /* ------------------------------------------------------------
+       2) بناء History نظيف بدون خلط الأدوار
+       ------------------------------------------------------------ */
     const history = [];
     let lastUserMessage = "";
 
-    const conversationMsgs = messages.filter(m => m.role !== "system");
+    const conv = messages.filter(m => m.role !== "system");
 
-    for (let i = 0; i < conversationMsgs.length; i++) {
-      const msg = conversationMsgs[i];
-      const isLast = i === conversationMsgs.length - 1;
+    for (let i = 0; i < conv.length; i++) {
+      const msg = conv[i];
+      const isLast = i === conv.length - 1;
 
       if (msg.role === "user") {
         if (isLast) {
@@ -110,41 +103,56 @@ geminiService.chat = async function(messages, extra = {}) {
         } else {
           history.push({ role: "user", parts: [{ text: msg.content }] });
         }
-      } else if (msg.role === "assistant" || msg.role === "model") {
+      }
+
+      if (msg.role === "assistant") {
         if (!isLast) {
-          history.push({ role: "model", parts: [{ text: msg.content }] });
+          history.push({ role: "assistant", parts: [{ text: msg.content }] });
         }
       }
     }
 
-    // 3. إضافة معلومات وصفيّة للملف المرفق بداخل الرسالة الأخيرة فقط
-    if (extra.fileName && extra.extractedContent?.metadata && lastUserMessage) {
+    /* ------------------------------------------------------------
+       3) حقن معلومات الملف النشط داخل الرسالة الأخيرة فقط
+       ------------------------------------------------------------ */
+    if (extra.fileName && extra.extractedContent?.metadata) {
       const meta = extra.extractedContent.metadata;
+
       const fileInfo = `
-📎 [الملف المرفق النشط]: ${extra.fileName}
-- الأبعاد: ${meta.rows || 'غير محدد'} صف | ${meta.columns || 'غير محدد'} عمود
+📎 **الملف النشط:** ${extra.fileName}
+- الصفوف: ${meta.rows || "?"}
+- الأعمدة: ${meta.columns || "?"}
 `;
-      if (!lastUserMessage.includes(extra.fileName)) {
-        lastUserMessage += "\n\n" + fileInfo;
-      }
+
+      lastUserMessage += "\n\n" + fileInfo;
     }
 
-    // 4. بدء جلسة المحادثة وإرسال الطلب
-    const chat = model.startChat({
-      history: history,
+    /* ------------------------------------------------------------
+       4) بدء جلسة المحادثة السيادية
+       ------------------------------------------------------------ */
+    const model = client.getGenerativeModel({
+      model: MODEL_NAME,
+      systemInstruction,
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.25,
         maxOutputTokens: 4096,
       }
     });
 
-    const result = await chat.sendMessage(lastUserMessage || "مرحباً");
+    const chat = model.startChat({
+      history,
+      generationConfig: {
+        temperature: 0.25,
+        maxOutputTokens: 4096,
+      }
+    });
+
+    const result = await chat.sendMessage(lastUserMessage || "مرحبا");
     const response = await result.response;
 
     auditExecution({
       action: "llm_chat",
-      target: extra.fileName || "Active Chat Session",
-      isLocal: false,
+      target: extra.fileName || "Active Chat",
       usage: response.usageMetadata || null
     });
 
