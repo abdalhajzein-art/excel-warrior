@@ -1,5 +1,5 @@
 /**
- * excel/utils/FileUtils.js – إدارة الملفات السيادية
+ * excel/utils/FileUtils.js – إدارة الملفات السيادية (النسخة النهائية المحدثة)
  */
 
 import fs from 'fs';
@@ -37,29 +37,34 @@ export class FileUtils {
     }
     
     static getTempPath(prefix = 'temp', ext = '.xlsx') {
-        return path.join(os.tmpdir(), `${prefix}_${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`);
+        const dir = this.getTempDir();
+        return path.join(dir, `${prefix}_${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`);
+    }
+    
+    // ✅ إضافة الدالة المطلوبة لحل مشكلة الـ ExcelModifier نهائياً
+    static getTempDir() {
+        const tempDir = path.join(os.tmpdir(), 'alatheer_temp');
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+        return tempDir;
     }
     
     static async cleanupOldTempFiles(maxAge = 3600000) {
         try {
-            const files = fs.readdirSync(os.tmpdir());
+            const targetDir = this.getTempDir();
+            const files = fs.readdirSync(targetDir);
             const now = Date.now();
             for (const file of files) {
-                if (file.startsWith('modified_') || 
-                    file.startsWith('temp_') || 
-                    file.startsWith('created_') ||
-                    file.startsWith('converted_') ||
-                    file.startsWith('backup_')) {
-                    const filePath = path.join(os.tmpdir(), file);
-                    try {
-                        const stats = fs.statSync(filePath);
-                        if (now - stats.mtimeMs > maxAge) {
-                            fs.unlinkSync(filePath);
-                            console.log(`🧹 [Cleaner] تم تنظيف: ${file}`);
-                        }
-                    } catch (err) {
-                        // تجاهل
+                const filePath = path.join(targetDir, file);
+                try {
+                    const stats = fs.statSync(filePath);
+                    if (now - stats.mtimeMs > maxAge) {
+                        fs.unlinkSync(filePath);
+                        console.log(`🧹 [Cleaner] تم تنظيف الملف المؤقت: ${file}`);
                     }
+                } catch (err) {
+                    // تجاهل
                 }
             }
         } catch (e) {
@@ -96,7 +101,12 @@ wb.save(r'${filePath}')
             `;
             
             fs.writeFileSync(scriptPath, fullScript, 'utf-8');
-            await execAsync(`python3 "${scriptPath}"`);
+            // محاولة التشغيل عبر python3 أو python بحسب البيئة
+            try {
+                await execAsync(`python3 "${scriptPath}"`);
+            } catch (e) {
+                await execAsync(`python "${scriptPath}"`);
+            }
             
             return true;
         } finally {
@@ -110,7 +120,14 @@ wb.save(r'${filePath}')
         
         try {
             fs.writeFileSync(scriptPath, script, 'utf-8');
-            const { stdout } = await execAsync(`python3 "${scriptPath}"`);
+            let stdout;
+            try {
+                const res = await execAsync(`python3 "${scriptPath}"`);
+                stdout = res.stdout;
+            } catch (e) {
+                const res = await execAsync(`python "${scriptPath}"`);
+                stdout = res.stdout;
+            }
             return stdout.trim();
         } finally {
             await this.deleteFile(scriptPath);
@@ -122,3 +139,4 @@ wb.save(r'${filePath}')
 setInterval(() => FileUtils.cleanupOldTempFiles(), 3600000);
 
 export default FileUtils;
+
