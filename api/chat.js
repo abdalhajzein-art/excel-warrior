@@ -1,8 +1,9 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Direct Gemini Engine Edition)
  * ✅ تواصل مباشر مع جيميني ومعالجة مريحة مع دعم المعاينة الفورية لبيانات الإكسل.
- * ✅ دعم openpyxl لتنفيذ عمليات التعديل المتقدمة (بدلاً من headless-excel).
+ * ✅ دعم openpyxl لتنفيذ عمليات التعديل المتقدمة.
  * ✅ تحسين سرعة المعاينة (قراءة أول 10 صفوف فقط).
+ * ✅ إصلاح مشكلة Template Literal في كود Python.
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -18,109 +19,104 @@ const execAsync = promisify(exec);
 
 /**
  * ✅ تنفيذ عمليات على ملف Excel عبر Python (openpyxl)
- * تم إصلاح مشكلة استيراد headless-excel
+ * تم إصلاح مشكلة Template Literal
  */
 async function executeWithPython(filePath, operations) {
     try {
-        // بناء كود Python لتنفيذ العمليات باستخدام openpyxl
-        let pythonCode = `
-import openpyxl
-from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.datavalidation import DataValidation
-import json
-import sys
-
-try:
-    # تحميل الملف
-    wb = openpyxl.load_workbook('${filePath}')
-    ws = wb.active
-    
-    # البحث عن صف العناوين (أول صف غير فارغ)
-    header_row = 1
-    for row in range(1, 4):
-        if ws.cell(row=row, column=1).value:
-            header_row = row
-            break
-    
-    # البحث عن أسماء الأعمدة
-    headers = {}
-    for col in range(1, ws.max_column + 1):
-        val = ws.cell(row=header_row, column=col).value
-        if val:
-            headers[str(val).strip()] = col
-`;
+        // ✅ بناء كود Python باستخدام مصفوفة لتجنب مشاكل Template Literal
+        const pythonLines = [
+            'import openpyxl',
+            'from openpyxl.utils import get_column_letter',
+            'from openpyxl.worksheet.datavalidation import DataValidation',
+            'import json',
+            'import sys',
+            '',
+            'try:',
+            `    wb = openpyxl.load_workbook('${filePath}')`,
+            '    ws = wb.active',
+            '',
+            '    # البحث عن صف العناوين',
+            '    header_row = 1',
+            '    for row in range(1, 4):',
+            '        if ws.cell(row=row, column=1).value:',
+            '            header_row = row',
+            '            break',
+            '',
+            '    # البحث عن أسماء الأعمدة',
+            '    headers = {}',
+            '    for col in range(1, ws.max_column + 1):',
+            '        val = ws.cell(row=header_row, column=col).value',
+            '        if val:',
+            '            headers[str(val).strip()] = col',
+            ''
+        ];
 
         // إضافة العمليات
         for (const op of operations) {
             switch (op.type) {
-                case 'add_column':
+                case 'add_column': {
                     const after = op.after || '';
-                    pythonCode += `
-    # إضافة عمود جديد بعد عمود "${after}"
-    target_col = ws.max_column + 1
-    if "${after}" in headers:
-        target_col = headers["${after}"] + 1
-    
-    ws.insert_cols(target_col)
-    ws.cell(row=header_row, column=target_col, value="${op.header || 'عمود جديد'}")
-    
-    # نسخ التنسيق من العمود المجاور
-    source_col = target_col - 1 if target_col > 1 else target_col + 1
-    if source_col <= ws.max_column:
-        for row in range(header_row + 1, ws.max_row + 1):
-            source_cell = ws.cell(row=row, column=source_col)
-            target_cell = ws.cell(row=row, column=target_col)
-            if source_cell.font:
-                target_cell.font = source_cell.font
-            if source_cell.fill:
-                target_cell.fill = source_cell.fill
-            if source_cell.alignment:
-                target_cell.alignment = source_cell.alignment
-            if source_cell.border:
-                target_cell.border = source_cell.border
-            if source_cell.number_format:
-                target_cell.number_format = source_cell.number_format
-`;
+                    const header = op.header || 'عمود جديد';
+                    pythonLines.push(`    # إضافة عمود جديد بعد عمود "${after}"`);
+                    pythonLines.push(`    target_col = ws.max_column + 1`);
+                    pythonLines.push(`    if "${after}" in headers:`);
+                    pythonLines.push(`        target_col = headers["${after}"] + 1`);
+                    pythonLines.push(`    ws.insert_cols(target_col)`);
+                    pythonLines.push(`    ws.cell(row=header_row, column=target_col, value="${header}")`);
+                    pythonLines.push(`    # نسخ التنسيق من العمود المجاور`);
+                    pythonLines.push(`    source_col = target_col - 1 if target_col > 1 else target_col + 1`);
+                    pythonLines.push(`    if source_col <= ws.max_column:`);
+                    pythonLines.push(`        for row in range(header_row + 1, ws.max_row + 1):`);
+                    pythonLines.push(`            source_cell = ws.cell(row=row, column=source_col)`);
+                    pythonLines.push(`            target_cell = ws.cell(row=row, column=target_col)`);
+                    pythonLines.push(`            if source_cell.font:`);
+                    pythonLines.push(`                target_cell.font = source_cell.font`);
+                    pythonLines.push(`            if source_cell.fill:`);
+                    pythonLines.push(`                target_cell.fill = source_cell.fill`);
+                    pythonLines.push(`            if source_cell.alignment:`);
+                    pythonLines.push(`                target_cell.alignment = source_cell.alignment`);
+                    pythonLines.push(`            if source_cell.border:`);
+                    pythonLines.push(`                target_cell.border = source_cell.border`);
+                    pythonLines.push(`            if source_cell.number_format:`);
+                    pythonLines.push(`                target_cell.number_format = source_cell.number_format`);
                     break;
-                    
-                case 'add_validation':
-                    pythonCode += `
-    # إضافة قائمة منسدلة
-    dv = DataValidation(type="list", formula1='"${op.formulae || 'خيار1,خيار2,خيار3"}"', allow_blank=True)
-    ws.add_data_validation(dv)
-    ${op.address ? `dv.add('${op.address}')` : ''}
-`;
+                }
+                case 'add_validation': {
+                    const formulae = op.formulae || 'خيار1,خيار2,خيار3';
+                    const address = op.address || '';
+                    pythonLines.push(`    # إضافة قائمة منسدلة`);
+                    pythonLines.push(`    dv = DataValidation(type="list", formula1="${formulae}", allow_blank=True)`);
+                    pythonLines.push(`    ws.add_data_validation(dv)`);
+                    if (address) {
+                        pythonLines.push(`    dv.add('${address}')`);
+                    }
                     break;
-                    
+                }
                 case 'autofit_columns':
-                    pythonCode += `
-    # ضبط عرض الأعمدة تلقائياً
-    for col in ws.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except:
-                pass
-        adjusted_width = (max_length + 2)
-        ws.column_dimensions[column].width = min(adjusted_width, 50)
-`;
+                    pythonLines.push(`    # ضبط عرض الأعمدة تلقائياً`);
+                    pythonLines.push(`    for col in ws.columns:`);
+                    pythonLines.push(`        max_length = 0`);
+                    pythonLines.push(`        column = col[0].column_letter`);
+                    pythonLines.push(`        for cell in col:`);
+                    pythonLines.push(`            try:`);
+                    pythonLines.push(`                if len(str(cell.value)) > max_length:`);
+                    pythonLines.push(`                    max_length = len(str(cell.value))`);
+                    pythonLines.push(`            except:`);
+                    pythonLines.push(`                pass`);
+                    pythonLines.push(`        adjusted_width = (max_length + 2)`);
+                    pythonLines.push(`        ws.column_dimensions[column].width = min(adjusted_width, 50)`);
                     break;
-                    
                 default:
-                    pythonCode += `    # عملية غير مدعومة: ${op.type}\n`;
+                    pythonLines.push(`    # عملية غير مدعومة: ${op.type}`);
             }
         }
 
-        pythonCode += `
-    # حفظ الملف
-    wb.save('${filePath}')
-    print(json.dumps({"success": True, "message": "تم التنفيذ بنجاح"}))
-except Exception as e:
-    print(json.dumps({"success": False, "error": str(e)}))
-`;
+        pythonLines.push(`    wb.save('${filePath}')`);
+        pythonLines.push(`    print(json.dumps({"success": True, "message": "تم التنفيذ بنجاح"}))`);
+        pythonLines.push(`except Exception as e:`);
+        pythonLines.push(`    print(json.dumps({"success": False, "error": str(e)}))`);
+
+        const pythonCode = pythonLines.join('\n');
 
         // كتابة الكود في ملف مؤقت
         const tempPyPath = path.join('/tmp', `python_${Date.now()}.py`);
@@ -132,7 +128,7 @@ except Exception as e:
         // تنظيف
         try { fs.unlinkSync(tempPyPath); } catch(e) {}
         
-        if (stderr && !stderr.includes('Warning')) {
+        if (stderr && !stderr.includes('Warning') && !stderr.includes('DeprecationWarning')) {
             console.error('❌ Python Error:', stderr);
             return { success: false, error: stderr };
         }
@@ -303,4 +299,4 @@ export default async function handler(req, res) {
             reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}`
         });
     }
-}
+                                     }
