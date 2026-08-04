@@ -1,4 +1,3 @@
-# api/core/excel_bridge.py
 import sys
 import json
 import difflib
@@ -77,7 +76,6 @@ class SecurityVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 def validate_python_code_security(code_str):
-    """تحليل شجرة الإعراب المجردة للكود لضمان الخلو من أي عمليات ماسة بنظام التشغيل"""
     try:
         tree = ast.parse(code_str)
         visitor = SecurityVisitor()
@@ -93,7 +91,6 @@ def validate_python_code_security(code_str):
 # ==========================================
 
 def normalize_arabic_text(text):
-    """توحيد النصوص العربية لتجاوز فروقات الهمزات، التاءات، والمسافات الخفية"""
     if text is None:
         return ""
     text = str(text).strip().lower()
@@ -109,7 +106,6 @@ def normalize_arabic_text(text):
     return text.translate(trans)
 
 def get_effective_cell_value(ws, row, col):
-    """قراءة قيمة الخلية حتى لو كانت واقعة ضمن نطاق مدمج (Merged Range)"""
     val = ws.cell(row=row, column=col).value
     if val is not None:
         return val
@@ -120,7 +116,6 @@ def get_effective_cell_value(ws, row, col):
     return None
 
 def copy_cell_style(source_cell, target_cell):
-    """استنساخ الأنماط والتنسيقات لضمان التطابق التام"""
     if source_cell.has_style:
         if source_cell.font:
             target_cell.font = Font(
@@ -152,7 +147,6 @@ def copy_cell_style(source_cell, target_cell):
         target_cell.number_format = source_cell.number_format
 
 def find_real_header_row(ws, max_scan_rows=10):
-    """كشف ذكي لصف العناوين التجاري وتجاوز العنوان الرئيسي المدمج"""
     best_row = 1
     max_score = -1
 
@@ -174,13 +168,11 @@ def find_real_header_row(ws, max_scan_rows=10):
     return best_row
 
 def find_header_column(ws, header_input, search_rows=10):
-    """محرك كشف الأعمدة المتقدم (يدعم الحروف المباشرة، الأرقام، التطبيع العربي، والاحتواء)"""
     if not header_input:
         return None, None
 
     header_str = str(header_input).strip()
 
-    # 1. التحديد المباشر عبر رقم العمود أو حرفه (مثل "C" أو "3")
     if header_str.isdigit():
         col_idx = int(header_str)
         if 1 <= col_idx <= ws.max_column:
@@ -195,14 +187,12 @@ def find_header_column(ws, header_input, search_rows=10):
 
     target_norm = normalize_arabic_text(header_str)
 
-    # 2. التطبيع والتطابق التام
     for r in range(1, min(search_rows + 1, ws.max_row + 1)):
         for c in range(1, ws.max_column + 1):
             val = get_effective_cell_value(ws, r, c)
             if val is not None and normalize_arabic_text(val) == target_norm:
                 return r, c
 
-    # 3. الاحتواء الجزئي المرن
     for r in range(1, min(search_rows + 1, ws.max_row + 1)):
         for c in range(1, ws.max_column + 1):
             val = get_effective_cell_value(ws, r, c)
@@ -214,7 +204,6 @@ def find_header_column(ws, header_input, search_rows=10):
     return None, None
 
 def find_sheet_flexible(wb, target_name):
-    """مطابقة أوراق العمل بمرونة تجانس الاختلافات اللفظية والرموز"""
     if not target_name:
         return None
         
@@ -235,7 +224,6 @@ def find_sheet_flexible(wb, target_name):
     return None
 
 def get_sheet(wb, op):
-    """تحديد الشيت المستهدف بصورة ديناميكية"""
     sheet_name = op.get("sheet") or op.get("sheet_name")
     if sheet_name:
         matched = find_sheet_flexible(wb, sheet_name)
@@ -245,7 +233,6 @@ def get_sheet(wb, op):
     return wb.active
 
 def scan_file_health(ws):
-    """فحص سلامة المعادلات وتحديد الخلل المكسور (#REF! / #VALUE!)"""
     broken = []
     for r in range(1, ws.max_row + 1):
         for c in range(1, ws.max_column + 1):
@@ -260,25 +247,22 @@ def scan_file_health(ws):
 # ==========================================
 
 def op_autofit_columns(wb, ws, op, log):
-    """ملاءمة عرض كافة الأعمدة آلياً لمنع اقتطاع المحتوى"""
     padding = op.get("padding", 4)
     max_cap = op.get("max_width", 50)
     min_cap = op.get("min_width", 10)
 
     for col in ws.columns:
         max_len = 0
-        col_letter = get_column_letter(col[0].column)
         for cell in col:
             if cell.value is not None:
                 max_len = max(max_len, len(str(cell.value)))
         
         calculated_width = max(min_cap, min(max_len + padding, max_cap))
-        ws.column_dimensions[col_letter].width = calculated_width
+        ws.column_dimensions[get_column_letter(col[0].column)].width = calculated_width
 
     log.append("تم ضبط عروض كافة الأعمدة آلياً لتناسب أطوال النصوص.")
 
 def op_apply_theme(wb, ws, op, log):
-    """تطبيق هوية ألوان بصرية متكاملة بضغطة واحدة"""
     theme_name = op.get("theme", "etheer_gold").lower()
     theme = THEME_PRESETS.get(theme_name, THEME_PRESETS["etheer_gold"])
     header_row = op.get("header_row") or find_real_header_row(ws)
@@ -314,9 +298,7 @@ def op_add_column(wb, ws, op, log):
         hr, hc = find_header_column(ws, after_col_name)
         if hc:
             header_row = hr
-            target_col = hc + 1
-        else:
-            log.append(f"تنبيه: تعذر تحديد موقع '{after_col_name}'، تمت الإضافة بنهاية الجدول.")
+            target_col = hc + 1  # الإدراج المباشر بعد العمود المستهدف تماماً
 
     ws.insert_cols(target_col)
 
@@ -339,7 +321,7 @@ def op_add_column(wb, ws, op, log):
         col_letter = get_column_letter(target_col)
         dv.add(f"{col_letter}{header_row + 1}:{col_letter}{max(ws.max_row, header_row + 1)}")
 
-    log.append(f"تم إضافة العمود '{header}' في الصف {header_row}، العمود {target_col}.")
+    log.append(f"تم إضافة العمود '{header}' في الصف {header_row} بعد العمود {target_col - 1}.")
 
 def op_delete_column(wb, ws, op, log):
     col_name = op.get("header")
@@ -392,14 +374,13 @@ def op_update_cell(wb, ws, op, log):
     log.append(f"تم تحديث الخلية {addr}.")
 
 def op_apply_formula(wb, ws, op, log):
-    """حقن معادلات إكسل الذكية المتقدمة (SUM, VLOOKUP, SUMIFS, INDEX/MATCH)"""
     addr, formula = op.get("address"), op.get("formula")
     if not addr or not formula:
         raise ValueError("يجب تحديد الخلية والمعادلة.")
     if not formula.startswith("="):
         formula = "=" + formula
     ws[addr] = formula
-    log.append(f"تم تدوين المعادلة المتقدمة في الخلية {addr}.")
+    log.append(f"تم تدوين المعادلة في الخلية {addr}.")
 
 def op_merge_cells(wb, ws, op, log):
     range_ref = op.get("range")
@@ -475,7 +456,6 @@ def op_border_range(wb, ws, op, log):
     log.append(f"تم تطبيق الحدود على النطاق {range_ref}.")
 
 def op_conditional_formatting(wb, ws, op, log):
-    """إدراج قواعد التنسيق الشرطي الديناميكي المتطور"""
     range_ref = op.get("range")
     operator = op.get("operator", "equal")
     formula_val = op.get("value", "")
@@ -489,10 +469,9 @@ def op_conditional_formatting(wb, ws, op, log):
         font=Font(color=text_color, bold=True)
     )
     ws.conditional_formatting.add(range_ref, rule)
-    log.append(f"تم إدراج قواعد التنسيق الشرطي الديناميكي للنطاق {range_ref}.")
+    log.append(f"تم إدراج قواعد التنسيق الشرطي للنطاق {range_ref}.")
 
 def op_add_chart(wb, ws, op, log):
-    """بناء الرسوم البيانية الأصلية الحية المرتبطة بالبيانات"""
     chart_type = op.get("chart_type", "bar").lower()
     title = op.get("title", "تقرير بياني مؤسسي")
     min_c, min_r = op.get("min_col", 1), op.get("min_row", 1)
@@ -503,16 +482,15 @@ def op_add_chart(wb, ws, op, log):
     chart.title = title
     chart.add_data(Reference(ws, min_col=min_c, min_row=min_r, max_col=max_c, max_row=max_r), titles_from_data=True)
     ws.add_chart(chart, pos)
-    log.append(f"تم بناء رسم بياني أصلي حي ({chart_type}) في الموقع {pos}.")
+    log.append(f"تم بناء رسم بياني حي ({chart_type}) في الموقع {pos}.")
 
 def op_protect_sheet(wb, ws, op, log):
-    """الحماية الجزئية الهرمية وقفل الخلايا الذكي"""
     password = op.get("password", "etheer2026_secure")
     ws.protection.password = password
     ws.protection.sheet = True
     ws.protection.selectLockedCells = False
     ws.protection.selectUnlockedCells = True
-    log.append("تم تفعيل نظام الحماية الهرمية والقفل الذكي للشيت بنجاح.")
+    log.append("تم تفعيل نظام الحماية الهرمية للشيت بنجاح.")
 
 def op_pandas_pivot_to_sheet(wb, ws, op, log):
     s_name = find_sheet_flexible(wb, op.get("sheet") or op.get("sheet_name") or ws.title) or ws.title
@@ -595,13 +573,10 @@ OPERATION_MAP = {
 }
 
 def execute_operations(file_path, operations):
-    """محرك التنفيذ المتكامل المدعوم بحفظ الماكروز، المعاملات، والتراجع الفوري"""
     try:
-        # الحفاظ التام على الحمض النووي للماكروز المؤسسية (.xlsm)
         is_macro_enabled = file_path.lower().endswith('.xlsm')
         wb = openpyxl.load_workbook(file_path, keep_vba=is_macro_enabled)
         
-        # أخذ لقطة استرجاعية فائقة السرعة في الذاكرة الحية
         backup_buffer = io.BytesIO()
         wb.save(backup_buffer)
 
@@ -610,7 +585,6 @@ def execute_operations(file_path, operations):
 
         for idx, op in enumerate(operations):
             op_type = op.get("type")
-
             target_ws = get_sheet(wb, op) if op_type != "sheet_select" else ws
 
             if op_type == "execute_code" or ("code" in op and op_type is None):
@@ -625,10 +599,9 @@ def execute_operations(file_path, operations):
             if isinstance(result, openpyxl.worksheet.worksheet.Worksheet):
                 ws = result
 
-        # فحص صحة المعادلات المدمجة والكشف عن أي تلف محتمل
         broken_formulas = scan_file_health(ws)
-
         wb.save(file_path)
+        
         return {
             "success": True,
             "message": "تم تنفيذ كافة العمليات المؤسسية وحفظ التغيرات بنجاح.",
@@ -641,8 +614,7 @@ def execute_operations(file_path, operations):
             "success": False,
             "error_type": type(e).__name__,
             "error": str(e),
-            "rollback_status": "تم إلغاء التغييرات واستعادة الملف الأصلي فوراً في الذاكرة الحية.",
-            "trace_hint": "تأكد من خلو مصفوفة الأوامر من المخالفات البرمجية أو المراجع المفقودة."
+            "rollback_status": "تم إلغاء التغييرات واستعادة الملف الأصلي فوراً في الذاكرة الحية."
         }
 
 # ==========================================
