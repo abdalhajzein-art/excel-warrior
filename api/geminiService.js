@@ -107,7 +107,7 @@ geminiService.chat = async function(messages, extra = {}) {
 
       if (msg.role === "assistant") {
         if (!isLast) {
-          history.push({ role: "assistant", parts: [{ text: msg.content }] });
+          history.push({ role: "model", parts: [{ text: msg.content }] });
         }
       }
     }
