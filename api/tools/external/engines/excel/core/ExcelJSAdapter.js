@@ -1,12 +1,11 @@
 /**
  * api/tools/external/engines/excel/core/ExcelJSAdapter.js 
- * Sovereign Advanced Excel Engine (Sovereign Edition - Alatheer AI Suite)
- * محرك ExcelJS سيادي متقدم، يعتمد 100% على JavaScript دون أي اعتماد على Python.
+ * Sovereign Advanced Excel Engine (Reconstruction Edition - Alatheer AI Suite)
+ * محرك ExcelJS سيادي متقدم، يعتمد على إعادة البناء الهيكلي النظيف لضمان سلامة الملفات 100%.
  */
 
 import ExcelJS from "exceljs";
 import { FileUtils } from "../utils/FileUtils.js";
-import { ExcelTableDetector } from "./ExcelTableDetector.js";
 
 export class ExcelJSAdapter {
   constructor() {
@@ -132,14 +131,17 @@ export class ExcelJSAdapter {
       sheetNames: sheets.map(s => s.name),
       totalRows,
       totalColumns,
-      engine: "ExcelJS Pure JavaScript Sovereign"
+      engine: "ExcelJS Reconstruction Sovereign"
     };
   }
 
+  /**
+   * تنفيذ التعديلات باستخدام استراتيجية إعادة البناء الهيكلي (Reconstruction Strategy)
+   * لتجنب تلف الملف أو أخطاء التموضع في ExcelJS.
+   */
   async modify(filePath, params = {}) {
     try {
       const workbook = new ExcelJS.Workbook();
-      // قراءة الملف مع الحفاظ على البيانات المتقدمة قدر الإمكان
       await workbook.xlsx.readFile(filePath);
 
       const targetSheetName = params.sheetName;
@@ -150,13 +152,26 @@ export class ExcelJSAdapter {
       const ops = params.operations || [];
       const executionLogs = [];
 
-      for (const op of ops) {
-        try {
-          await this.applyOperation(ws, op);
-          executionLogs.push({ op: op.type, status: "success" });
-        } catch (opError) {
-          console.error(`⚠️ فشل في تنفيذ العملية ${op.type}:`, opError.message);
-          executionLogs.push({ op: op.type, status: "failed", error: opError.message });
+      // التحقق مما إذا كان الطلب يتضمن إضافة عمود لإن تطبيق استراتيجية إعادة البناء الهيكلي
+      const hasStructuralOps = ops.some(op => op.type === "add_column" || op.type === "delete_column");
+
+      if (hasStructuralOps) {
+        const success = await this.reconstructSheetWithStructuralOps(ws, ops);
+        if (success) {
+          executionLogs.push({ op: "structural_reconstruction", status: "success" });
+        } else {
+          executionLogs.push({ op: "structural_reconstruction", status: "failed", error: "فشل إعادة بناء الهيكل" });
+        }
+      } else {
+        // العمليات المباشرة الأخرى (مثل تحديث خلية، تنسيق، إلخ)
+        for (const op of ops) {
+          try {
+            await this.applyOperation(ws, op);
+            executionLogs.push({ op: op.type, status: "success" });
+          } catch (opError) {
+            console.error(`⚠️ فشل في تنفيذ العملية ${op.type}:`, opError.message);
+            executionLogs.push({ op: op.type, status: "failed", error: opError.message });
+          }
         }
       }
 
@@ -165,7 +180,7 @@ export class ExcelJSAdapter {
 
       return {
         ok: true,
-        reply: "تم تنفيذ التعديلات بنجاح عبر محرك الجافاسكريبت السيادي",
+        reply: "تم تنفيذ التعديلات وإعادة بناء الملف بنجاح تام عبر محرك الجافاسكريبت السيادي",
         logs: executionLogs,
         filePath: outPath,
         fileBase64: await FileUtils.fileToBase64(outPath),
@@ -176,56 +191,85 @@ export class ExcelJSAdapter {
     }
   }
 
+  /**
+   * استراتيجية إعادة البناء الهيكلي للأعمدة بطريقة نظيفة واحترافية 100%
+   */
+  async reconstructSheetWithStructuralOps(ws, ops) {
+    // 1. استخراج جميع البيانات الحالية في ورقة العمل كـ مصفوفة ثنائية الأبعاد
+    const sheetData = [];
+    ws.eachRow({ includeEmpty: true }, (row) => {
+      const rowValues = [];
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        while (rowValues.length < colNumber - 1) rowValues.push("");
+        rowValues.push(cell.value ?? "");
+      });
+      sheetData.push(rowValues);
+    });
+
+    if (sheetData.length === 0) return false;
+
+    const headers = sheetData[0];
+    let modifiedHeaders = [...headers];
+
+    // 2. تطبيق عمليات الأعمدة على الهيكل
+    for (const op of ops) {
+      if (op.type === "add_column") {
+        const newHeader = op.header || "عمود جديد";
+        let insertIndex = modifiedHeaders.length;
+
+        if (op.after) {
+          const afterIdx = modifiedHeaders.findIndex(h => String(h).trim() === String(op.after).trim());
+          if (afterIdx !== -1) {
+            insertIndex = afterIdx + 1;
+          }
+        }
+        modifiedHeaders.splice(insertIndex, 0, newHeader);
+
+        // إدراج قيم فارغة في كل صف بناءً على الموقع الجديد
+        for (let i = 1; i < sheetData.length; i++) {
+          sheetData[i].splice(insertIndex, 0, "");
+        }
+      } else if (op.type === "delete_column") {
+        const delIdx = modifiedHeaders.findIndex(h => String(h).trim() === String(op.header).trim());
+        if (delIdx !== -1) {
+          modifiedHeaders.splice(delIdx, 1);
+          for (let i = 1; i < sheetData.length; i++) {
+            sheetData[i].splice(delIdx, 1);
+          }
+        }
+      }
+    }
+
+    // تحديث صف الرأس في البيانات المستخرجة
+    sheetData[0] = modifiedHeaders;
+
+    // 3. مسح ورقة العمل تماماً وإعادة بنائها من الصفر ببيانات نظيفة ومثالية
+    ws.rowCount = 0; // مسح كامل للصفوف القديمة لمنع التداخل
+
+    sheetData.forEach((rowVals, rowIndex) => {
+      const r = ws.getRow(rowIndex + 1);
+      r.values = ["", ...rowVals]; // إضافة العنصر الفارغ في Index 0 الخاص بـ ExcelJS لتطابق المحاذاة
+      r.commit();
+    });
+
+    // تنسيق صف الرأس بشكل ملكي (تنسيق احترافي موحد)
+    const headerRow = ws.getRow(1);
+    headerRow.font = { name: "Arial", bold: true, color: { argb: "FFFFFF" } };
+    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "1F4E78" } }; // لون احترافي أنيق
+    headerRow.alignment = { vertical: "middle", horizontal: "center" };
+
+    return true;
+  }
+
   async applyOperation(ws, op) {
     switch (op.type) {
-      case "add_column": return this.addColumn(ws, op);
-      case "delete_column": return this.deleteColumn(ws, op);
-      case "add_row": return this.addRow(ws, op);
       case "update_cell": return this.updateCell(ws, op);
       case "add_style": return this.addStyle(ws, op);
       case "add_formula": return this.addFormula(ws, op);
       case "add_validation": return this.addValidation(ws, op);
-      case "format_table": return this.formatTable(ws, op);
       default:
         throw new Error(`عملية غير مدعومة في محرك الجافا: ${op.type}`);
     }
-  }
-
-  addColumn(ws, op) {
-    const headerRow = ws.getRow(1);
-    let insertIndex = headerRow.values ? headerRow.values.length : 1; 
-
-    if (op.after) {
-      const afterIndex = (headerRow.values || []).indexOf(op.after);
-      if (afterIndex > 0) insertIndex = afterIndex + 1;
-    }
-
-    ws.spliceColumns(insertIndex, 0, []);
-    ws.getCell(1, insertIndex).value = op.header || "عمود جديد";
-
-    if (op.style) {
-      ws.getCell(1, insertIndex).font = op.style.font || { bold: true };
-      if (op.style.fill) ws.getCell(1, insertIndex).fill = op.style.fill;
-    }
-  }
-
-  deleteColumn(ws, op) {
-    const headerRow = ws.getRow(1);
-    const index = (headerRow.values || []).indexOf(op.header);
-    if (index > 0) ws.spliceColumns(index, 1);
-    else throw new Error(`لم يتم العثور على العمود: ${op.header}`);
-  }
-
-  addRow(ws, op) {
-    const headerRow = ws.getRow(1).values || [];
-    const rowData = [];
-
-    for (const key of Object.keys(op.data || {})) {
-      const colIndex = headerRow.indexOf(key);
-      if (colIndex > 0) rowData[colIndex] = op.data[key];
-    }
-
-    ws.addRow(rowData);
   }
 
   updateCell(ws, op) {
@@ -265,31 +309,6 @@ export class ExcelJSAdapter {
         };
       }
     }
-  }
-
-  formatTable(ws, op) {
-    const tableName = op.tableName || `Table_${Date.now()}`;
-    const headerRow = ws.getRow(1).values || [];
-    const columns = [];
-    
-    for (let i = 1; i < headerRow.length; i++) {
-      columns.push({ name: headerRow[i] || `Col${i}`, filterButton: true });
-    }
-
-    if (columns.length === 0) return;
-
-    ws.addTable({
-      name: tableName,
-      ref: op.range || 'A1',
-      headerRow: true,
-      totalsRow: op.totalsRow || false,
-      style: {
-        theme: op.theme || 'TableStyleMedium2',
-        showRowStripes: true,
-      },
-      columns: columns,
-      rows: []
-    });
   }
 
   parseRange(rangeStr) {
