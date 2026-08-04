@@ -1,5 +1,5 @@
 /**
- * api/core/kernel.js – Alatheer Sovereign Kernel (Fixed Structured JSON Edition)
+ * api/core/kernel.js – Alatheer Sovereign Kernel (Adaptive Smart Edition)
  */
 
 import geminiService from "../geminiService.js";
@@ -10,7 +10,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const message = (rawMessage || "").trim();
     if (!message) {
         return {
-            reply: "هلا والله يا شريكي... آمرني، شو عنا شغل اليوم؟",
+            reply: "هلا والله يا صديقي... آمرني، شو عنا شغل اليوم؟",
             fileBase64: null,
             fileName: null,
             operations: []
@@ -38,21 +38,26 @@ ${text.slice(0, MAX_CHARS)}
 
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
 
+    /* ============================================================
+       🧠 نظام تعليمات ذكي غير خانق
+       ============================================================ */
     let systemContent = `
 ${SYSTEM_PROMPT}
 
-[التوجيهات الصارمة لشخصيتك وتعديل الملفات]:
-- أنت زميل ومهندس معماري لمنصة "الأثير". خاطب المستخدم دائماً بروح الزميل باللهجة السورية المهنية المحببة (يا شريكي، يا هندسة، تكرم عينك، إلخ).
-- إذا طلب المستخدم أي تعديل (إضافة عمود، تعديل خلية، حذف عمود، تطبيق معادلة)، **يجب عليك إجبارياً** أن تضمن في نهاية ردك كتلة كود برمجية بصيغة JSON تحتوي على مفتاح "operations" تماماً كالمثال أدناه، لكي يتم تنفيذها برمجياً عبر بايثون:
+[قواعد تشغيلك السيادية]:
 
-\`\`\`json
-{
-  "operations": [
-    {"type": "add_column", "header": "اسم العمود الجديد", "after": "اسم العمود السابق", "dropdown_options": "خيار1,خيار2,خيار3", "default_value": "-"}
-  ]
-}
-\`\`\`
-- إذا لم يكن هناك طلب لتعديل ملف، اكتفِ بالرد النصي الطبيعي دون كتلة JSON.
+- أنت زميل ومهندس ملفات في منصة "الأثير"، وتخاطب المستخدم بروح الزمالة باللهجة السورية المهنية (يا شريكي، يا صديقي…).
+
+- إذا فهمت من سياق كلام المستخدم أنه يطلب **تعديل ملف Excel** (مثل: إضافة، حذف، تعديل، تنسيق، دمج، صيغ، Pivot، نطاقات، صفوف، أعمدة، شيتات…)،  
+  عندها فقط يجب عليك إرجاع كتلة JSON في نهاية الرد تحتوي على مفتاح "operations".
+
+- العمليات يجب أن تكون من الأنواع المدعومة في المنصة، وتختارها أنت حسب سياق الطلب، وليس عبر مثال ثابت.
+
+- إذا كان طلب المستخدم **توليد محتوى، شرح، تحليل، كتابة نص، أو أي شيء غير تعديل ملف**،  
+  عندها يجب أن يكون الرد نصياً فقط بدون JSON.
+
+- لا تستخدم أمثلة ثابتة، ولا تفرض عملية واحدة.  
+  اختر العملية المناسبة حسب فهمك لسياق كلام المستخدم.
 `;
 
     if (fileContext) {
@@ -73,16 +78,15 @@ ${SYSTEM_PROMPT}
     try {
         console.log(`🧠 [Kernel] معالجة الطلب في جيميني...`);
 
-        // ⭐⭐ التعديل الحاسم هنا ⭐⭐
         const rawReply = await geminiService.chat(conversationMessages, {
             fileName,
             extractedContent,
-            systemInstruction: systemContent   // ← هذا هو التعديل المطلوب
+            systemInstruction: systemContent
         });
 
-        finalReplyText = rawReply || "تم يا شريكي، جهزتلك المطلوب.";
+        finalReplyText = rawReply || "تم يا شريكي.";
 
-        // استخراج operations من JSON
+        // استخراج JSON إذا كان موجود
         const jsonMatch =
             finalReplyText.match(/```json\s*([\s\S]*?)\s*```/) ||
             finalReplyText.match(/\{[\s\S]*"operations"[\s\S]*\}/);
@@ -91,24 +95,21 @@ ${SYSTEM_PROMPT}
             try {
                 const jsonStr = jsonMatch[1] || jsonMatch[0];
                 const parsed = JSON.parse(jsonStr);
+
                 if (parsed.operations && Array.isArray(parsed.operations)) {
                     operations = parsed.operations;
                 }
             } catch (parseErr) {
-                console.error("⚠️ [Kernel] فشل تحليل JSON للعمليات:", parseErr);
+                console.error("⚠️ [Kernel] فشل تحليل JSON:", parseErr);
             }
         }
 
         // تنظيف الرد من كتلة JSON
         finalReplyText = finalReplyText.replace(/```json[\s\S]*?```/g, "").trim();
 
-        if (message.includes("عمود") && operations.length === 0) {
-            console.warn("⚠️ [Kernel] طلب المستخدم تعديلاً لكن نموذج جيميني لم يولّد عمليات JSON.");
-        }
-
     } catch (error) {
         console.error("❌ [Kernel] خطأ:", error);
-        finalReplyText = `معليش يا شريكي، صار في خطأ بالاتصال أو التنفيذ: ${error.message}`;
+        finalReplyText = `معليش يا شريكي، صار في خطأ: ${error.message}`;
     }
 
     memory.appendSovereignHistory(sessionId, {
