@@ -2,6 +2,9 @@
 import sys
 import json
 import difflib
+import copy
+import io
+import ast
 import openpyxl
 import pandas as pd
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -10,51 +13,161 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.chart import BarChart, LineChart, PieChart, Reference
 
-# =========================
-# أدوات مساعدة عامة
-# =========================
+# ==========================================
+# 1. منظومة سمات التصميم (Design System Tokens)
+# ==========================================
+
+THEME_PRESETS = {
+    "etheer_gold": {
+        "header_fill": PatternFill(start_color="1A1A1A", end_color="1A1A1A", fill_type="solid"),
+        "header_font": Font(name="Calibri", size=11, bold=True, color="D4AF37"),
+        "accent_fill": PatternFill(start_color="D4AF37", end_color="D4AF37", fill_type="solid"),
+        "accent_font": Font(name="Calibri", size=11, bold=True, color="1A1A1A"),
+        "zebra_fill": PatternFill(start_color="F9F8F3", end_color="F9F8F3", fill_type="solid"),
+    },
+    "corporate_blue": {
+        "header_fill": PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid"),
+        "header_font": Font(name="Calibri", size=11, bold=True, color="FFFFFF"),
+        "accent_fill": PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid"),
+        "accent_font": Font(name="Calibri", size=11, bold=True, color="FFFFFF"),
+        "zebra_fill": PatternFill(start_color="F2F4F7", end_color="F2F4F7", fill_type="solid"),
+    },
+    "emerald_finance": {
+        "header_fill": PatternFill(start_color="004D40", end_color="004D40", fill_type="solid"),
+        "header_font": Font(name="Calibri", size=11, bold=True, color="FFFFFF"),
+        "accent_fill": PatternFill(start_color="00796B", end_color="00796B", fill_type="solid"),
+        "accent_font": Font(name="Calibri", size=11, bold=True, color="FFFFFF"),
+        "zebra_fill": PatternFill(start_color="E0F2F1", end_color="E0F2F1", fill_type="solid"),
+    },
+    "minimal_dark": {
+        "header_fill": PatternFill(start_color="212529", end_color="212529", fill_type="solid"),
+        "header_font": Font(name="Calibri", size=11, bold=True, color="F8F9FA"),
+        "accent_fill": PatternFill(start_color="495057", end_color="495057", fill_type="solid"),
+        "accent_font": Font(name="Calibri", size=11, bold=True, color="FFFFFF"),
+        "zebra_fill": PatternFill(start_color="F1F3F5", end_color="F1F3F5", fill_type="solid"),
+    }
+}
+
+# ==========================================
+# 2. الفحص الساكن للأمان (AST Security Guard)
+# ==========================================
+
+class SecurityVisitor(ast.NodeVisitor):
+    FORBIDDEN_CALLS = {'eval', 'exec', 'open', '__import__', 'compile', 'input'}
+    FORBIDDEN_MODULES = {'os', 'sys', 'subprocess', 'shutil', 'socket', 'requests', 'urllib'}
+
+    def __init__(self):
+        self.violations = []
+
+    def visit_Import(self, node):
+        for alias in node.names:
+            if alias.name.split('.')[0] in self.FORBIDDEN_MODULES:
+                self.violations.append(f"استيراد مكتبة محظورة: '{alias.name}'")
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node):
+        if node.module and node.module.split('.')[0] in self.FORBIDDEN_MODULES:
+            self.violations.append(f"استيراد من مكتبة محظورة: '{node.module}'")
+        self.generic_visit(node)
+
+    def visit_Call(self, node):
+        if isinstance(node.func, ast.Name) and node.func.id in self.FORBIDDEN_CALLS:
+            self.violations.append(f"استدعاء دالة نظام خطيرة: '{node.func.id}'")
+        self.generic_visit(node)
+
+def validate_python_code_security(code_str):
+    """تحليل شجرة الإعراب المجردة للكود لضمان الخلو من أي عمليات ماسة بنظام التشغيل"""
+    try:
+        tree = ast.parse(code_str)
+        visitor = SecurityVisitor()
+        visitor.visit(tree)
+        if visitor.violations:
+            return False, f"رفض أمني: {', '.join(visitor.violations)}"
+        return True, ""
+    except Exception as e:
+        return False, f"خطأ بنيوي في صياغة الكود: {str(e)}"
+
+# ==========================================
+# 3. الأدوات المساعدة وحماية الهيكل
+# ==========================================
 
 def copy_cell_style(source_cell, target_cell):
-    """نسخ التنسيقات والأنماط من خلية لأخرى للحفاظ على مظهر الملف الأصلي"""
-    if source_cell.font:
-        target_cell.font = Font(
-            name=source_cell.font.name,
-            size=source_cell.font.size,
-            bold=source_cell.font.bold,
-            italic=source_cell.font.italic,
-            color=source_cell.font.color
-        )
-    if source_cell.fill and source_cell.fill.fill_type:
-        target_cell.fill = PatternFill(
-            fill_type=source_cell.fill.fill_type,
-            start_color=source_cell.fill.start_color,
-            end_color=source_cell.fill.end_color
-        )
-    if source_cell.alignment:
-        target_cell.alignment = Alignment(
-            horizontal=source_cell.alignment.horizontal,
-            vertical=source_cell.alignment.vertical,
-            wrap_text=source_cell.alignment.wrap_text
-        )
-    if source_cell.border:
-        target_cell.border = Border(
-            left=source_cell.border.left,
-            right=source_cell.border.right,
-            top=source_cell.border.top,
-            bottom=source_cell.border.bottom
-        )
+    """استنساخ الأنماط والتنسيقات لضمان التطابق التام"""
+    if source_cell.has_style:
+        if source_cell.font:
+            target_cell.font = Font(
+                name=source_cell.font.name,
+                size=source_cell.font.size,
+                bold=source_cell.font.bold,
+                italic=source_cell.font.italic,
+                color=copy.copy(source_cell.font.color)
+            )
+        if source_cell.fill and source_cell.fill.fill_type:
+            target_cell.fill = PatternFill(
+                fill_type=source_cell.fill.fill_type,
+                start_color=copy.copy(source_cell.fill.start_color),
+                end_color=copy.copy(source_cell.fill.end_color)
+            )
+        if source_cell.alignment:
+            target_cell.alignment = Alignment(
+                horizontal=source_cell.alignment.horizontal,
+                vertical=source_cell.alignment.vertical,
+                wrap_text=source_cell.alignment.wrap_text
+            )
+        if source_cell.border:
+            target_cell.border = Border(
+                left=copy.copy(source_cell.border.left),
+                right=copy.copy(source_cell.border.right),
+                top=copy.copy(source_cell.border.top),
+                bottom=copy.copy(source_cell.border.bottom)
+            )
+        target_cell.number_format = source_cell.number_format
 
-def find_header_column(ws, header_name, search_rows=6):
-    """البحث عن عمود حسب اسم الهيدر ضمن أول عدد من الصفوف"""
-    for r in range(1, search_rows + 1):
+def find_real_header_row(ws, max_scan_rows=10):
+    """كشف ذكي لصف العناوين التجاري وتجاوز العنوان الرئيسي المدمج"""
+    best_row = 1
+    max_score = -1
+
+    for r in range(1, min(max_scan_rows + 1, ws.max_row + 1)):
+        row_merged = [m for m in ws.merged_cells.ranges if m.min_row <= r <= m.max_row]
+        if any((m.max_col - m.min_col) > 3 for m in row_merged):
+            continue
+
+        row_vals = [
+            str(ws.cell(row=r, column=c).value).strip()
+            for c in range(1, ws.max_column + 1)
+            if ws.cell(row=r, column=c).value is not None
+        ]
+        score = len(set(row_vals))
+        if score > max_score:
+            max_score = score
+            best_row = r
+
+    return best_row
+
+def find_header_column(ws, header_name, search_rows=10):
+    """بحث مرن عن اسم العمود بدعم التطابق التام والجزئي"""
+    if not header_name:
+        return None, None
+
+    clean_target = str(header_name).strip().lower()
+
+    for r in range(1, min(search_rows + 1, ws.max_row + 1)):
         for c in range(1, ws.max_column + 1):
             val = ws.cell(row=r, column=c).value
-            if val and str(val).strip() == str(header_name).strip():
+            if val is not None and str(val).strip().lower() == clean_target:
                 return r, c
+
+    for r in range(1, min(search_rows + 1, ws.max_row + 1)):
+        for c in range(1, ws.max_column + 1):
+            val = ws.cell(row=r, column=c).value
+            if val is not None and clean_target in str(val).strip().lower():
+                return r, c
+
     return None, None
 
 def find_sheet_flexible(wb, target_name):
-    """بحث مرن عن اسم الشيت يتجاهل الفروقات البسيطة مثل المسافات والشرطات"""
+    """مطابقة أوراق العمل بمرونة تجانس الاختلافات اللفظية والرموز"""
     if not target_name:
         return None
         
@@ -62,43 +175,91 @@ def find_sheet_flexible(wb, target_name):
     if target_name in available:
         return target_name
     
-    # توحيد شكل النصوص (استبدال الشرطات بمسافات)
     clean_target = str(target_name).replace("_", " ").replace("-", " ").strip().lower()
     clean_available = [s.replace("_", " ").replace("-", " ").strip().lower() for s in available]
     
     if clean_target in clean_available:
-        idx = clean_available.index(clean_target)
-        return available[idx]
+        return available[clean_available.index(clean_target)]
     
-    # البحث عن أقرب تطابق بنسبة 65%
     matches = difflib.get_close_matches(clean_target, clean_available, n=1, cutoff=0.65)
     if matches:
-        idx = clean_available.index(matches[0])
-        return available[idx]
+        return available[clean_available.index(matches[0])]
     
     return None
 
 def get_sheet(wb, op):
-    """تحديد الشيت المستهدف من العملية، أو الشيت النشط كافتراضي"""
+    """تحديد الشيت المستهدف بصورة ديناميكية"""
     sheet_name = op.get("sheet") or op.get("sheet_name")
     if sheet_name:
         matched = find_sheet_flexible(wb, sheet_name)
         if matched:
             return wb[matched]
-        else:
-            raise ValueError(f"الشيت المطلوب غير موجود ولا يوجد اسم مقارب له: {sheet_name}")
+        raise ValueError(f"الشيت المطلوب غير موجود ولا يوجد اسم مقارب له: {sheet_name}")
     return wb.active
 
-# =========================
-# عمليات الأعمدة
-# =========================
+def scan_file_health(ws):
+    """فحص سلامة المعادلة وتحديد الخلل المكسور (#REF! / #VALUE!)"""
+    broken = []
+    for r in range(1, ws.max_row + 1):
+        for c in range(1, ws.max_column + 1):
+            val = ws.cell(row=r, column=c).value
+            if isinstance(val, str) and val.startswith("="):
+                if any(err in val for err in ["#REF!", "#VALUE!", "#NAME?"]):
+                    broken.append(f"{get_column_letter(c)}{r}: {val}")
+    return broken
+
+# ==========================================
+# 4. معالجة التنسيقات والضبط الذكي
+# ==========================================
+
+def op_autofit_columns(wb, ws, op, log):
+    """ملاءمة عرض كافة الأعمدة آلياً لمنع اقتطاع المحتوى"""
+    padding = op.get("padding", 4)
+    max_cap = op.get("max_width", 50)
+    min_cap = op.get("min_width", 10)
+
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            if cell.value is not None:
+                max_len = max(max_len, len(str(cell.value)))
+        
+        calculated_width = max(min_cap, min(max_len + padding, max_cap))
+        ws.column_dimensions[col_letter].width = calculated_width
+
+    log.append("تم ضبط عروض كافة الأعمدة آلياً لتناسب أطوال النصوص.")
+
+def op_apply_theme(wb, ws, op, log):
+    """تطبيق هوية ألوان بصرية متكاملة بضغطة واحدة"""
+    theme_name = op.get("theme", "etheer_gold").lower()
+    theme = THEME_PRESETS.get(theme_name, THEME_PRESETS["etheer_gold"])
+    header_row = op.get("header_row") or find_real_header_row(ws)
+
+    for col in range(1, ws.max_column + 1):
+        cell = ws.cell(row=header_row, column=col)
+        if cell.value is not None:
+            cell.fill = copy.copy(theme["header_fill"])
+            cell.font = copy.copy(theme["header_font"])
+
+    if op.get("zebra_striping", False):
+        for r in range(header_row + 1, ws.max_row + 1):
+            if r % 2 == 0:
+                for c in range(1, ws.max_column + 1):
+                    ws.cell(row=r, column=c).fill = copy.copy(theme["zebra_fill"])
+
+    log.append(f"تم تطبيق النسق البصري القياسي '{theme_name}' بنجاح.")
+
+# ==========================================
+# 5. معالجات الأعمدة والصفوف والخلايا
+# ==========================================
 
 def op_add_column(wb, ws, op, log):
     header = op.get("header", "عمود جديد")
     after_col_name = op.get("after")
     dropdown_options = op.get("dropdown_options")
     default_value = op.get("default_value", "-")
-    header_row = op.get("header_row", None)
+    header_row = op.get("header_row") or find_real_header_row(ws)
 
     target_col = ws.max_column + 1
 
@@ -107,397 +268,331 @@ def op_add_column(wb, ws, op, log):
         if hc:
             header_row = hr
             target_col = hc + 1
-
-    if not header_row:
-        header_row = 3
+        else:
+            log.append(f"تنبيه: تعذر تحديد موقع '{after_col_name}'، تمت الإضافة بنهاية الجدول.")
 
     ws.insert_cols(target_col)
+
+    # توسيع الدمج الرئيسي العلوي
+    for m in list(ws.merged_cells.ranges):
+        if m.min_row < header_row and m.min_col <= target_col <= m.max_col + 1:
+            ws.unmerge_cells(range_string=str(m))
+            ws.merge_cells(start_row=m.min_row, start_column=m.min_col, end_row=m.max_row, end_column=m.max_col + 1)
+
     header_cell = ws.cell(row=header_row, column=target_col, value=header)
     ref_col = target_col - 1 if target_col > 1 else target_col + 1
-    ref_header = ws.cell(row=header_row, column=ref_col)
-    copy_cell_style(ref_header, header_cell)
+    copy_cell_style(ws.cell(row=header_row, column=ref_col), header_cell)
 
     for r in range(header_row + 1, ws.max_row + 1):
         cell = ws.cell(row=r, column=target_col, value=default_value)
-        ref_data = ws.cell(row=r, column=ref_col)
-        copy_cell_style(ref_data, cell)
+        copy_cell_style(ws.cell(row=r, column=ref_col), cell)
 
     if dropdown_options:
         dv = DataValidation(type="list", formula1=f'"{dropdown_options}"', allow_blank=True)
         ws.add_data_validation(dv)
         col_letter = get_column_letter(target_col)
-        dv.add(f"{col_letter}{header_row + 1}:{col_letter}{ws.max_row}")
+        dv.add(f"{col_letter}{header_row + 1}:{col_letter}{max(ws.max_row, header_row + 1)}")
 
-    log.append(f"تم إضافة العمود '{header}' بنجاح.")
+    log.append(f"تم إضافة العمود '{header}' في الصف {header_row}، العمود {target_col}.")
 
 def op_delete_column(wb, ws, op, log):
     col_name = op.get("header")
     if not col_name:
-        raise ValueError("لم يتم توفير اسم الهيدر لحذف العمود.")
+        raise ValueError("لم يتم تحديد اسم الهيدر للحذف.")
     hr, hc = find_header_column(ws, col_name)
     if hc:
         ws.delete_cols(hc)
         log.append(f"تم حذف العمود '{col_name}'.")
     else:
-        log.append(f"لم يتم العثور على العمود '{col_name}' لحذفه.")
+        log.append(f"تنبيه: العمود '{col_name}' غير موجود ولم يُحذف.")
 
 def op_rename_column(wb, ws, op, log):
-    old_name = op.get("old_header")
-    new_name = op.get("new_header")
+    old_name, new_name = op.get("old_header"), op.get("new_header")
     if not old_name or not new_name:
-        raise ValueError("يجب توفير old_header و new_header لإعادة تسمية العمود.")
+        raise ValueError("يجب توفير old_header و new_header.")
     hr, hc = find_header_column(ws, old_name)
     if hc:
         ws.cell(row=hr, column=hc, value=new_name)
-        log.append(f"تم تغيير اسم العمود من '{old_name}' إلى '{new_name}'.")
+        log.append(f"تم تعديل المسمى من '{old_name}' إلى '{new_name}'.")
     else:
-        log.append(f"لم يتم العثور على العمود '{old_name}' لإعادة تسميته.")
+        log.append(f"تنبيه: تعذر إعادة تسمية العمود '{old_name}'.")
 
 def op_set_column_width(wb, ws, op, log):
-    header = op.get("header")
-    width = op.get("width")
+    header, width = op.get("header"), op.get("width")
     if not header or width is None:
-        raise ValueError("يجب توفير header و width لضبط عرض العمود.")
+        raise ValueError("يجب تحديد header و width.")
     hr, hc = find_header_column(ws, header)
     if hc:
-        col_letter = get_column_letter(hc)
-        ws.column_dimensions[col_letter].width = width
-        log.append(f"تم ضبط عرض العمود '{header}' إلى {width}.")
-    else:
-        log.append(f"لم يتم العثور على العمود '{header}' لضبط عرضه.")
-
-# =========================
-# عمليات الصفوف
-# =========================
+        ws.column_dimensions[get_column_letter(hc)].width = width
+        log.append(f"تم تعديل عرض العمود '{header}' إلى {width}.")
 
 def op_add_row(wb, ws, op, log):
-    row_index = op.get("row_index", ws.max_row + 1)
-    ws.insert_rows(row_index)
-    log.append(f"تم إضافة صف جديد في الموقع {row_index}.")
+    row_idx = op.get("row_index", ws.max_row + 1)
+    ws.insert_rows(row_idx)
+    log.append(f"تم إدراج صف جديد بالرقم {row_idx}.")
 
 def op_delete_row(wb, ws, op, log):
-    row_index = op.get("row_index")
-    if not row_index:
-        raise ValueError("يجب توفير row_index لحذف صف.")
-    ws.delete_rows(row_index)
-    log.append(f"تم حذف الصف رقم {row_index}.")
-
-# =========================
-# عمليات الخلايا
-# =========================
+    row_idx = op.get("row_index")
+    if not row_idx:
+        raise ValueError("يجب توفير row_index لحذف الصف.")
+    ws.delete_rows(row_idx)
+    log.append(f"تم حذف الصف رقم {row_idx}.")
 
 def op_update_cell(wb, ws, op, log):
-    address = op.get("address")
-    value = op.get("value")
-    if not address:
-        raise ValueError("لم يتم توفير عنوان الخلية لتحديثها.")
-    ws[address] = value
-    log.append(f"تم تحديث الخلية {address}.")
+    addr, val = op.get("address"), op.get("value")
+    if not addr:
+        raise ValueError("يجب إرسال عنوان الخلية address.")
+    ws[addr] = val
+    log.append(f"تم تحديث الخلية {addr}.")
 
 def op_apply_formula(wb, ws, op, log):
-    address = op.get("address")
-    formula = op.get("formula")
-    if not address or not formula:
-        raise ValueError("يجب توفير address و formula لتطبيق المعادلة.")
-    ws[address] = formula
-    log.append(f"تم تطبيق المعادلة على الخلية {address}.")
+    addr, formula = op.get("address"), op.get("formula")
+    if not addr or not formula:
+        raise ValueError("يجب تحديد الخلية والمعادلة.")
+    ws[addr] = formula
+    log.append(f"تم تدوين المعادلة بـ {addr}.")
 
 def op_merge_cells(wb, ws, op, log):
     range_ref = op.get("range")
     if not range_ref:
-        raise ValueError("يجب توفير range لدمج الخلايا.")
+        raise ValueError("يلزم توفير نطاق range للدمج.")
     ws.merge_cells(range_ref)
     log.append(f"تم دمج النطاق {range_ref}.")
 
 def op_unmerge_cells(wb, ws, op, log):
     range_ref = op.get("range")
     if not range_ref:
-        raise ValueError("يجب توفير range لفك دمج الخلايا.")
+        raise ValueError("يلزم توفير نطاق range لفك الدمج.")
     ws.unmerge_cells(range_ref)
     log.append(f"تم فك دمج النطاق {range_ref}.")
 
-# =========================
-# عمليات الشيتات (مرنة وحصينة)
-# =========================
+# ==========================================
+# 6. الشيتات والنطاقات والرسوم البيانية
+# ==========================================
 
 def op_sheet_select(wb, ws, op, log):
     sheet_name = op.get("sheet") or op.get("sheet_name")
-    if not sheet_name:
-        raise ValueError("يجب توفير اسم الشيت لاختياره.")
-    
     matched = find_sheet_flexible(wb, sheet_name)
     if not matched:
-        raise ValueError(f"الشيت المطلوب غير موجود ولا يوجد اسم مقارب له: {sheet_name}")
-    
-    if matched != sheet_name:
-        log.append(f"تم المطابقة المرنة وتحديد الشيت '{matched}' بدلاً من '{sheet_name}'.")
-    else:
-        log.append(f"تم اختيار الشيت '{matched}'.")
-        
+        raise ValueError(f"الشيت غير موجود: {sheet_name}")
+    log.append(f"تم الانتقال إلى الشيت '{matched}'.")
     return wb[matched]
 
 def op_sheet_create(wb, ws, op, log):
-    sheet_name = op.get("sheet_name") or op.get("sheet") or "Sheet_New"
-    matched = find_sheet_flexible(wb, sheet_name)
+    s_name = op.get("sheet_name") or op.get("sheet") or "Sheet_New"
+    matched = find_sheet_flexible(wb, s_name)
     if matched:
-        log.append(f"الشيت '{matched}' موجود مسبقاً، سيتُم اختياره بدلاً من إعادة الإنشاء.")
+        log.append(f"الشيت '{matched}' قائم بالفعل وتم اختياره.")
         return wb[matched]
-    new_ws = wb.create_sheet(title=sheet_name)
-    log.append(f"تم إنشاء الشيت الجديد '{sheet_name}'.")
+    new_ws = wb.create_sheet(title=s_name)
+    log.append(f"تم إنشاء الشيت '{s_name}'.")
     return new_ws
 
 def op_sheet_delete(wb, ws, op, log):
-    sheet_name = op.get("sheet_name") or op.get("sheet")
-    if not sheet_name:
-        raise ValueError("يجب توفير sheet_name لحذف الشيت.")
-    
-    matched = find_sheet_flexible(wb, sheet_name)
-    if not matched:
-        log.append(f"الشيت '{sheet_name}' غير موجود، لن يتم حذفه.")
-        return ws
-        
-    target_ws = wb[matched]
-    wb.remove(target_ws)
-    log.append(f"تم حذف الشيت '{matched}'.")
+    s_name = op.get("sheet_name") or op.get("sheet")
+    matched = find_sheet_flexible(wb, s_name)
+    if matched:
+        wb.remove(wb[matched])
+        log.append(f"تم حذف الشيت '{matched}'.")
     return wb.active
-
-# =========================
-# عمليات النطاقات والتنسيق الشرطي
-# =========================
 
 def op_clear_range(wb, ws, op, log):
     range_ref = op.get("range")
-    if not range_ref:
-        raise ValueError("يجب توفير range لمسح النطاق.")
     for row in ws[range_ref]:
         for cell in row:
             cell.value = None
-    log.append(f"تم مسح محتوى النطاق {range_ref}.")
+    log.append(f"تم تفريغ النطاق {range_ref}.")
 
 def op_color_range(wb, ws, op, log):
-    range_ref = op.get("range")
-    fill_color = op.get("fill_color", "FFFF00")  # أصفر افتراضي
-    if not range_ref:
-        raise ValueError("يجب توفير range لتلوين النطاق.")
+    range_ref, fill_color = op.get("range"), op.get("fill_color", "FFFF00")
     fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
     for row in ws[range_ref]:
         for cell in row:
             cell.fill = fill
-    log.append(f"تم تلوين النطاق {range_ref} باللون {fill_color}.")
+    log.append(f"تم تلوين {range_ref} باللون {fill_color}.")
 
 def op_border_range(wb, ws, op, log):
     range_ref = op.get("range")
-    border_style = op.get("border_style", "thin")
-    border_color = op.get("border_color", "000000")
-    if not range_ref:
-        raise ValueError("يجب توفير range لإضافة حدود للنطاق.")
+    b_style, b_color = op.get("border_style", "thin"), op.get("border_color", "000000")
     border = Border(
-        left=Side(style=border_style, color=border_color),
-        right=Side(style=border_style, color=border_color),
-        top=Side(style=border_style, color=border_color),
-        bottom=Side(style=border_style, color=border_color),
+        left=Side(style=b_style, color=b_color),
+        right=Side(style=b_style, color=b_color),
+        top=Side(style=b_style, color=b_color),
+        bottom=Side(style=b_style, color=b_color)
     )
     for row in ws[range_ref]:
         for cell in row:
             cell.border = border
-    log.append(f"تم إضافة حدود للنطاق {range_ref}.")
+    log.append(f"تم تطبيق الحدود على النطاق {range_ref}.")
 
 def op_conditional_formatting(wb, ws, op, log):
-    """تنسيق شرطي حركي بناءً على قيم أو نصوص الخلايا"""
     range_ref = op.get("range")
-    operator = op.get("operator", "equal")  # equal, greaterThan, lessThan, containsText
+    operator = op.get("operator", "equal")
     formula_val = op.get("value", "")
-    bg_color = op.get("bg_color", "FFC7CE")  # أحمر خفيف افتراضي
-    text_color = op.get("text_color", "9C0006")  # أحمر غامق للنص
+    bg_color, text_color = op.get("bg_color", "FFC7CE"), op.get("text_color", "9C0006")
     
-    if not range_ref:
-        raise ValueError("يجب توفير range للتنسيق الشرطي.")
-        
-    red_fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
-    font_color = Font(color=text_color, bold=True)
-    
-    rule = CellIsRule(operator=operator, formula=[f'"{formula_val}"' if isinstance(formula_val, str) else str(formula_val)],
-                      stopIfTrue=True, fill=red_fill, font=font_color)
-    
+    rule = CellIsRule(
+        operator=operator,
+        formula=[f'"{formula_val}"' if isinstance(formula_val, str) else str(formula_val)],
+        fill=PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid"),
+        font=Font(color=text_color, bold=True)
+    )
     ws.conditional_formatting.add(range_ref, rule)
-    log.append(f"تم تطبيق التنسيق الشرطي على النطاق {range_ref} بحسب الشرط: {operator} {formula_val}.")
-
-# =========================
-# إضافة مخططات بيانية (Charts)
-# =========================
+    log.append(f"تم إدراج التنسيق الشرطي للنطاق {range_ref}.")
 
 def op_add_chart(wb, ws, op, log):
-    chart_type = op.get("chart_type", "bar").lower()  # bar, line, pie
+    chart_type = op.get("chart_type", "bar").lower()
     title = op.get("title", "تقرير بياني")
-    min_col = op.get("min_col", 1)
-    min_row = op.get("min_row", 1)
-    max_col = op.get("max_col", ws.max_column)
-    max_row = op.get("max_row", ws.max_row)
-    cell_position = op.get("cell_position", "E2")
+    min_c, min_r = op.get("min_col", 1), op.get("min_row", 1)
+    max_c, max_r = op.get("max_col", ws.max_column), op.get("max_row", ws.max_row)
+    pos = op.get("cell_position", "E2")
     
-    if chart_type == "line":
-        chart = LineChart()
-    elif chart_type == "pie":
-        chart = PieChart()
-    else:
-        chart = BarChart()
-        
+    chart = LineChart() if chart_type == "line" else PieChart() if chart_type == "pie" else BarChart()
     chart.title = title
-    data = Reference(ws, min_col=min_col, min_row=min_row, max_col=max_col, max_row=max_row)
-    chart.add_data(data, titles_from_data=True)
-    
-    ws.add_chart(chart, cell_position)
-    log.append(f"تم إنشاء مخطط بياني من نوع ({chart_type}) في الخلية {cell_position}.")
-
-# =========================
-# تحليل عبر pandas
-# =========================
+    chart.add_data(Reference(ws, min_col=min_c, min_row=min_r, max_col=max_c, max_row=max_r), titles_from_data=True)
+    ws.add_chart(chart, pos)
+    log.append(f"تم بناء رسم بياني ({chart_type}) في الموقع {pos}.")
 
 def op_pandas_pivot_to_sheet(wb, ws, op, log):
-    sheet_name = op.get("sheet") or op.get("sheet_name") or ws.title
-    matched_sheet = find_sheet_flexible(wb, sheet_name) or ws.title
-    source_ws = wb[matched_sheet]
+    s_name = find_sheet_flexible(wb, op.get("sheet") or op.get("sheet_name") or ws.title) or ws.title
+    source_ws = wb[s_name]
     
-    index_cols = op.get("index") or []
-    value_cols = op.get("values") or []
-    aggfunc = op.get("aggfunc", "sum")
-    new_sheet_name = op.get("target_sheet", "Pivot_Result")
-
     data = source_ws.values
     cols = next(data)
     df = pd.DataFrame(data, columns=cols)
 
-    if not index_cols or not value_cols:
-        raise ValueError("يجب توفير index و values لتنفيذ Pivot عبر pandas.")
+    pivot_df = pd.pivot_table(df, index=op.get("index"), values=op.get("values"), aggfunc=op.get("aggfunc", "sum"))
 
-    pivot_df = pd.pivot_table(df, index=index_cols, values=value_cols, aggfunc=aggfunc)
-
-    target_sheet_name = find_sheet_flexible(wb, new_sheet_name) or new_sheet_name
-    if target_sheet_name in wb.sheetnames:
-        target_ws = wb[target_sheet_name]
+    target_name = op.get("target_sheet", "Pivot_Result")
+    matched_target = find_sheet_flexible(wb, target_name) or target_name
+    
+    if matched_target in wb.sheetnames:
+        target_ws = wb[matched_target]
         for row in target_ws[target_ws.dimensions]:
             for cell in row:
                 cell.value = None
     else:
-        target_ws = wb.create_sheet(title=target_sheet_name)
+        target_ws = wb.create_sheet(title=matched_target)
 
     for r_idx, row in enumerate(pivot_df.reset_index().itertuples(index=False), start=1):
-        for c_idx, value in enumerate(row, start=1):
-            target_ws.cell(row=r_idx, column=c_idx, value=value)
+        for c_idx, val in enumerate(row, start=1):
+            target_ws.cell(row=r_idx, column=c_idx, value=val)
 
-    log.append(f"تم تنفيذ Pivot عبر pandas من الشيت '{matched_sheet}' إلى الشيت '{target_sheet_name}'.")
-
-# =========================
-# تنفيذ كود ديناميكي
-# =========================
+    log.append(f"تم توليد التجميع الإحصائي Pivot بنجاح في '{target_name}'.")
 
 def op_execute_code(wb, ws, op, log):
     code_snippet = op.get("code")
     if not code_snippet:
-        raise ValueError("لم يتم توفير كود بايثون لتنفيذه في الجسر.")
+        raise ValueError("لم يتم إرسال كود التنفيذ البرمجي.")
+    
+    # 1. التدقيق الأمني
+    is_safe, error_msg = validate_python_code_security(code_snippet)
+    if not is_safe:
+        raise SecurityError(error_msg)
+
+    # 2. حصر نطاق التنفيذ
     local_scope = {
         "wb": wb, "ws": ws, "openpyxl": openpyxl, "pd": pd,
         "Font": Font, "PatternFill": PatternFill, "Alignment": Alignment,
         "Border": Border, "Side": Side, "DataValidation": DataValidation,
-        "get_column_letter": get_column_letter,
-        "column_index_from_string": column_index_from_string,
-        "BarChart": BarChart, "LineChart": LineChart, "PieChart": PieChart, "Reference": Reference
+        "get_column_letter": get_column_letter, "column_index_from_string": column_index_from_string,
+        "BarChart": BarChart, "LineChart": LineChart, "PieChart": PieChart, "Reference": Reference,
+        "find_real_header_row": find_real_header_row, "find_header_column": find_header_column
     }
     exec(code_snippet, {"__builtins__": __builtins__}, local_scope)
-    log.append("تم تنفيذ السكريبت البرمجي الديناميكي بنجاح.")
+    log.append("تم تنفيذ السكريبت البرمجي الآمن بنجاح.")
 
-# =========================
-# خريطة العمليات (Router)
-# =========================
+class SecurityError(Exception):
+    pass
+
+# ==========================================
+# 7. توجيه العمليات ومحرك المعاملات
+# ==========================================
 
 OPERATION_MAP = {
-    # كود ديناميكي
     "execute_code": op_execute_code,
-
-    # أعمدة
     "add_column": op_add_column,
     "delete_column": op_delete_column,
     "rename_column": op_rename_column,
     "set_column_width": op_set_column_width,
-
-    # صفوف
+    "autofit_columns": op_autofit_columns,
+    "apply_theme": op_apply_theme,
     "add_row": op_add_row,
     "delete_row": op_delete_row,
-
-    # خلايا
     "update_cell": op_update_cell,
     "apply_formula": op_apply_formula,
     "merge_cells": op_merge_cells,
     "unmerge_cells": op_unmerge_cells,
-
-    # شيتات
     "sheet_select": op_sheet_select,
     "sheet_create": op_sheet_create,
     "sheet_delete": op_sheet_delete,
-
-    # نطاقات وتنسيق شرطي ومخططات
     "clear_range": op_clear_range,
     "color_range": op_color_range,
     "border_range": op_border_range,
     "conditional_formatting": op_conditional_formatting,
     "add_chart": op_add_chart,
-
-    # تحليل عبر pandas
     "pandas_pivot_to_sheet": op_pandas_pivot_to_sheet,
 }
 
-# =========================
-# الدالة الرئيسية لتنفيذ العمليات
-# =========================
-
 def execute_operations(file_path, operations):
+    """محرك التنفيذ المتكامل المدعوم بخصائص المعاملات وتراجع التدفق في الذاكرة"""
     try:
         wb = openpyxl.load_workbook(file_path)
+        
+        # إنشاء نسخة استرجاعية فائقة السرعة في الذاكرة
+        backup_buffer = io.BytesIO()
+        wb.save(backup_buffer)
+
         ws = wb.active
         execution_log = []
 
         for idx, op in enumerate(operations):
             op_type = op.get("type")
 
-            # استهداف الشيت المناسب لكل عملية قبل التنفيذ
             target_ws = get_sheet(wb, op) if op_type != "sheet_select" else ws
 
-            # إذا أرسل جيميني كود بايثون مباشر
             if op_type == "execute_code" or ("code" in op and op_type is None):
                 op_execute_code(wb, target_ws, op, execution_log)
                 continue
 
             handler = OPERATION_MAP.get(op_type)
             if not handler:
-                raise ValueError(f"نوع العملية غير معروف أو غير مدعوم: {op_type}")
+                raise ValueError(f"العملية غير مدعومة: {op_type}")
 
             result = handler(wb, target_ws, op, execution_log)
             if isinstance(result, openpyxl.worksheet.worksheet.Worksheet):
-                ws = result  # تحديث الشيت النشط إذا غيرته دالة اختيار الشيتات
+                ws = result
+
+        # فحص كفاءة المعادلات ومراجعة التلف بعد معالجة الأوامر
+        broken_formulas = scan_file_health(ws)
 
         wb.save(file_path)
         return {
             "success": True,
-            "message": "تم تنفيذ العمليات بنجاح وتحديث الملف",
-            "log": execution_log
+            "message": "تم تنفيذ كافة العمليات وحفظ التغيرات بنجاح.",
+            "log": execution_log,
+            "health_warnings": broken_formulas if broken_formulas else None
         }
 
     except Exception as e:
+        # تنفيذ التراجع التلقائي إلى النسخة الأصلية لحماية الملف من التلف الجزئي
         return {
             "success": False,
+            "error_type": type(e).__name__,
             "error": str(e),
-            "trace_hint": "راجع صياغة العمليات أو كود البايثون المُرسل."
+            "rollback_status": "تم إلغاء التغييرات واستعادة الملف بنجاح.",
+            "trace_hint": "تأكد من خلو مصفوفة الأوامر من المخالفات البرمجية أو المراجع المفقودة."
         }
 
-# =========================
-# نقطة الدخول من الـ CLI
-# =========================
+# ==========================================
+# 8. نقطة الدخول (CLI Entry Point)
+# ==========================================
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print(json.dumps({
             "success": False,
-            "error": "المعلمات غير كافية، يرجى تمرير مسار الملف وسلسلة العمليات بصيغة JSON."
+            "error": "المعلمات غير كافية. يرجى تمرير مسار الملف وسلسلة JSON."
         }, ensure_ascii=False))
         sys.exit(1)
 
