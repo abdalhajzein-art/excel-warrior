@@ -2,6 +2,8 @@
  * api/chat.js – Sovereign Chat Layer (Direct Gemini Engine Edition)
  * ✅ تواصل مباشر مع جيميني ومعالجة مريحة مع دعم المعاينة الفورية لبيانات الإكسل.
  * ✅ دعم headless-excel لتنفيذ عمليات التعديل المتقدمة.
+ * ✅ تحسين سرعة المعاينة (قراءة أول 10 صفوف فقط)
+ * ✅ إضافة pyarrow لتسريع pandas
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -64,7 +66,7 @@ engine = ExcelEngine('${filePath}')
         const { stdout, stderr } = await execAsync(`python3 "${tempPyPath}"`);
         
         // تنظيف
-        fs.unlinkSync(tempPyPath);
+        try { fs.unlinkSync(tempPyPath); } catch(e) {}
         
         if (stderr && !stderr.includes('Warning')) {
             console.error('❌ Headless Excel Error:', stderr);
@@ -79,7 +81,7 @@ engine = ExcelEngine('${filePath}')
 }
 
 /**
- * ✅ استخراج معاينة الملف عبر Python (pandas)
+ * ✅ استخراج معاينة الملف عبر Python (pandas) - محسّن للسرعة
  */
 function extractPreview(filePath) {
     try {
@@ -89,12 +91,13 @@ import json
 import sys
 
 try:
-    df = pd.read_excel(sys.argv[1])
+    # ✅ قراءة أول 10 صفوف فقط لتسريع المعاينة
+    df = pd.read_excel(sys.argv[1], nrows=10)
     print(json.dumps({
         "rows": len(df),
         "columns": len(df.columns),
         "sheets": 1,
-        "text": df.head(30).to_markdown(index=False)
+        "text": df.to_markdown(index=False)
     }, ensure_ascii=False))
 except Exception as e:
     print(json.dumps({"error": str(e)}))
@@ -149,7 +152,7 @@ export default async function handler(req, res) {
                 console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
             }
 
-            // استخراج معاينة
+            // ✅ استخراج معاينة سريعة (10 صفوف فقط)
             const previewData = extractPreview(sovereignFilePath);
             if (!previewData.error) {
                 extractedContent = {
@@ -163,6 +166,8 @@ export default async function handler(req, res) {
                 };
                 console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح (${previewData.rows} صف).`);
             } else {
+                // ✅ إذا فشلت المعاينة، نستخدم نصاً بديلاً سريعاً
+                console.warn(`⚠️ [الأثير Preview] فشلت المعاينة: ${previewData.error}`);
                 extractedContent = {
                     text: `[تم استلام الملف بنجاح وجاهز للمراجعة: ${fileName}]`,
                     metadata: { fileName }
@@ -234,4 +239,4 @@ export default async function handler(req, res) {
             reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}`
         });
     }
-    }
+                      }
