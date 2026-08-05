@@ -4,9 +4,6 @@
  * يخزن معلومات خفيفة عن الملف لتجنب استهلاك التوكنز
  */
 
-import fs from 'fs';
-import path from 'path';
-
 // 1. توليد البصمة من الملف
 export function generateFingerprint(filePath, previewData) {
     if (!previewData || !previewData.metadata) {
@@ -14,24 +11,13 @@ export function generateFingerprint(filePath, previewData) {
     }
 
     const fingerprint = {
-        // هيكل الملف
         sheets: previewData.metadata.sheets || [],
         rowCounts: previewData.metadata.rowCounts || {},
         columnCounts: previewData.metadata.columnCounts || {},
-        
-        // الميزات المكتشفة
         features: detectFeatures(previewData),
-        
-        // أنماط التنسيق (نماذج تمثيلية)
         formatSamples: extractFormatSamples(previewData),
-        
-        // المعادلات الرئيسية
         keyFormulas: extractKeyFormulas(previewData),
-        
-        // الألوان المستخدمة
         colorUsage: detectColorUsage(previewData),
-        
-        // بصمة زمنية
         generatedAt: Date.now(),
         version: '2.0'
     };
@@ -58,7 +44,6 @@ function detectFeatures(previewData) {
 // 3. استخراج أنماط التنسيق
 function extractFormatSamples(previewData) {
     const samples = {};
-    
     if (previewData.metadata && previewData.metadata.sheets) {
         previewData.metadata.sheets.forEach(sheet => {
             samples[sheet] = {
@@ -79,18 +64,15 @@ function extractFormatSamples(previewData) {
             };
         });
     }
-    
     return samples;
 }
 
 // 4. استخراج المعادلات الرئيسية
 function extractKeyFormulas(previewData) {
     const formulas = {};
-    
     if (previewData.metadata && previewData.metadata.sheets) {
         previewData.metadata.sheets.forEach(sheet => {
             formulas[sheet] = {};
-            // نأخذ أول 5 معادلات من كل ورقة كمثال
             const sheetData = previewData[sheet] || [];
             let count = 0;
             for (const row of sheetData) {
@@ -103,13 +85,12 @@ function extractKeyFormulas(previewData) {
             }
         });
     }
-    
     return formulas;
 }
 
 // 5. كشف الألوان المستخدمة
 function detectColorUsage(previewData) {
-    const colors = {
+    return {
         '1F4E78': ['headers', 'titles', 'main_theme'],
         'D9E1F2': ['kpi_backgrounds', 'light_blue'],
         'E2EFDA': ['completed_projects', 'success'],
@@ -118,8 +99,6 @@ function detectColorUsage(previewData) {
         'FFFFFF': ['text_on_dark', 'headers_text'],
         '595959': ['secondary_text', 'kpi_labels']
     };
-    
-    return colors;
 }
 
 // 6. دمج بصمتين
@@ -147,28 +126,30 @@ export function fingerprintToText(fingerprint) {
         .join('، ');
     
     const colorList = Object.keys(fingerprint.colorUsage).join('، ');
+    const sheetsList = fingerprint.sheets.join('، ');
+    const formulaSummary = Object.keys(fingerprint.keyFormulas)
+        .map(sheet => `${sheet}: ${Object.keys(fingerprint.keyFormulas[sheet]).length} معادلة`)
+        .join('، ');
     
     return `
-    📋 **بصمة الملف الحالي:**
-    
-    📄 الأوراق: ${fingerprint.sheets.join('، ')}
-    
-    ✨ الميزات الموجودة: ${featureList || 'لا توجد ميزات متقدمة'}
-    
-    🎨 الألوان المستخدمة: ${colorList}
-    
-    📊 عدد الصفوف: ${JSON.stringify(fingerprint.rowCounts)}
-    
-    🔢 نماذج المعادلات: ${Object.keys(fingerprint.keyFormulas).map(sheet => 
-        `${sheet}: ${Object.keys(fingerprint.keyFormulas[sheet]).length} معادلة`
-    ).join('، ')}
-    
-    ⚠️ **تعليمات التطوير:**
-    1. احتفظ بجميع الأوراق الموجودة (لا تحذف أي ورقة)
-    2. احتفظ بجميع المعادلات الموجودة (لا تحذف أي معادلة)
-    3. حافظ على نفس أنماط الألوان والتنسيق
-    4. أضف الميزات الجديدة فقط دون المساس بالميزات الموجودة
-    `;
+📋 **بصمة الملف الحالي:**
+
+📄 الأوراق: ${sheetsList}
+
+✨ الميزات الموجودة: ${featureList || 'لا توجد ميزات متقدمة'}
+
+🎨 الألوان المستخدمة: ${colorList}
+
+📊 عدد الصفوف: ${JSON.stringify(fingerprint.rowCounts)}
+
+🔢 المعادلات: ${formulaSummary}
+
+⚠️ **تعليمات التطوير:**
+1. احتفظ بجميع الأوراق الموجودة (لا تحذف أي ورقة)
+2. احتفظ بجميع المعادلات الموجودة (لا تحذف أي معادلة)
+3. حافظ على نفس أنماط الألوان والتنسيق
+4. أضف الميزات الجديدة فقط دون المساس بالميزات الموجودة
+`;
 }
 
 export default {
