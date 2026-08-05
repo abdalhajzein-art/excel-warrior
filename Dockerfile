@@ -1,29 +1,39 @@
-# بيئة Node حديثة
-FROM node:22
+# بيئة Node مستقرة ومناسبة للـ child_process
+FROM node:20
 
-# تثبيت أدوات النظام الأساسية ومعالجة المستندات
+# تحديث النظام وتثبيت كل المكتبات الأساسية لمعالجة Excel وملفات Office
 RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    libxml2-dev \
+    libxslt-dev \
+    zlib1g-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libfreetype6-dev \
     libreoffice \
     ghostscript \
     poppler-utils \
     imagemagick \
     tesseract-ocr \
-    python3 \
-    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# مجلد العمل الرئيسي
+# ترقية pip لضمان تثبيت مكتبات حديثة
+RUN pip3 install --upgrade pip
+
+# مجلد العمل
 WORKDIR /app
 
-# 1. نسخ وتثبيت مكتبات Node
+# نسخ وتثبيت مكتبات Node
 COPY package*.json /app/
 RUN npm install
 
-# 2. نسخ متطلبات بايثون وتثبيتها بشكل آمن ومباشر
+# نسخ متطلبات بايثون وتثبيتها
 COPY requirements.txt /app/
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
-# 3. نسخ ملفات التطبيق بالكامل
+# نسخ ملفات التطبيق
 COPY api /app/api
 COPY js /app/js
 COPY index.html /app/index.html
