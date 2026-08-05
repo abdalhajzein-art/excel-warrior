@@ -33,9 +33,9 @@ RUN pip install --upgrade pip
 # 5. مجلد العمل
 WORKDIR /app
 
-# 6. تثبيت حزم Node أولاً (للاستفادة من الكاش في Docker)
+# 6. تثبيت حزم Node أولاً (تم استخدام npm install لضمان التوافق مع غياب الـ lock file)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # 7. تثبيت متطلبات Python داخل البيئة الافتراضية
 COPY requirements.txt ./
