@@ -1,10 +1,10 @@
 /**
- * api/chat.js – Sovereign Chat Layer (Direct Gemini Engine Edition)
- * ✅ نظيف تماماً وتم استخراج البايثون لملفات منفصلة ومحمية
+ * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
+ * ✅ نظيف تماماً ومتوافق مع معمارية Zero-Middleman
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
-import { executeOperations, extractPreviewAsync } from "./core/excel_executor.js";
+import { extractPreviewAsync } from "./core/dynamic_executor.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -17,7 +17,7 @@ export default async function handler(req, res) {
         const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
         const userContent = (body.message || body.prompt || "").trim();
         const sessionKey = body.sessionId || "default_session";
-        const { fileData, fileName, history, metadata, operations } = body;
+        const { fileData, fileName, history, metadata } = body;
 
         if (!userContent && !fileData) {
             return res.status(400).json({ reply: "⚠️ الرجاء إرسال رسالة أو ملف لنتمكن من خدمتك يا شريكي." });
@@ -25,8 +25,6 @@ export default async function handler(req, res) {
 
         let sovereignFilePath = null;
         let extractedContent = null;
-        let modifiedResult = null;
-        let finalFileBase64 = null;
         let finalFileName = fileName;
 
         if (fileData && fileName) {
@@ -50,7 +48,7 @@ export default async function handler(req, res) {
                 console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
             }
 
-            // ✅ استدعاء المعاينة بشكل غير متزامن لعدم تجميد السيرفر
+            // ✅ استدعاء المعاينة من الجسر الجديد
             const previewData = await extractPreviewAsync(sovereignFilePath);
             if (!previewData.error) {
                 extractedContent = {
@@ -62,46 +60,28 @@ export default async function handler(req, res) {
                         sheets: previewData.sheets || 1 
                     }
                 };
-                console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح (${previewData.rows} صف).`);
+                console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح.`);
             } else {
                 console.warn(`⚠️ [الأثير Preview] فشلت المعاينة: ${previewData.error}`);
-                extractedContent = {
-                    text: `[تم استلام الملف بنجاح وجاهز للمراجعة: ${fileName}]`,
-                    metadata: { fileName }
-                };
-            }
-
-            // تنفيذ العمليات المرسلة من الواجهة (إن وجدت)
-            if (operations && operations.length > 0) {
-                console.log(`🔧 [chat.js] تنفيذ ${operations.length} عملية عبر Python`);
-                const result = await executeOperations(sovereignFilePath, operations);
-                if (result && result.success) {
-                    modifiedResult = { success: true };
-                    console.log(`✅ [chat.js] تم تنفيذ العمليات بنجاح`);
-                    
-                    const modifiedBuffer = fs.readFileSync(sovereignFilePath);
-                    finalFileBase64 = modifiedBuffer.toString('base64');
-                    finalFileName = `modified_${Date.now()}-${fileName}`;
-                } else {
-                    console.error(`❌ [chat.js] فشل التنفيذ:`, result?.error);
-                }
             }
         }
 
         const orchestratorInput = {
-            fileData, fileName, filePath: sovereignFilePath, history, metadata, extractedContent, operations
+            fileData, fileName, filePath: sovereignFilePath, history, metadata, extractedContent
         };
 
         const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
 
         let reply = output?.reply || output?.message || "تكرم عينك يا شريكي، أنجزت لك المطلوب.";
-        let fileBase64 = finalFileBase64 || output?.fileBase64 || null;
-        let returnedFileName = finalFileName || output?.fileName || fileName || "modified_file.xlsx";
+        let fileBase64 = output?.fileBase64 || null;
+        let returnedFileName = output?.fileName || fileName || "modified_file.xlsx";
 
-        if (sovereignFilePath && fs.existsSync(sovereignFilePath) && !fileBase64 && (modifiedResult?.success || output.operations?.length > 0)) {
+        // التحقق مما إذا كان Kernel قد عدل الملف ولم يرسل Base64 بعد
+        if (sovereignFilePath && fs.existsSync(sovereignFilePath) && !fileBase64 && output?.execution?.success) {
             try {
                 const fileBuffer = fs.readFileSync(sovereignFilePath);
                 fileBase64 = fileBuffer.toString('base64');
+                returnedFileName = `modified_${Date.now()}-${fileName}`;
             } catch (err) {
                 console.warn("⚠️ لم يتم قراءة الملف كـ Base64:", err.message);
             }
