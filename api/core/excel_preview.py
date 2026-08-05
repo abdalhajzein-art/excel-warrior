@@ -9,13 +9,17 @@ def safe_str(value):
     return "" if value is None else str(value).strip()
 
 def find_header_row_and_schema(ws, max_rows=10):
-    # خوارزمية ذكية للعثور على صف العناوين (الصف الذي يحتوي أكبر عدد من النصوص)
     best_row_idx = 1
     max_text_cells = 0
     schema = {}
 
+    # تجاوز الشيتات الفارغة لتجنب الأخطاء
+    if ws.max_row == 0 or ws.max_column == 0:
+        return best_row_idx, schema
+
     for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=max_rows, values_only=True), start=1):
-        text_cells = sum(1 for c in row if c and str(c).strip())
+        # عد الخلايا التي تحتوي على نصوص صالحة فقط
+        text_cells = sum(1 for c in row if c is not None and str(c).strip())
         if text_cells > max_text_cells:
             max_text_cells = text_cells
             best_row_idx = r_idx
@@ -31,27 +35,29 @@ def extract_sheet_preview(wb, sheet_name, max_rows=MAX_PREVIEW_ROWS):
     for row in ws.iter_rows(min_row=1, max_row=max_rows, values_only=True):
         preview_rows.append([safe_str(c) for c in row])
 
-    # تقليل حجم البيانات المدمجة لتخفيف الضغط على التوكنز
-    merged_cells = [str(rng) for rng in ws.merged_cells.ranges][:20]
+    # استخراج أول 20 نطاق مدمج فقط وتنسيقها كنصوص
+    merged_cells = [str(rng) for rng in list(ws.merged_cells.ranges)[:20]]
 
     return {
         "sheet": sheet_name,
         "rows_count": ws.max_row,
         "columns_count": ws.max_column,
         "detected_header_row": header_row_idx,
-        "columns_schema": schema, # هذا ما سيقرأه النموذج ليعرف أسماء الأعمدة بدقة
+        "columns_schema": schema, 
         "preview_rows": preview_rows,
         "merged": merged_cells
     }
 
 def main():
-    try:
-        file_path = sys.argv[1]
-    except IndexError:
+    if len(sys.argv) < 2:
         print(json.dumps({"error": "لم يتم تمرير مسار ملف إكسل."}, ensure_ascii=False))
         return
 
+    file_path = sys.argv[1]
+    wb = None
+    
     try:
+        # data_only=False تعني أننا سنقرأ المعادلات (Formulas) كنصوص، وهذا ممتاز للمستندات المعقدة
         wb = openpyxl.load_workbook(file_path, data_only=False)
         output = {
             "file": file_path,
@@ -62,6 +68,10 @@ def main():
         print(json.dumps(output, ensure_ascii=False))
     except Exception as e:
         print(json.dumps({"error": str(e)}, ensure_ascii=False))
+    finally:
+        # تحرير الذاكرة العشوائية فوراً (خطوة حيوية لضمان استقرار السيرفر)
+        if wb:
+            wb.close()
 
 if __name__ == "__main__":
     main()
