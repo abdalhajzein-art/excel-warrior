@@ -1,5 +1,5 @@
 /**
- * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (The 4 Jewels Edition + Fixed Conditional Formatting)
+ * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (The 4 Jewels Edition + Fully Cleaned)
  * ⚡ محرك التنفيذ السيادي المتكامل مع دعم النسخ الذري، حراسة القوائم، المقارنة الدلالية، والتخطيط البصري.
  */
 
@@ -146,7 +146,7 @@ except Exception as e:
                 }
             });
 
-        }atch (initError) {
+        } catch (initError) {
             if (fs.existsSync(backupPath)) {
                 fs.copyFileSync(backupPath, targetFilePath);
                 fs.unlinkSync(backupPath);
@@ -167,4 +167,3 @@ export async function extractPreviewAsync(filePath) {
         return { error: error.message };
     }
 }
-
