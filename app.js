@@ -34,6 +34,20 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+// ✅ إضافة مجلد للملفات المُنشأة (generated)
+const generatedDir = path.join(__dirname, 'generated');
+if (!fs.existsSync(generatedDir)) {
+  fs.mkdirSync(generatedDir, { recursive: true });
+  console.log(`📁 [Server] تم إنشاء مجلد: ${generatedDir}`);
+}
+
+// ✅ إضافة مجلد للملفات المرفوعة بشكل دائم (persistent_uploads)
+const persistentUploadsDir = path.join(__dirname, 'persistent_uploads');
+if (!fs.existsSync(persistentUploadsDir)) {
+  fs.mkdirSync(persistentUploadsDir, { recursive: true });
+  console.log(`📁 [Server] تم إنشاء مجلد: ${persistentUploadsDir}`);
+}
+
 // 2️⃣ 🧹 منظف القرص التلقائي (حذف الملفات المؤقتة القديمة التي تجاوزت ساعة واحدة)
 function cleanupUploadsFolder() {
   try {
@@ -54,8 +68,31 @@ function cleanupUploadsFolder() {
   }
 }
 
-// تشغيل المنظف كل ساعة
-setInterval(cleanupUploadsFolder, 60 * 60 * 1000);
+// ✅ تنظيف ملفات generated القديمة (أكثر من ساعة)
+function cleanupGeneratedFolder() {
+  try {
+    const files = fs.readdirSync(generatedDir);
+    const now = Date.now();
+    const ONE_HOUR = 60 * 60 * 1000;
+
+    files.forEach(file => {
+      const filePath = path.join(generatedDir, file);
+      const stats = fs.statSync(filePath);
+      if (now - stats.mtimeMs > ONE_HOUR) {
+        fs.unlinkSync(filePath);
+        console.log(`🧹 [Generated Sweeper] تم تنظيف الملف القديم: ${file}`);
+      }
+    });
+  } catch (err) {
+    console.warn("⚠️ [Generated Sweeper Warning]:", err.message);
+  }
+}
+
+// تشغيل المنظفات كل ساعة
+setInterval(() => {
+  cleanupUploadsFolder();
+  cleanupGeneratedFolder();
+}, 60 * 60 * 1000);
 
 // 3️⃣ تخزين الملفات على القرص لضمان توفر مسار حقيقي (filePath) للأدوات
 const storage = multer.diskStorage({
@@ -99,6 +136,38 @@ app.post("/api/upload", upload.single("file"), async (req, res) => {
 // 📂 التصريح الرسمي لمسار التحميلات لضمان تنزيل الملفات بسلاسة
 app.use('/uploads', express.static(uploadDir));
 
+// ✅ التصريح الرسمي لمسار الملفات المُنشأة
+app.use('/generated', express.static(generatedDir));
+
+// ✅ التصريح الرسمي لمسار الملفات المرفوعة بشكل دائم
+app.use('/persistent_uploads', express.static(persistentUploadsDir));
+
+// ✅ مسار لتنزيل الملفات المُنشأة مع اسم مخصص
+app.get('/download/:filename', (req, res) => {
+  const filename = req.params.filename;
+  
+  // البحث في المجلدات المختلفة
+  const possiblePaths = [
+    path.join(generatedDir, filename),
+    path.join(persistentUploadsDir, filename),
+    path.join(uploadDir, filename)
+  ];
+  
+  for (const filePath of possiblePaths) {
+    if (fs.existsSync(filePath)) {
+      console.log(`📥 [Download] جاري تحميل: ${filePath}`);
+      return res.download(filePath, filename, (err) => {
+        if (err) {
+          console.error(`❌ [Download Error]: ${err.message}`);
+        }
+      });
+    }
+  }
+  
+  console.warn(`⚠️ [Download] الملف غير موجود: ${filename}`);
+  res.status(404).send('⚠️ الملف غير موجود أو قد تم حذفه.');
+});
+
 // Frontend Static Files
 app.use(express.static(__dirname));
 
@@ -110,4 +179,5 @@ app.get("/", (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 [Alatheer Server] يعمل بنجاح على المنفذ: ${PORT}`);
   cleanupUploadsFolder(); // تنظيف فوري عند الإقلاع الأول
+  cleanupGeneratedFolder(); // تنظيف الملفات المُنشأة القديمة
 });
