@@ -2,6 +2,7 @@
  * api/core/dynamic_executor.js – Sovereign Minimal Edition (Optimized & Dual-Mode Ready)
  * ⚡ تنفيذ سكربت بايثون مع دعم التعديل والتوليد
  * ✅ إصلاح مشكلة المعادلات (Formulas) - كتابتها كصيغ وليس كنصوص
+ * ✅ إزالة استيراد Formula غير الموجود في openpyxl 3.1.5
  */
 
 import fs from "fs";
@@ -49,7 +50,7 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
             }
 
             // ✅ تعديل الكود: نضمن أن sys.argv[1] موجود دائماً
-            // ✅ إضافة استيرادات مهمة
+            // ✅ إضافة استيرادات مهمة (بدون Formula)
             // ✅ إصلاح كتابة المعادلات كصيغ
             const safeCode = `
 import sys
@@ -60,13 +61,12 @@ import os
 if len(sys.argv) < 2:
     sys.argv.append('${targetFilePath}')
 
-# ✅ إضافة تعليمات لتثبيت المكتبات إن لزم
+# ✅ استيراد المكتبات (بدون Formula)
 try:
     import openpyxl
     from openpyxl.utils import get_column_letter
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.styles.borders import BORDER_THIN
-    from openpyxl.formula import Formula
     from openpyxl.worksheet.datavalidation import DataValidation
     from openpyxl.formatting.rule import Rule
     from openpyxl.styles.differential import DifferentialStyle
@@ -78,20 +78,36 @@ except ImportError:
     from openpyxl.utils import get_column_letter
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.styles.borders import BORDER_THIN
-    from openpyxl.formula import Formula
     from openpyxl.worksheet.datavalidation import DataValidation
     from openpyxl.formatting.rule import Rule
     from openpyxl.styles.differential import DifferentialStyle
     from openpyxl.chart import BarChart, PieChart, Reference
 
-# ✅ إضافة دالة مساعدة لكتابة المعادلات كصيغ
+# ✅ دالة مساعدة لكتابة المعادلات (بدون Formula)
 def write_formula(cell, formula_string):
-    """كتابة المعادلة كصيغة وليس كنص"""
+    """
+    كتابة المعادلة كصيغة في Excel
+    openpyxl يتعامل مع أي قيمة تبدأ بـ = كصيغة تلقائياً
+    """
     cell.value = formula_string
-    # ✅ التأكد من أن openpyxl يتعامل معها كصيغة
-    if hasattr(cell, 'data_type'):
-        cell.data_type = 'f'
     return cell
+
+# ✅ دالة مساعدة لإضافة تنسيق شرطي بسهولة
+def add_conditional_formatting(ws, cell_range, formula, style):
+    """إضافة تنسيق شرطي بسيط"""
+    from openpyxl.formatting.rule import Rule
+    from openpyxl.styles.differential import DifferentialStyle
+    from openpyxl.styles import PatternFill
+    
+    diff_style = DifferentialStyle()
+    if style.get('fill'):
+        diff_style.fill = PatternFill(start_color=style['fill'], end_color=style['fill'], fill_type="solid")
+    if style.get('font_color'):
+        diff_style.font = Font(color=style['font_color'])
+    
+    rule = Rule(type="expression", formula=[formula], dxf=diff_style)
+    ws.conditional_formatting.add(cell_range, rule)
+    return rule
 
 try:
     # ✅ تنفيذ الكود الأصلي
@@ -199,4 +215,4 @@ export async function extractPreviewAsync(filePath) {
         console.warn("⚠️ Preview Error:", error.message);
         return { error: error.message };
     }
-                                          }
+                            }
