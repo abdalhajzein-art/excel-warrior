@@ -41,6 +41,58 @@ export default {
   },
 
   /* ============================================================
+     🟥 إنشاء جلسة جديدة
+     ============================================================ */
+  createSession(id = "default-session") {
+    if (!sessions[id]) {
+      sessions[id] = {
+        sovereign: {
+          lastFile: null,
+          history: []
+        },
+        chat: {
+          history: []
+        },
+        meta: {
+          createdAt: Date.now(),
+          lastInteraction: Date.now()
+        },
+        fileFingerprint: null,
+        fileFingerprintText: null
+      };
+
+      Object.defineProperty(sessions[id], "history", {
+        get() { return this.chat.history; },
+        set(val) { this.chat.history = val; },
+        configurable: true,
+        enumerable: true
+      });
+    }
+    return sessions[id];
+  },
+
+  /* ============================================================
+     🟥 تحديث جلسة (إضافة حقول جديدة)
+     ============================================================ */
+  updateSession(id, updates) {
+    const session = this.getSession(id);
+    if (!session) {
+      this.createSession(id);
+      return this.updateSession(id, updates);
+    }
+    
+    // دمج التحديثات مع الجلسة الحالية
+    Object.keys(updates).forEach(key => {
+      if (updates[key] !== undefined && updates[key] !== null) {
+        session[key] = updates[key];
+      }
+    });
+    
+    session.meta.lastInteraction = Date.now();
+    return session;
+  },
+
+  /* ============================================================
      🟥 ذاكرة الملفات (سيادية)
      ============================================================ */
   saveFile(id, fileObj) {
@@ -58,25 +110,17 @@ export default {
     return session.sovereign.lastFile || null;
   },
 
-  appendSovereignHistory(id, entry) {
+  /* ============================================================
+     🟥 ذاكرة البصمة (Fingerprint)
+     ============================================================ */
+  getFingerprint(id) {
     const session = this.getSession(id);
-    const content = entry.content || entry.text || entry.message || "";
-
-    session.sovereign.history.push({
-      role: entry.role || "assistant",
-      content: typeof content === "string" ? content : JSON.stringify(content),
-      time: Date.now()
-    });
-
-    // تخفيف التاريخ السيادي
-    if (session.sovereign.history.length > 30) {
-      session.sovereign.history = session.sovereign.history.slice(-15);
-    }
+    return session.fileFingerprint || null;
   },
 
-  getSovereignHistory(id, max = 6) {
+  getFingerprintText(id) {
     const session = this.getSession(id);
-    return session.sovereign.history.slice(-max);
+    return session.fileFingerprintText || null;
   },
 
   /* ============================================================
@@ -129,5 +173,29 @@ export default {
     if (session.chat.history.length > 60) {
       session.chat.history = session.chat.history.slice(-30);
     }
+  },
+
+  /* ============================================================
+     🟥 إضافة للتاريخ السيادي
+     ============================================================ */
+  appendSovereignHistory(id, entry) {
+    const session = this.getSession(id);
+    const content = entry.content || entry.text || entry.message || "";
+
+    session.sovereign.history.push({
+      role: entry.role || "assistant",
+      content: typeof content === "string" ? content : JSON.stringify(content),
+      time: Date.now()
+    });
+
+    // تخفيف التاريخ السيادي
+    if (session.sovereign.history.length > 30) {
+      session.sovereign.history = session.sovereign.history.slice(-15);
+    }
+  },
+
+  getSovereignHistory(id, max = 6) {
+    const session = this.getSession(id);
+    return session.sovereign.history.slice(-max);
   }
 };
