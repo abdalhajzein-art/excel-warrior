@@ -1,3 +1,8 @@
+/**
+ * api/core/excel_preview.py – Sovereign Preview & Schema Extractor
+ * ⚡ استخراج معاينة الهيكل ومخطط الأعمدة ديناميكياً مع حماية ضد المعادلات.
+ */
+
 import sys
 import json
 import openpyxl
@@ -10,20 +15,30 @@ def safe_str(value):
 
 def find_header_row_and_schema(ws, max_rows=10):
     best_row_idx = 1
-    max_text_cells = 0
+    max_score = -1
     schema = {}
 
-    # تجاوز الشيتات الفارغة لتجنب الأخطاء
     if ws.max_row == 0 or ws.max_column == 0:
         return best_row_idx, schema
 
     for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=max_rows, values_only=True), start=1):
-        # عد الخلايا التي تحتوي على نصوص صالحة فقط
-        text_cells = sum(1 for c in row if c is not None and str(c).strip())
-        if text_cells > max_text_cells:
-            max_text_cells = text_cells
+        score = 0
+        current_schema = {}
+        for col_idx, val in enumerate(row, start=1):
+            if val is not None:
+                sval = str(val).strip()
+                if sval:
+                    # 🛡️ استبعاد خلايا المعادلات لضمان عدم الخلط بين العناوين وبيانات الجدول
+                    if sval.startswith('='):
+                        score -= 5
+                    else:
+                        score += 1
+                        current_schema[col_idx] = sval
+        
+        if score > max_score:
+            max_score = score
             best_row_idx = r_idx
-            schema = {col_idx: safe_str(val) for col_idx, val in enumerate(row, start=1) if val}
+            schema = current_schema
             
     return best_row_idx, schema
 
@@ -35,7 +50,6 @@ def extract_sheet_preview(wb, sheet_name, max_rows=MAX_PREVIEW_ROWS):
     for row in ws.iter_rows(min_row=1, max_row=max_rows, values_only=True):
         preview_rows.append([safe_str(c) for c in row])
 
-    # استخراج أول 20 نطاق مدمج فقط وتنسيقها كنصوص
     merged_cells = [str(rng) for rng in list(ws.merged_cells.ranges)[:20]]
 
     return {
@@ -57,7 +71,6 @@ def main():
     wb = None
     
     try:
-        # data_only=False تعني أننا سنقرأ المعادلات (Formulas) كنصوص، وهذا ممتاز للمستندات المعقدة
         wb = openpyxl.load_workbook(file_path, data_only=False)
         output = {
             "file": file_path,
@@ -69,7 +82,6 @@ def main():
     except Exception as e:
         print(json.dumps({"error": str(e)}, ensure_ascii=False))
     finally:
-        # تحرير الذاكرة العشوائية فوراً (خطوة حيوية لضمان استقرار السيرفر)
         if wb:
             wb.close()
 
