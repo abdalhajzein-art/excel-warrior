@@ -54,12 +54,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     // تحديد ما إذا كان الطلب "توليد من الصفر" (Greenfield) أو "تعديل"
     const isGenerationRequest = (!hasExistingFile) || (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message));
 
-    // ✅ إذا كان تعديلاً ولكن لا يوجد مسار ملف، حاول استرجاعه من البصمة
-    if (!isGenerationRequest && !hasExistingFile && fingerprintText) {
-        console.log("🔍 [Kernel] محاولة استرجاع الملف من البصمة...");
-        // سيتم التعامل مع هذا في orchestrator
-    }
-
     let systemContent = SYSTEM_PROMPT;
     if (fileContext) {
         systemContent += `\n\n[سياق الملف الحالي]:\n${fileContext}`;
@@ -68,12 +62,10 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     // ✅ إضافة بصمة الملف للنظام إن وجدت
     if (fingerprintText) {
         systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
-    } else if (!isGenerationRequest) {
-        systemContent += `\n\n[تعليمات]: هذا الملف جديد، قم بإنشائه من الصفر مع الحفاظ على تنسيق احترافي.`;
     }
 
     // ✅ تحديد مسار الملف بشكل صحيح
-    if (isGenerationRequest && !hasExistingFile) {
+    if (isGenerationRequest) {
         // إنشاء مسار افتراضي آمن للملف الجديد
         fileName = `Alatheer_Report_${Date.now()}.xlsx`;
         filePath = path.join(process.cwd(), fileName);
@@ -97,7 +89,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 2. لا تحذف أي معادلة من المعادلات الموجودة
 3. حافظ على نفس نظام الألوان والتنسيق
 4. أضف الميزات الجديدة فقط دون المساس بالميزات الموجودة
-5. استخدم openpyxl بشكل صحيح لكتابة المعادلات كصيغ وليس كنصوص`;
+5. استخدم openpyxl بشكل صحيح لكتابة المعادلات كصيغ وليس كنصوص
+6. تأكد من استخدام write_formula() لكتابة المعادلات`;
     }
 
     const conversationMessages = [
@@ -242,4 +235,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         operations: [],
         execution: executionResult
     };
-                                                            }
+}
