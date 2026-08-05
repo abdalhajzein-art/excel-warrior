@@ -1,6 +1,8 @@
 /**
  * api/geminiService.js – Sovereign Gemini Service (Ultra Harmonized Edition)
  * متوافق بالكامل مع Dual‑Mode Kernel + Excel Intent Detector + Multi‑Sheet Preview
+ * ✅ دعم Failover بين النماذج تلقائياً (Model Fallback)
+ * ✅ زيادة maxOutputTokens لاستيعاب الكود الطويل
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -21,39 +23,71 @@ function getClient() {
 }
 
 /* ============================================================
-   🔁 تنفيذ مع إعادة المحاولة السيادية
+   🔁 تنفيذ مع إعادة المحاولة السيادية (مع Fallback بين النماذج)
    ============================================================ */
-async function executeWithRetry(fn) {
-  let attempts = 0;
-  let lastError = null;
 
-  while (attempts < API_KEYS.length) {
-    try {
-      const client = getClient();
-      return await fn(client);
-    } catch (err) {
-      lastError = err;
-      attempts++;
-      console.warn(`⚠️ [GeminiService] فشل المفتاح رقم ${attempts}: ${err.message}`);
-    }
-  }
+// ✅ قائمة النماذج المدعومة (مرتبة حسب الأولوية)
+const MODEL_FALLBACK_LIST = [
+    'gemini-3.6-flash',          // الأحدث، الأقوى (Stable)
+    'gemini-3.5-flash-lite',     // الأسرع، الأقل تكلفة
+    'gemini-3.1-pro-preview'     // الأقوى في الاستدلال (Preview)
+];
 
-  throw lastError;
+// ✅ الدوال التي ترمي أخطاء Quota
+function isQuotaError(error) {
+    return error?.message?.includes('quota') || 
+           error?.status === 429 || 
+           error?.message?.includes('rate limit') ||
+           error?.message?.includes('exhausted');
 }
 
-const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+async function executeWithFallback(fn, modelList = MODEL_FALLBACK_LIST) {
+    let lastError = null;
+
+    for (let i = 0; i < modelList.length; i++) {
+        const modelName = modelList[i];
+        try {
+            console.log(`🔄 [GeminiService] محاولة النموذج ${i+1}/${modelList.length}: ${modelName}`);
+            
+            // ✅ تمرير النموذج الحالي للدالة
+            const result = await fn(modelName);
+            
+            // ✅ إذا نجحنا، نعيد النتيجة
+            console.log(`✅ [GeminiService] نجح النموذج: ${modelName}`);
+            return result;
+            
+        } catch (err) {
+            lastError = err;
+            
+            // ✅ إذا كان خطأ Quota أو Rate Limit، ننتقل للنموذج التالي
+            if (isQuotaError(err)) {
+                console.warn(`⚠️ [GeminiService] النموذج ${modelName} تجاوز الحدود اليومية، جرب التالي...`);
+                continue;
+            }
+            
+            // ✅ إذا كان خطأ آخر، نرميه فوراً (لا نستمر)
+            throw err;
+        }
+    }
+
+    // ✅ إذا انتهت القائمة ولم ينجح أي نموذج
+    throw new Error(`❌ جميع النماذج فشلت: ${lastError?.message || 'خطأ غير معروف'}`);
+}
+
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 /* ============================================================
    🧠 وضع المحادثة الأحادي
    ============================================================ */
 export default async function geminiService(prompt, ctx = {}) {
-  return executeWithRetry(async (client) => {
+  return executeWithFallback(async (modelName) => {
+    const client = getClient();
     const model = client.getGenerativeModel({
-      model: MODEL_NAME,
+      model: modelName,
       systemInstruction: ctx.systemInstruction || "أنت مساعد سيادي في منصة الأثير.",
       generationConfig: {
         temperature: 0.25,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 32768, // ✅ زيادة لاستيعاب الكود الطويل
       }
     });
 
@@ -77,7 +111,7 @@ export default async function geminiService(prompt, ctx = {}) {
    💬 وضع المحادثة المتعدد الأدوار (Ultra Chat – Harmonized)
    ============================================================ */
 geminiService.chat = async function(messages, extra = {}) {
-  return executeWithRetry(async (client) => {
+  return executeWithFallback(async (modelName) => {
 
     /* ------------------------------------------------------------
        1) استخراج رسائل النظام وتمريرها كـ systemInstruction
@@ -132,12 +166,13 @@ geminiService.chat = async function(messages, extra = {}) {
     /* ------------------------------------------------------------
        4) بدء جلسة المحادثة السيادية
        ------------------------------------------------------------ */
+    const client = getClient();
     const model = client.getGenerativeModel({
-      model: MODEL_NAME,
+      model: modelName,
       systemInstruction,
       generationConfig: {
         temperature: 0.25,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 32768, // ✅ زيادة لاستيعاب الكود الطويل
       }
     });
 
@@ -145,7 +180,7 @@ geminiService.chat = async function(messages, extra = {}) {
       history,
       generationConfig: {
         temperature: 0.25,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 32768, // ✅ زيادة لاستيعاب الكود الطويل
       }
     });
 
