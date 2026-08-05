@@ -1,6 +1,7 @@
 /**
  * api/core/dynamic_executor.js – Sovereign Minimal Edition (Optimized & Dual-Mode Ready)
  * ⚡ تنفيذ سكربت بايثون مع دعم التعديل والتوليد
+ * ✅ إصلاح مشكلة المعادلات (Formulas) - كتابتها كصيغ وليس كنصوص
  */
 
 import fs from "fs";
@@ -48,14 +49,49 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
             }
 
             // ✅ تعديل الكود: نضمن أن sys.argv[1] موجود دائماً
-            // ✅ ونضيف catch للخطأ عشان ما يعلق السيرفر
+            // ✅ إضافة استيرادات مهمة
+            // ✅ إصلاح كتابة المعادلات كصيغ
             const safeCode = `
 import sys
 import traceback
+import os
 
 # ✅ التأكد من وجود المسار في argv
 if len(sys.argv) < 2:
     sys.argv.append('${targetFilePath}')
+
+# ✅ إضافة تعليمات لتثبيت المكتبات إن لزم
+try:
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles.borders import BORDER_THIN
+    from openpyxl.formula import Formula
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from openpyxl.formatting.rule import Rule
+    from openpyxl.styles.differential import DifferentialStyle
+    from openpyxl.chart import BarChart, PieChart, Reference
+except ImportError:
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles.borders import BORDER_THIN
+    from openpyxl.formula import Formula
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from openpyxl.formatting.rule import Rule
+    from openpyxl.styles.differential import DifferentialStyle
+    from openpyxl.chart import BarChart, PieChart, Reference
+
+# ✅ إضافة دالة مساعدة لكتابة المعادلات كصيغ
+def write_formula(cell, formula_string):
+    """كتابة المعادلة كصيغة وليس كنص"""
+    cell.value = formula_string
+    # ✅ التأكد من أن openpyxl يتعامل معها كصيغة
+    if hasattr(cell, 'data_type'):
+        cell.data_type = 'f'
+    return cell
 
 try:
     # ✅ تنفيذ الكود الأصلي
@@ -80,7 +116,7 @@ except Exception as e:
             execFile(
                 "python3", 
                 [scriptPath, targetFilePath], 
-                { maxBuffer: 50 * 1024 * 1024 }, // ✅ زيادة البافر للملفات الكبيرة
+                { maxBuffer: 50 * 1024 * 1024 },
                 (error, stdout, stderr) => {
                     // ✅ تنظيف الملف المؤقت
                     if (fs.existsSync(scriptPath)) {
@@ -163,4 +199,4 @@ export async function extractPreviewAsync(filePath) {
         console.warn("⚠️ Preview Error:", error.message);
         return { error: error.message };
     }
-}
+                                          }
