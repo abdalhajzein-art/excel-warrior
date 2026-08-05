@@ -1,10 +1,12 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
  * ✅ نظيف تماماً ومتوافق مع معمارية Zero-Middleman
+ * ✅ دعم بصمة الملف (Fingerprint) لتوفير التوكنز
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import { extractPreviewAsync, executeDynamicPython } from "./core/dynamic_executor.js";
+import fusionMemory from "./core/fusion_memory.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -42,7 +44,7 @@ export default async function handler(req, res) {
                 history,
                 metadata,
                 extractedContent: null,
-                isNewExcelRequest: true // ✅ علامة جديدة
+                isNewExcelRequest: true
             };
 
             const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
@@ -74,6 +76,16 @@ export default async function handler(req, res) {
                     
                     // ✅ رابط التحميل
                     const downloadUrl = `/generated/${newFileName}`;
+                    
+                    // ✅ تخزين البصمة للملف المُنشأ
+                    try {
+                        const previewData = await extractPreviewAsync(newFilePath);
+                        if (previewData && !previewData.error) {
+                            fusionMemory.storeFileFingerprint(sessionKey, newFilePath, previewData);
+                        }
+                    } catch (e) {
+                        console.warn("⚠️ [chat.js] فشل تخزين البصمة للملف المُنشأ:", e.message);
+                    }
                     
                     return res.status(200).json({
                         reply: `✅ **تم إنشاء ملف Excel بنجاح يا هندسة!**\n\n📥 [اضغط هنا لتحميل الملف](${downloadUrl})\n\n📁 اسم الملف: ${newFileName}`,
@@ -126,6 +138,9 @@ export default async function handler(req, res) {
                     }
                 };
                 console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح.`);
+                
+                // ✅ تخزين بصمة الملف في الذاكرة
+                fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
             } else {
                 console.warn(`⚠️ [الأثير Preview] فشلت المعاينة: ${previewData.error}`);
             }
@@ -148,6 +163,16 @@ export default async function handler(req, res) {
                 const fileBuffer = fs.readFileSync(sovereignFilePath);
                 fileBase64 = fileBuffer.toString('base64');
                 returnedFileName = `modified_${Date.now()}-${fileName}`;
+                
+                // ✅ تحديث البصمة بعد التعديل
+                try {
+                    const previewData = await extractPreviewAsync(sovereignFilePath);
+                    if (previewData && !previewData.error) {
+                        fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
+                    }
+                } catch (e) {
+                    console.warn("⚠️ [chat.js] فشل تحديث البصمة:", e.message);
+                }
             } catch (err) {
                 console.warn("⚠️ لم يتم قراءة الملف كـ Base64:", err.message);
             }
@@ -168,4 +193,4 @@ export default async function handler(req, res) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-                        }
+                                                                            }
