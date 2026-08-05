@@ -1,12 +1,12 @@
 /**
  * api/core/kernel.js – Alatheer Sovereign Kernel
- * ✅ الاعتماد على executor منفصل ونظيف
+ * ✅ الاعتماد على التنفيذ الديناميكي (Zero-Middleman Architecture)
  */
 
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
-import { executeOperations } from "./excel_executor.js";
+import { executeDynamicPython } from "./dynamic_executor.js"; // الجسر الجديد!
 import fs from "fs";
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
@@ -38,7 +38,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     ];
 
     let finalReplyText = "";
-    let operations = [];
     let fileBase64 = null;
     let executionResult = null;
 
@@ -47,27 +46,23 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         const rawReply = await geminiService.chat(conversationMessages, { fileName, extractedContent, systemInstruction: systemContent });
         finalReplyText = rawReply || "تم يا شريكي.";
 
-        const jsonMatch = finalReplyText.match(/```json\s*([\s\S]*?)\s*```/) || finalReplyText.match(/\{[\s\S]*"operations"[\s\S]*\}/);
-        if (jsonMatch) {
-            try {
-                const parsed = JSON.parse(jsonMatch[1] || jsonMatch[0]);
-                if (parsed.operations && Array.isArray(parsed.operations)) operations = parsed.operations;
-            } catch (err) {
-                console.error("⚠️ [Kernel] فشل تحليل JSON:", err);
-            }
-        }
-        finalReplyText = finalReplyText.replace(/```json[\s\S]*?```/g, "").trim();
+        // ✅ البحث عن كود بايثون بدلاً من JSON
+        const pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
 
-        // ✅ استخدام الجسر النظيف لتنفيذ العمليات
-        if (operations.length > 0 && filePath && fs.existsSync(filePath)) {
-            console.log(`⚡ [Kernel] تنفيذ ${operations.length} عملية عبر Excel Executor...`);
-            executionResult = await executeOperations(filePath, operations);
+        if (pythonMatch && filePath && fs.existsSync(filePath)) {
+            const pythonCode = pythonMatch[1].trim();
+            
+            // إزالة بلوك الكود من الرد حتى لا يظهر للمستخدم
+            finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
+            
+            console.log(`⚡ [Kernel] تم استخراج سكربت بايثون ديناميكي، جاري التنفيذ...`);
+            executionResult = await executeDynamicPython(pythonCode, filePath);
             
             if (executionResult && executionResult.success) {
-                finalReplyText += `\n\n✅ تم التنفيذ بنجاح يا شريكي، والملف جاهز للتحميل!`;
+                finalReplyText += `\n\n✅ تم تنفيذ السكربت على الملف بنجاح يا شريكي، والملف جاهز للتحميل!`;
                 fileBase64 = fs.readFileSync(filePath).toString("base64");
             } else {
-                finalReplyText += `\n\n❌ **فشل التنفيذ:** ${executionResult?.error || 'خطأ غير معروف'}`;
+                finalReplyText += `\n\n❌ **فشل التنفيذ:** \n\`\`\`text\n${executionResult?.error || 'خطأ غير معروف'}\n\`\`\``;
                 console.error("❌ [Execution Error]:", executionResult?.error);
             }
         }
@@ -79,6 +74,5 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
 
-    return { reply: finalReplyText, fileName, fileBase64, operations, execution: executionResult };
+    return { reply: finalReplyText, fileName, fileBase64, operations: [], execution: executionResult };
 }
-
