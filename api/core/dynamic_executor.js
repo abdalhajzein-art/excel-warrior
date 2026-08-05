@@ -1,25 +1,21 @@
 /**
- * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (Stable Edition)
- * ⚡ محرك التنفيذ السيادي المتكامل مع النسخ الذري، حراسة القوائم، والتخطيط البصري الذكي.
+ * api/core/dynamic_executor.js – Sovereign Minimal Edition
+ * ⚡ محرك تنفيذ بسيط ومستقر بدون أي إصلاحات بصرية أو AutoFit أو حقن تنسيقات.
  */
 
 import fs from 'fs';
-import { exec, execFile } from 'child_process';
-import { promisify } from 'util';
+import { exec } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const execFileAsync = promisify(execFile);
 
 export async function executeDynamicPython(pythonCode, targetFilePath) {
     return new Promise(async (resolve) => {
         if (!targetFilePath || !fs.existsSync(targetFilePath)) {
-            return resolve({ success: false, error: "مسار الملف المستهدف غير موجود أو غير صالح يا هندسة." });
+            return resolve({ success: false, error: "مسار الملف غير موجود." });
         }
-
-        const isMacroEnabled = targetFilePath.toLowerCase().endsWith('.xlsm');
 
         const ext = path.extname(targetFilePath);
         const base = targetFilePath.slice(0, -ext.length);
@@ -29,137 +25,44 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
         const scriptPath = path.join(process.cwd(), scriptName);
 
         try {
-            // 🛡️ النسخ الاحتياطي الذري
+            // 🛡️ نسخ احتياطي بسيط
             fs.copyFileSync(targetFilePath, backupPath);
-            console.log(`🛡️ [Sovereign Guard] تم إنشاء نسخة احتياطية ذرية للملف: ${path.basename(backupPath)}`);
 
-            // حقن keep_vba تلقائياً
-            let enhancedPythonCode = pythonCode;
-            if (isMacroEnabled && !pythonCode.includes('keep_vba')) {
-                enhancedPythonCode = pythonCode.replace(
-                    /openpyxl\.load_workbook\s*\(([^)]+)\)/g,
-                    'openpyxl.load_workbook($1, keep_vba=True)'
-                );
-            }
+            // كتابة سكربت بايثون
+            fs.writeFileSync(scriptPath, pythonCode, 'utf8');
 
-            fs.writeFileSync(scriptPath, enhancedPythonCode, 'utf8');
-
-            exec(`python3 "${scriptPath}" "${targetFilePath}"`, { maxBuffer: 10 * 1024 * 1024 }, async (error, stdout, stderr) => {
+            // تنفيذ بايثون
+            exec(`python3 "${scriptPath}" "${targetFilePath}"`, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+                // حذف السكربت المؤقت
                 if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
                 if (error) {
-                    console.error(`❌ [Dynamic Executor Error]:`, error.message);
-                    console.error(`❌ [Python Error Details]:`, stderr);
+                    console.error("❌ Python Error:", stderr || error.message);
 
+                    // 🔄 استعادة النسخة الأصلية
                     if (fs.existsSync(backupPath)) {
                         fs.copyFileSync(backupPath, targetFilePath);
                         fs.unlinkSync(backupPath);
-                        console.log(`🔄 [Sovereign Guard] تم استعادة الملف الأصلي إثر خطأ برمجي.`);
                     }
 
                     return resolve({ success: false, error: stderr || error.message });
                 }
 
-                // 🔍 المدقق السيادي
-                try {
-                    const validatorScript = `
-import sys
-import openpyxl
-from openpyxl.utils import get_column_letter
+                // حذف النسخة الاحتياطية بعد نجاح التنفيذ
+                if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
 
-backup_path = sys.argv[1]
-modified_path = sys.argv[2]
-is_xlsm = modified_path.lower().endswith('.xlsm')
-
-try:
-    wb_backup = openpyxl.load_workbook(backup_path, keep_vba=is_xlsm)
-    wb_modified = openpyxl.load_workbook(modified_path, keep_vba=is_xlsm)
-
-    if len(wb_modified.sheetnames) == 0:
-        raise Exception("الملف المعدل فارغ تماماً!")
-
-    for sheetname in wb_backup.sheetnames:
-        if sheetname in wb_modified.sheetnames:
-            ws_orig = wb_backup[sheetname]
-            ws_mod = wb_modified[sheetname]
-
-            # استعادة القوائم المنسدلة
-            if hasattr(ws_orig, 'data_validations'):
-                try:
-                    for dv in ws_orig.data_validations.dataValidation:
-                        ws_mod.add_data_validation(dv)
-                except:
-                    pass
-
-            # استعادة التنسيقات الشرطية
-            if hasattr(ws_orig, 'conditional_formatting'):
-                try:
-                    for cf in ws_orig.conditional_formatting:
-                        ws_mod.conditional_formatting.add(cf.sqref, cf)
-                except:
-                    pass
-
-            # AutoFit ذكي
-            for col in ws_mod.columns:
-                try:
-                    values = [str(cell.value or '') for cell in col[:20]]
-                    if not values:
-                        continue
-                    avg_len = sum(len(v) for v in values) / len(values)
-                    col_letter = get_column_letter(col[0].column)
-                    ws_mod.column_dimensions[col_letter].width = min(max(avg_len + 2, 12), 35)
-                except:
-                    pass
-
-    wb_modified.save(modified_path)
-    print("SOVEREIGN_VALIDATION_OK")
-
-except Exception as e:
-    print(f"SOVEREIGN_ERROR: {str(e)}")
-    sys.exit(1)
-`;
-
-                    const validatorPath = path.join(process.cwd(), `validator_${Date.now()}.py`);
-                    fs.writeFileSync(validatorPath, validatorScript, 'utf8');
-
-                    exec(`python3 "${validatorPath}" "${backupPath}" "${targetFilePath}"`, (valError, valStdout, valStderr) => {
-                        if (fs.existsSync(validatorPath)) fs.unlinkSync(validatorPath);
-
-                        // ✔ إصلاح الشرط بالكامل (جافاسكربت صحيح)
-                        if (valError || !valStdout || !valStdout.includes("SOVEREIGN_VALIDATION_OK")) {
-                            const valMsg = valStderr || valStdout || "فشل الفحص السيادي";
-                            console.warn(`⚠️ [Sovereign Guard Warning] التدقيق السيادي كشف تلفاً:`, valMsg);
-
-                            if (fs.existsSync(backupPath)) {
-                                fs.copyFileSync(backupPath, targetFilePath);
-                                fs.unlinkSync(backupPath);
-                            }
-
-                            return resolve({
-                                success: false,
-                                error: "فشل الفحص السيادي للملف: تم استعادة النسخة الأصلية."
-                            });
-                        }
-
-                        if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
-
-                        console.log(`✅ [Alatheer Sovereign Master Success]: تمت معالجة الملف بنجاح.`);
-                        resolve({ success: true, output: stdout });
-                    });
-
-                } catch (valEx) {
-                    if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
-                    resolve({ success: true, output: stdout });
-                }
+                return resolve({ success: true, output: stdout });
             });
 
-        } catch (initError) {
+        } catch (err) {
+            console.error("❌ Executor Exception:", err.message);
+
             if (fs.existsSync(backupPath)) {
                 fs.copyFileSync(backupPath, targetFilePath);
                 fs.unlinkSync(backupPath);
             }
-            console.error(`❌ [Sovereign Master Exception]:`, initError.message);
-            resolve({ success: false, error: initError.message });
+
+            return resolve({ success: false, error: err.message });
         }
     });
 }
@@ -172,7 +75,7 @@ export async function extractPreviewAsync(filePath) {
         });
         return JSON.parse(stdout);
     } catch (error) {
-        console.warn("⚠️ Preview Engine Error:", error.message);
+        console.warn("⚠️ Preview Error:", error.message);
         return { error: error.message };
     }
-    }
+                                                                                                  }
