@@ -1,5 +1,5 @@
 /**
- * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (The 4 Jewels Edition)
+ * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (The 4 Jewels Edition + Detailed Stderr)
  * ⚡ محرك التنفيذ السيادي المتكامل مع دعم النسخ الذري، حراسة القوائم، المقارنة الدلالية، والتخطيط البصري.
  */
 
@@ -44,10 +44,14 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
                 if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
                 if (error) {
-                    console.error(`❌ [Dynamic Executor Error]:`, stderr || error.message);
+                    console.error(`❌ [Dynamic Executor Error]:`, error.message);
+                    console.error(`❌ [Dynamic Executor Python Error Details]:`, stderr);
+                    
+                    // استرجاع النسخة الاحتياطية فوراً (Rollback)
                     if (fs.existsSync(backupPath)) {
                         fs.copyFileSync(backupPath, targetFilePath);
                         fs.unlinkSync(backupPath);
+                        console.log(`🔄 [Sovereign Guard] تم استعادة الملف الأصلي من النسخة الاحتياطية بنجاح إثر خطأ برمجي.`);
                     }
                     return resolve({ success: false, error: stderr || error.message });
                 }
