@@ -1,6 +1,6 @@
 /**
- * api/geminiService.js – Sovereign Gemini Service (Ultra Edition)
- * Multi‑Key + SystemInstruction + DeepContext + FileAware + OperationAware
+ * api/geminiService.js – Sovereign Gemini Service (Ultra Harmonized Edition)
+ * متوافق بالكامل مع Dual‑Mode Kernel + Excel Intent Detector + Multi‑Sheet Preview
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -44,7 +44,7 @@ async function executeWithRetry(fn) {
 const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 /* ============================================================
-   🧠 وضع المحادثة السيادي
+   🧠 وضع المحادثة الأحادي
    ============================================================ */
 export default async function geminiService(prompt, ctx = {}) {
   return executeWithRetry(async (client) => {
@@ -74,7 +74,7 @@ export default async function geminiService(prompt, ctx = {}) {
 }
 
 /* ============================================================
-   💬 وضع المحادثة المتعدد الأدوار (Ultra Chat)
+   💬 وضع المحادثة المتعدد الأدوار (Ultra Chat – Harmonized)
    ============================================================ */
 geminiService.chat = async function(messages, extra = {}) {
   return executeWithRetry(async (client) => {
@@ -113,15 +113,17 @@ geminiService.chat = async function(messages, extra = {}) {
     }
 
     /* ------------------------------------------------------------
-       3) حقن معلومات الملف النشط داخل الرسالة الأخيرة فقط
+       3) حقن معلومات الملف فقط عند وجود نية تعديل إكسل
        ------------------------------------------------------------ */
-    if (extra.fileName && extra.extractedContent?.metadata) {
-      const meta = extra.extractedContent.metadata;
+    const isExcelModification = extra.intent === "excel_modification";
+
+    if (isExcelModification && extra.fileName && extra.extractedContent) {
+      const meta = extra.extractedContent;
 
       const fileInfo = `
 📎 **الملف النشط:** ${extra.fileName}
-- الصفوف: ${meta.rows || "?"}
-- الأعمدة: ${meta.columns || "?"}
+📊 عدد الشيتات: ${meta.sheets_count || meta.sheets?.length || "?"}
+🧩 الشيتات: ${Array.isArray(meta.sheets) ? meta.sheets.join(", ") : "?"}
 `;
 
       lastUserMessage += "\n\n" + fileInfo;
