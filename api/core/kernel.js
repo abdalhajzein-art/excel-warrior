@@ -3,6 +3,7 @@
  * يفصل بذكاء بين تعديل الملفات القائمة وتوليد الملفات الجديدة من الصفر مع التحقق الذاتي.
  * ✅ إخفاء كود بايثون عن المستخدم
  * ✅ إصلاح مشكلة استخراج كود Python من رد Gemini
+ * ✅ دعم بصمة الملف (Fingerprint) لتوفير التوكنز
  */
 
 import fs from "fs";
@@ -11,6 +12,7 @@ import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 import { executeDynamicPython } from "./dynamic_executor.js";
+import fusionMemory from "./fusion_memory.js";
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const message = (rawMessage || "").trim();
@@ -36,6 +38,9 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         fileContext = `ملف: ${fileName}\nمؤشر صف العناوين: ${headerRow}\nالأعمدة المتوفرة: ${JSON.stringify(schema)}\n`;
     }
 
+    // ✅ استرجاع بصمة الملف من الذاكرة
+    const fingerprintText = fusionMemory.getFingerprintText(sessionId);
+
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
 
     // 🎯 شمولية النية: الكشف عن تعديل ملف قائم أو طلب توليد/إنشاء جدول جديد
@@ -54,6 +59,13 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         systemContent += `\n\n[سياق الملف الحالي]:\n${fileContext}`;
     }
 
+    // ✅ إضافة بصمة الملف للنظام إن وجدت
+    if (fingerprintText) {
+        systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
+    } else if (!isGenerationRequest) {
+        systemContent += `\n\n[تعليمات]: هذا الملف جديد، قم بإنشائه من الصفر مع الحفاظ على تنسيق احترافي.`;
+    }
+
     if (isGenerationRequest && !hasExistingFile) {
         // إنشاء مسار افتراضي آمن للملف الجديد
         fileName = `Alatheer_Report_${Date.now()}.xlsx`;
@@ -61,6 +73,16 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         systemContent += `\n\n[تعليمات النظام للتوليد]: المستخدم يطلب توليد ملف إكسل جديد كلياً. قم بكتابة كود بايثون متكامل باستخدام مكتبة openpyxl لإنشاء الملف، تعبئة البيانات، تنسيق الترويسة بلون مميز وخط غامق ومحاذاة مركزية، وحفظه حصراً في مسار الملف المستلم عبر sys.argv[1].`;
     } else if (!isGenerationRequest && hasExistingFile) {
         systemContent += `\n\n[تعليمات النظام للتعديل المباشر]: المستخدم يطلب تعديل الملف الحالي الموجود في مسار sys.argv[1]. يجب قراءة الملف باستخدام pandas أو openpyxl، تطبيق التعديلات المطلوبة بدقة، وحفظ التعديلات **نفسها** على نفس المسار (sys.argv[1]) دون تغيير اسمه أو إنشاء ملف جديد.`;
+    }
+
+    // ✅ تعليمات إضافية للحفاظ على التنسيق
+    if (fingerprintText) {
+        systemContent += `\n\n[تعليمات الحفاظ على التنسيق]:
+1. لا تحذف أي ورقة من الأوراق الموجودة في البصمة
+2. لا تحذف أي معادلة من المعادلات الموجودة
+3. حافظ على نفس نظام الألوان والتنسيق
+4. أضف الميزات الجديدة فقط دون المساس بالميزات الموجودة
+5. استخدم openpyxl بشكل صحيح لكتابة المعادلات كصيغ وليس كنصوص`;
     }
 
     const conversationMessages = [
@@ -140,6 +162,21 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                     isSuccess = true;
                     finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح والتحقق من صحته. جاهز للتحميل يا هندسة!`;
                     fileBase64 = fs.readFileSync(filePath).toString("base64");
+                    
+                    // ✅ تخزين البصمة بعد النجاح
+                    if (extractedContent && !extractedContent.error) {
+                        fusionMemory.storeFileFingerprint(sessionId, filePath, extractedContent);
+                    } else {
+                        // محاولة استخراج بصمة من الملف المُنشأ
+                        try {
+                            const previewData = await extractPreviewAsync(filePath);
+                            if (previewData && !previewData.error) {
+                                fusionMemory.storeFileFingerprint(sessionId, filePath, previewData);
+                            }
+                        } catch (e) {
+                            console.warn("⚠️ [Kernel] فشل تخزين البصمة:", e.message);
+                        }
+                    }
                 } else {
                     const actualError = executionResult?.error || executionResult?.output || "خطأ منطقي في التنفيذ";
                     console.warn(`⚠️ فشل التنفيذ في المحاولة ${currentAttempt}:`, actualError);
@@ -200,4 +237,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         operations: [],
         execution: executionResult
     };
-                                                                                                                            }
+}
