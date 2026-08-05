@@ -1,6 +1,6 @@
 /**
  * api/core/dynamic_executor.js – Sovereign Minimal Edition (Optimized & Dual-Mode Ready)
- * ⚡ تنفيذ سكربت بايثون مع دعم التعديل (مع نسخ احتياطي واستعادة) ودعم التوليد من الصفر (New Files).
+ * ⚡ تنفيذ سكربت بايثون مع دعم التعديل والتوليد
  */
 
 import fs from "fs";
@@ -19,7 +19,6 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
             return resolve({ success: false, error: "مسار الملف غير صالح." });
         }
 
-        // إذا لم يكن ملفاً جديداً، يجب التأكد من وجوده قبل التعديل
         if (!isNewFile && !fs.existsSync(targetFilePath)) {
             return resolve({ success: false, error: "مسار الملف المراد تعديله غير موجود." });
         }
@@ -32,39 +31,43 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
         const scriptPath = path.join(process.cwd(), scriptName);
 
         try {
-            // 1. أخذ نسخة احتياطية (فقط إذا كان ملفاً قائماً وموجوداً)
+            // 1. نسخة احتياطية
             if (!isNewFile && fs.existsSync(targetFilePath)) {
                 fs.copyFileSync(targetFilePath, backupPath);
             }
 
-            // 2. كتابة سكربت بايثون المؤقت
-            fs.writeFileSync(scriptPath, pythonCode, "utf8");
+            // 2. ✅ لا نضيف sys.argv، نمرر المسار كـ argument مباشرة
+            // نعدل الكود قليلاً للتأكد من أن sys.argv[1] موجود
+            const safeCode = `
+import sys
+if len(sys.argv) < 2:
+    sys.argv.append('${targetFilePath}')
+${pythonCode}
+`;
 
-            // 3. التنفيذ الآمن باستخدام execFile
+            fs.writeFileSync(scriptPath, safeCode, "utf8");
+
+            // 3. التنفيذ
             execFile(
                 "python3", 
                 [scriptPath, targetFilePath], 
-                { maxBuffer: 10 * 1024 * 1024 }, // 10 ميغابايت لمنع توقف السكربتات ذات المخرجات الطويلة
+                { maxBuffer: 10 * 1024 * 1024 },
                 (error, stdout, stderr) => {
-                    // تنظيف: حذف السكربت المؤقت فور انتهاء التنفيذ
                     if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
                     if (error) {
                         console.error("❌ Python Error:", stderr || error.message);
 
-                        // التراجع (Rollback): استعادة النسخة الأصلية إذا فشل التعديل
                         if (!isNewFile && fs.existsSync(backupPath)) {
                             fs.copyFileSync(backupPath, targetFilePath);
                             fs.unlinkSync(backupPath);
                         } else if (isNewFile && fs.existsSync(targetFilePath)) {
-                            // إذا كان توليد جديد وفشل، نحذف أي ملف جزئي قد تكون تم كتابته
                             try { fs.unlinkSync(targetFilePath); } catch(e) {}
                         }
 
                         return resolve({ success: false, error: stderr || error.message });
                     }
 
-                    // نجاح: حذف النسخة الاحتياطية إن وجدت
                     if (!isNewFile && fs.existsSync(backupPath)) {
                         fs.unlinkSync(backupPath);
                     }
@@ -75,7 +78,6 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
         } catch (err) {
             console.error("❌ Executor Exception:", err.message);
 
-            // تنظيف في حال حدوث استثناء مفاجئ
             if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
             if (!isNewFile && fs.existsSync(backupPath)) {
                 fs.copyFileSync(backupPath, targetFilePath);
@@ -102,4 +104,4 @@ export async function extractPreviewAsync(filePath) {
         console.warn("⚠️ Preview Error:", error.message);
         return { error: error.message };
     }
-}
+                 }
