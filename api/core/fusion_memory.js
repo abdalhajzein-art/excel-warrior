@@ -20,7 +20,7 @@ export default {
       };
     }
 
-    const history = session.chatHistory || [];
+    const history = session.chat.history || [];
     const recentHistory = history.slice(-30);
     const lastTopics = extractTopics(recentHistory);
     const tags = extractTags(recentHistory);
@@ -47,6 +47,7 @@ export default {
     const existingFingerprint = session.fileFingerprint || null;
     const mergedFingerprint = mergeFingerprints(existingFingerprint, newFingerprint);
     
+    // ✅ استخدام updateSession
     memory.updateSession(sessionId, {
       fileFingerprint: mergedFingerprint,
       fileFingerprintText: fingerprintToText(mergedFingerprint)
@@ -102,4 +103,4 @@ function extractTags(history) {
     if (text.includes("احترافي")) tags.push("professional");
   });
   return [...new Set(tags)].slice(-10);
-}
+  }
