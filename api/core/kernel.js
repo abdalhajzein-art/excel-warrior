@@ -1,6 +1,7 @@
 /**
  * api/core/kernel.js – Sovereign Kernel (Dual-Mode: Modification & Greenfield Generation)
  * يفصل بذكاء بين تعديل الملفات القائمة وتوليد الملفات الجديدة من الصفر مع التحقق الذاتي.
+ * ✅ إخفاء كود بايثون عن المستخدم
  */
 
 import fs from "fs";
@@ -97,7 +98,14 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
         if (pythonMatch) {
             let pythonCode = pythonMatch[1].trim();
+            
+            // ✅ إخفاء الكود عن المستخدم
             finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
+            
+            // ✅ إذا أصبح الرد فارغاً، ضع رسالة بديلة
+            if (!finalReplyText) {
+                finalReplyText = "جاري تجهيز الملف يا شريكي...";
+            }
 
             const maxRetries = 2;
             let currentAttempt = 0;
@@ -167,4 +175,3 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         execution: executionResult
     };
 }
-
