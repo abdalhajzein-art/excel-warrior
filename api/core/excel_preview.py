@@ -1,6 +1,6 @@
 """
-api/core/excel_preview.py – Sovereign Excel Engine (Preview & Dynamic Modifier)
-⚡ استخراج المعاينة، تحليل المخطط ديناميكياً، وتنفيذ التعديلات البرمجية مع الحفاظ على التنسيقات.
+api/core/excel_preview.py – Sovereign Excel Engine (Preview, Dynamic Modifier & Greenfield Generator)
+⚡ استخراج المعاينة، تحليل المخطط ديناميكياً، تنفيذ التعديلات، وتوليد الملفات الجديدة من الصفر.
 """
 
 import sys
@@ -64,6 +64,52 @@ def extract_sheet_preview(wb, sheet_name, max_rows=MAX_PREVIEW_ROWS):
         "merged": merged_cells
     }
 
+def generate_new_excel_file(output_path, sheet_name, headers, rows_data):
+    """
+    توليد ملف إكسل جديد كلياً من الصفر مع تنسيق احترافي للترويسة، المحاذاة التلقائية، والحدود.
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+
+    # 1. إعداد ترويسة احترافية
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    center_alignment = Alignment(horizontal="center", vertical="center")
+    
+    thin_border = Border(
+        left=openpyxl.styles.borders.Side(style='thin', color='D9D9D9'),
+        right=openpyxl.styles.borders.Side(style='thin', color='D9D9D9'),
+        top=openpyxl.styles.borders.Side(style='thin', color='D9D9D9'),
+        bottom=openpyxl.styles.borders.Side(style='thin', color='D9D9D9')
+    )
+
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_alignment
+        cell.border = thin_border
+
+    # 2. إدخال بيانات الصفوف وتنسيقها
+    data_font = Font(name="Calibri", size=11)
+    for r_idx, row_data in enumerate(rows_data, start=2):
+        for c_idx, val in enumerate(row_data, start=1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=val)
+            cell.font = data_font
+            cell.alignment = center_alignment
+            cell.border = thin_border
+
+    # 3. ضبط عرض الأعمدة تلقائياً لمنع اقتطاع النصوص
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        col_letter = openpyxl.utils.get_column_letter(col[0].column)
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+    wb.save(output_path)
+    wb.close()
+    return {"status": "success", "output": output_path, "message": "تم توليد الملف بنجاح من الصفر."}
+
 def execute_excel_operation(file_path, output_path, operation_type, target_keyword=None, options=None):
     """
     محرك عام لتنفيذ التعديلات (مثل إضافة أعمدة، قوائم منسدلة، وتحديث البيانات) 
@@ -71,13 +117,11 @@ def execute_excel_operation(file_path, output_path, operation_type, target_keywo
     """
     options = options or {}
     wb = openpyxl.load_workbook(file_path)
-    ws = wb.active  # أو يمكن تطويرها لتحديد الورقة عبر options["sheet_name"]
+    ws = wb.active
 
-    # 1. الاستفادة من الاكتشاف الذكي للترويسة والمخطط
     header_row_idx, schema = find_header_row_and_schema(ws)
 
     if operation_type == "add_column_with_dropdown":
-        # البحث الديناميكي عن العمود المستهدف بناءً على الكلمة المفتاحية في المخطط المكتشف
         col_idx = None
         for c_idx, h_val in schema.items():
             if target_keyword and target_keyword in h_val:
@@ -90,7 +134,6 @@ def execute_excel_operation(file_path, output_path, operation_type, target_keywo
         target_col_idx = col_idx + 1
         ws.insert_cols(target_col_idx)
 
-        # 2. إعداد ترويسة العمود الجديد ونسخ التنسيق تماماً من العمود المرجعي
         new_header_val = options.get("new_header", "ملاحظات")
         header_cell = ws.cell(row=header_row_idx, column=target_col_idx, value=new_header_val)
         ref_header = ws.cell(row=header_row_idx, column=col_idx)
@@ -104,7 +147,6 @@ def execute_excel_operation(file_path, output_path, operation_type, target_keywo
             top=ref_header.border.top, bottom=ref_header.border.bottom
         )
 
-        # 3. إعداد القائمة المنسدلة إذا توفرت الخيارات
         dropdown_values = options.get("dropdown_values", [])
         dv = None
         if dropdown_values:
@@ -112,7 +154,6 @@ def execute_excel_operation(file_path, output_path, operation_type, target_keywo
             dv = DataValidation(type="list", formula1=reasons_str, allow_blank=True)
             ws.add_data_validation(dv)
 
-        # 4. تطبيق التنسيقات والقوائم المنسدلة على صفوف البيانات ابتداءً من أسفل الترويسة
         for row in range(header_row_idx + 1, ws.max_row + 1):
             cell = ws.cell(row=row, column=target_col_idx)
             ref_data = ws.cell(row=row, column=col_idx)
@@ -132,27 +173,35 @@ def execute_excel_operation(file_path, output_path, operation_type, target_keywo
 
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "لم يتم تمرير مسار ملف إكسل."}, ensure_ascii=False))
+        print(json.dumps({"error": "لم يتم تمرير مسار ملف أو معاملات تشغيل."}, ensure_ascii=False))
         return
 
-    file_path = sys.argv[1]
-    
-    # 🎯 الحالة الأولى: إذا تم تمرير معامل ثاني (بيانات العملية بصيغة JSON) -> تنفيذ تعديل
-    if len(sys.argv) >= 3:
+    arg1 = sys.argv[1]
+
+    # 🎯 الحالة الأولى: تمرير كائن JSON (للتوليد الجديد أو التعديلات المتقدمة)
+    if arg1.startswith("{") or len(sys.argv) >= 3:
         try:
-            op_data = json.loads(sys.argv[2])
-            output_path = op_data.get("output_path", file_path.replace(".xlsx", "_modified.xlsx"))
+            op_data = json.loads(arg1) if arg1.startswith("{") else json.loads(sys.argv[2])
             operation_type = op_data.get("operation_type")
-            target_keyword = op_data.get("target_keyword")
+            output_path = op_data.get("output_path", "generated_report.xlsx")
             options = op_data.get("options", {})
             
-            result = execute_excel_operation(file_path, output_path, operation_type, target_keyword, options)
+            if operation_type == "generate_new":
+                headers = options.get("headers", [])
+                rows_data = options.get("rows_data", [])
+                sheet_name = options.get("sheet_name", "التقرير")
+                result = generate_new_excel_file(output_path, sheet_name, headers, rows_data)
+            else:
+                file_path = arg1 if not arg1.startswith("{") else op_data.get("file_path")
+                result = execute_excel_operation(file_path, output_path, operation_type, op_data.get("target_keyword"), options)
+                
             print(json.dumps(result, ensure_ascii=False))
         except Exception as e:
             print(json.dumps({"error": str(e)}, ensure_ascii=False))
         return
 
-    # 🔍 الحالة الثانية: المعاينة الافتراضية واستخراج المخطط (عند تمرير الملف وحده)
+    # 🔍 الحالة الثانية: المعاينة الافتراضية واستخراج المخطط (عند تمرير ملف وحده)
+    file_path = arg1
     wb = None
     try:
         wb = openpyxl.load_workbook(file_path, data_only=False)
