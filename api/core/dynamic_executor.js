@@ -1,6 +1,6 @@
 /**
- * api/core/dynamic_executor.js – Sovereign Minimal Edition (Optimized)
- * ⚡ تنفيذ سكربت بايثون على ملف إكسل مع نسخ احتياطي، استعادة عند الخطأ، وحماية من ثغرات الحقن.
+ * api/core/dynamic_executor.js – Sovereign Minimal Edition (Optimized & Dual-Mode Ready)
+ * ⚡ تنفيذ سكربت بايثون مع دعم التعديل (مع نسخ احتياطي واستعادة) ودعم التوليد من الصفر (New Files).
  */
 
 import fs from "fs";
@@ -13,10 +13,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
 
-export async function executeDynamicPython(pythonCode, targetFilePath) {
+export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile = false) {
     return new Promise((resolve) => {
-        if (!targetFilePath || !fs.existsSync(targetFilePath)) {
-            return resolve({ success: false, error: "مسار الملف غير موجود أو غير صالح." });
+        if (!targetFilePath) {
+            return resolve({ success: false, error: "مسار الملف غير صالح." });
+        }
+
+        // إذا لم يكن ملفاً جديداً، يجب التأكد من وجوده قبل التعديل
+        if (!isNewFile && !fs.existsSync(targetFilePath)) {
+            return resolve({ success: false, error: "مسار الملف المراد تعديله غير موجود." });
         }
 
         const ext = path.extname(targetFilePath);
@@ -27,13 +32,15 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
         const scriptPath = path.join(process.cwd(), scriptName);
 
         try {
-            // 1. أخذ نسخة احتياطية (لحماية الملف الأصلي)
-            fs.copyFileSync(targetFilePath, backupPath);
+            // 1. أخذ نسخة احتياطية (فقط إذا كان ملفاً قائماً وموجوداً)
+            if (!isNewFile && fs.existsSync(targetFilePath)) {
+                fs.copyFileSync(targetFilePath, backupPath);
+            }
 
             // 2. كتابة سكربت بايثون المؤقت
             fs.writeFileSync(scriptPath, pythonCode, "utf8");
 
-            // 3. التنفيذ الآمن باستخدام execFile بدلاً من exec
+            // 3. التنفيذ الآمن باستخدام execFile
             execFile(
                 "python3", 
                 [scriptPath, targetFilePath], 
@@ -45,17 +52,22 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
                     if (error) {
                         console.error("❌ Python Error:", stderr || error.message);
 
-                        // التراجع (Rollback): استعادة النسخة الأصلية إذا فشل بايثون
-                        if (fs.existsSync(backupPath)) {
+                        // التراجع (Rollback): استعادة النسخة الأصلية إذا فشل التعديل
+                        if (!isNewFile && fs.existsSync(backupPath)) {
                             fs.copyFileSync(backupPath, targetFilePath);
                             fs.unlinkSync(backupPath);
+                        } else if (isNewFile && fs.existsSync(targetFilePath)) {
+                            // إذا كان توليد جديد وفشل، نحذف أي ملف جزئي قد تكون تم كتابته
+                            try { fs.unlinkSync(targetFilePath); } catch(e) {}
                         }
 
                         return resolve({ success: false, error: stderr || error.message });
                     }
 
-                    // نجاح: حذف النسخة الاحتياطية وتأكيد التعديل
-                    if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+                    // نجاح: حذف النسخة الاحتياطية إن وجدت
+                    if (!isNewFile && fs.existsSync(backupPath)) {
+                        fs.unlinkSync(backupPath);
+                    }
 
                     return resolve({ success: true, output: stdout });
                 }
@@ -63,9 +75,9 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
         } catch (err) {
             console.error("❌ Executor Exception:", err.message);
 
-            // تنظيف في حال حدوث استثناء (Exception) مفاجئ
+            // تنظيف في حال حدوث استثناء مفاجئ
             if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
-            if (fs.existsSync(backupPath)) {
+            if (!isNewFile && fs.existsSync(backupPath)) {
                 fs.copyFileSync(backupPath, targetFilePath);
                 fs.unlinkSync(backupPath);
             }
@@ -78,12 +90,10 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
 export async function extractPreviewAsync(filePath) {
     const pythonPreviewPath = path.join(__dirname, "excel_preview.py");
     try {
-        // التنفيذ الآمن والمباشر
         const { stdout } = await execFileAsync("python3", [pythonPreviewPath, filePath], {
             maxBuffer: 10 * 1024 * 1024
         });
         
-        // محاولة استخراج JSON فقط في حال قام بايثون بطباعة تحذيرات إضافية
         const jsonMatch = stdout.match(/\{[\s\S]*\}/);
         const cleanStdout = jsonMatch ? jsonMatch[0] : stdout;
 
