@@ -2,6 +2,7 @@
  * api/core/kernel.js – Sovereign Kernel (Dual-Mode: Modification & Greenfield Generation)
  * يفصل بذكاء بين تعديل الملفات القائمة وتوليد الملفات الجديدة من الصفر مع التحقق الذاتي.
  * ✅ إخفاء كود بايثون عن المستخدم
+ * ✅ إصلاح مشكلة استخراج كود Python من رد Gemini
  */
 
 import fs from "fs";
@@ -94,13 +95,28 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             };
         }
 
-        let pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
+        // ✅ استخراج كود Python من رد Gemini (متعدد المحاولات)
+        let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
+        if (!pythonMatch) {
+            pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
+        }
+        if (!pythonMatch) {
+            pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
+        }
+        if (!pythonMatch) {
+            // ✅ محاولة أخيرة: البحث عن أي كود بين ```
+            pythonMatch = finalReplyText.match(/```([\s\S]*?)```/);
+        }
 
         if (pythonMatch) {
             let pythonCode = pythonMatch[1].trim();
             
             // ✅ إخفاء الكود عن المستخدم
             finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
+            if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
+                // إزالة أي كتل كود متبقية
+                finalReplyText = finalReplyText.replace(/```[\s\S]*?```/g, "").trim();
+            }
             
             // ✅ إذا أصبح الرد فارغاً، ضع رسالة بديلة
             if (!finalReplyText) {
@@ -145,7 +161,15 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                             systemInstruction: systemContent
                         });
 
-                        const newMatch = fixReply.match(/```python\s*([\s\S]*?)\s*```/);
+                        // ✅ محاولة استخراج الكود المصحح
+                        let newMatch = fixReply.match(/```python\s*\n([\s\S]*?)\n\s*```/);
+                        if (!newMatch) {
+                            newMatch = fixReply.match(/```python\s*([\s\S]*?)\s*```/);
+                        }
+                        if (!newMatch) {
+                            newMatch = fixReply.match(/```\s*([\s\S]*?)```/);
+                        }
+                        
                         if (newMatch) {
                             pythonCode = newMatch[1].trim();
                         } else {
@@ -158,6 +182,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                 }
             }
         } else {
+            // ✅ إذا لم يجد الكود، نضيف رسالة توضيحية
+            console.warn("⚠️ [Kernel] لم يتم العثور على كود Python في رد Gemini");
             finalReplyText += `\n\n⚠️ طلبت عملية إكسل ولكن لم يُرجع النموذج كود بايثون للتنفيذ.`;
         }
     } catch (error) {
@@ -174,4 +200,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         operations: [],
         execution: executionResult
     };
-}
+                                                                                                                            }
