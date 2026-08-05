@@ -1,6 +1,6 @@
 """
-api/core/excel_preview.py – Sovereign Excel Engine (Preview, Dynamic Modifier & Greenfield Generator)
-⚡ استخراج المعاينة، تحليل المخطط ديناميكياً، تنفيذ التعديلات، وتوليد الملفات الجديدة من الصفر بمعمارية RTL السيادية.
+api/core/excel_preview.py – Sovereign Excel Engine (Strict Tabular Edition)
+⚡ محرك إكسل سيادي بمعمارية قياسية صارمة: ترويسة من الصف الأول، دعم RTL، تحليل مخطط دقيق، وتوليد نظيف.
 """
 
 import sys
@@ -16,6 +16,10 @@ def safe_str(value):
     return "" if value is None else str(value).strip()
 
 def find_header_row_and_schema(ws, max_rows=10):
+    """
+    خوارزمية ذكية لاكتشاف صف الترويسة واستخراج مخطط الأعمدة بدقة.
+    في البناء القياسي الصحيح، تبدأ الترويسة دائماً من الصف الأول.
+    """
     best_row_idx = 1
     max_score = -1
     schema = {}
@@ -30,7 +34,7 @@ def find_header_row_and_schema(ws, max_rows=10):
             if val is not None:
                 sval = str(val).strip()
                 if sval:
-                    # 🛡️ استبعاد خلايا المعادلات لضمان عدم الخلط بين العناوين وبيانات الجدول
+                    # 🛡️ استبعاد خلايا المعادلات لضمان عدم الخلط بين العناوين والبيانات
                     if sval.startswith('='):
                         score -= 5
                     else:
@@ -66,16 +70,21 @@ def extract_sheet_preview(wb, sheet_name, max_rows=MAX_PREVIEW_ROWS):
 
 def generate_new_excel_file(output_path, sheet_name, headers, rows_data):
     """
-    توليد ملف إكسل جديد كلياً من الصفر بمعمارية RTL، بدون فراغات علوية، ترويسة من الصف الأول، وتجميد الألواح.
+    توليد ملف إكسل جديد كلياً من الصفر بمعمارية قياسية صحيحة:
+    - ترويسة تبدأ فوراً من الصف الأول (Row 1).
+    - اتجاه ورقة العمل من اليمين لليسار (RTL) لدعم البيئة العربية.
+    - تجميد صف الترويسة (Freeze Panes) لتسهيل التمرير.
+    - تنسيق موحد واحترافي لجميع الخلايا.
     """
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = sheet_name
 
-    # 🌐 تفعيل اتجاه ورقة العمل من اليمين إلى اليسار (RTL) لدعم اللغة العربية بشكل سيادي
+    # 🌐 ضبط اتجاه ورقة العمل إلى اليمين لليسار (RTL)
     ws.sheet_view.rightToLeft = True
 
-    # 1. إعداد ترويسة احترافية تبدأ مباشرة من الصف الأول
+    # 1. إعداد ترويسة الجدول في الصف الأول حصراً
+    header_row_idx = 1
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     center_alignment = Alignment(horizontal="center", vertical="center")
@@ -88,25 +97,29 @@ def generate_new_excel_file(output_path, sheet_name, headers, rows_data):
     )
 
     for col_idx, header in enumerate(headers, start=1):
-        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell = ws.cell(row=header_row_idx, column=col_idx, value=header)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = center_alignment
         cell.border = thin_border
+    
+    ws.row_dimensions[header_row_idx].height = 26
 
-    # 2. إدخال بيانات الصفوف وتنسيقها ابتداءً من الصف الثاني
+    # 2. إدخال بيانات الصفوف ابتداءً من الصف الثاني (Row 2)
     data_font = Font(name="Calibri", size=11)
-    for r_idx, row_data in enumerate(rows_data, start=2):
+    for r_offset, row_data in enumerate(rows_data):
+        current_row = header_row_idx + 1 + r_offset
         for c_idx, val in enumerate(row_data, start=1):
-            cell = ws.cell(row=r_idx, column=c_idx, value=val)
+            cell = ws.cell(row=current_row, column=c_idx, value=val)
             cell.font = data_font
             cell.alignment = center_alignment
             cell.border = thin_border
+        ws.row_dimensions[current_row].height = 20
 
-    # 3. تجميد صف الترويسة العلوي لتسهيل التمرير
+    # 3. تجميد صف الترويسة العلوي لضمان بقائه أثناء التمرير
     ws.freeze_panes = "A2"
 
-    # 4. ضبط عرض الأعمدة تلقائياً لمنع اقتطاع النصوص
+    # 4. ضبط عرض الأعمدة تلقائياً لمنع اقتطاع أي نص
     for col in ws.columns:
         max_len = max(len(str(cell.value or '')) for cell in col)
         col_letter = openpyxl.utils.get_column_letter(col[0].column)
@@ -114,12 +127,11 @@ def generate_new_excel_file(output_path, sheet_name, headers, rows_data):
 
     wb.save(output_path)
     wb.close()
-    return {"status": "success", "output": output_path, "message": "تم توليد الملف بنجاح بمعمارية RTL وتنسيق الترويسة."}
+    return {"status": "success", "output": output_path, "message": "تم توليد الملف بنجاح بمعمارية قياسية نظيفة (ترويسة من الصف الأول و RTL)."}
 
 def execute_excel_operation(file_path, output_path, operation_type, target_keyword=None, options=None):
     """
-    محرك عام لتنفيذ التعديلات (مثل إضافة أعمدة، قوائم منسدلة، وتحديث البيانات) 
-    مع الاعتماد على الاكتشاف الذكي لصف الترويسة واستنساخ التنسيقات بدقة.
+    محرك تنفيذ التعديلات (إضافة أعمدة، قوائم منسدلة، إلخ) مع الاعتماد على الكشف الديناميكي للترويسة.
     """
     options = options or {}
     wb = openpyxl.load_workbook(file_path)
@@ -184,7 +196,7 @@ def main():
 
     arg1 = sys.argv[1]
 
-    # 🎯 الحالة الأولى: تمرير كائن JSON (للتوليد الجديد أو التعديلات المتقدمة)
+    # 🎯 الحالة الأولى: معاملات JSON (التوليد الجديد أو التعديلات)
     if arg1.startswith("{") or len(sys.argv) >= 3:
         try:
             op_data = json.loads(arg1) if arg1.startswith("{") else json.loads(sys.argv[2])
@@ -206,7 +218,7 @@ def main():
             print(json.dumps({"error": str(e)}, ensure_ascii=False))
         return
 
-    # 🔍 الحالة الثانية: المعاينة الافتراضية واستخراج المخطط (عند تمرير ملف وحده)
+    # 🔍 الحالة الثانية: معاينة الملف واستخراج المخطط
     file_path = arg1
     wb = None
     try:
