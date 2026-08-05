@@ -1,3 +1,8 @@
+/**
+ * api/core/dynamic_executor.js – Alatheer Dynamic Python Engine
+ * ⚡ محرك التنفيذ البرمجي الديناميكي الآمن مع دعم السيادة المطلقة.
+ */
+
 import fs from 'fs';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
@@ -15,8 +20,9 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
         const scriptPath = path.join(process.cwd(), scriptName);
 
         fs.writeFileSync(scriptPath, pythonCode, 'utf8');
-        console.log(`⚡ [Dynamic Executor] جاري تنفيذ السكربت المؤقت: ${scriptName}`);
+        console.log(`⚡ [Dynamic Executor] جاري تنفيذ السكربت المؤقت: ${scriptName} على الملف: ${targetFilePath}`);
 
+        // تمرير مسار الملف بوضوح للسكربت وتنفيذ الأوامر مع إدارة آمنة للذاكرة المؤقتة
         exec(`python3 "${scriptPath}" "${targetFilePath}"`, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
             if (fs.existsSync(scriptPath)) {
                 fs.unlinkSync(scriptPath);
@@ -26,7 +32,7 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
                 console.error(`❌ [Dynamic Executor Error]:`, stderr || error.message);
                 resolve({ success: false, error: stderr || error.message });
             } else {
-                console.log(`✅ [Dynamic Executor Success]: التنفيذ تم بنجاح.`);
+                console.log(`✅ [Dynamic Executor Success]: التنفيذ تم بنجاح. Output: ${stdout.trim()}`);
                 resolve({ success: true, output: stdout });
             }
         });
