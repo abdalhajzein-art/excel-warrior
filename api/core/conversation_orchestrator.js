@@ -1,5 +1,5 @@
 /**
- * api/core/conversation_orchestrator.js – Sovereign Clean Orchestrator
+ * api/core/conversation_orchestrator.js – Sovereign Clean Orchestrator (Excel Dual-Mode Ready)
  */
 
 import memory from "./memory.js";
@@ -12,8 +12,11 @@ function formatFileContextForKernel(activeFile) {
     const { fileName, metadata, extractedContent } = activeFile;
     let summary = `📄 **الملف النشط:** ${fileName}\n`;
 
-    if (metadata) summary += `📊 **الأبعاد:** ${metadata.sheets || 1} شيت | ${metadata.rows || 0} صف | ${metadata.columns || 0} عمود\n`;
-    if (extractedContent?.text) summary += `📝 **عينة بيانات:**\n${extractedContent.text.slice(0, 3000)}\n`;
+    if (metadata)
+        summary += `📊 **الأبعاد:** ${metadata.sheets || 1} شيت | ${metadata.rows || 0} صف | ${metadata.columns || 0} عمود\n`;
+
+    if (extractedContent?.text)
+        summary += `📝 **عينة بيانات:**\n${extractedContent.text.slice(0, 3000)}\n`;
 
     return summary;
 }
@@ -21,8 +24,10 @@ function formatFileContextForKernel(activeFile) {
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
     try {
         console.log(`📥 [Orchestrator] جلسة ${sessionId} | "${(message || "").substring(0, 50)}..."`);
+
         const session = memory.getSession(sessionId) || memory.createSession(sessionId);
 
+        // 🗑️ مسح الملف النشط
         const lowerMsg = (message || "").toLowerCase();
         const isResetFile = /(انسى|اغلق|احذف|سكر|تجاهل) (الملف|البيانات)|ملف (جديد|اخر)/.test(lowerMsg);
 
@@ -32,6 +37,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
             delete session.intentCache;
         }
 
+        // 📥 استقبال ملف جديد
         if (extraCtx.fileData || extraCtx.filePath) {
             session.activeFile = {
                 fileName: extraCtx.fileName,
@@ -42,37 +48,57 @@ export default async function conversationOrchestrator(sessionId, message, extra
             };
         }
 
+        // 🧠 حفظ الرسالة
         memory.appendChatHistory(sessionId, { role: "user", content: message });
+
+        // 🧠 دمج الذاكرة العميقة
         const fusedMemory = fusionMemory.apply(sessionId);
         let history = memory.getChatHistory(sessionId, 50).map(msg => ({
-            ...msg, content: (msg.content || "").slice(0, 15000)
+            ...msg,
+            content: (msg.content || "").slice(0, 15000)
         }));
 
+        // 🧠 بناء سياق الكيرنل
         const kernelContext = {
             history,
             fusedMemory,
             activeFileSummary: formatFileContextForKernel(session.activeFile),
-            activeFile: session.activeFile
+            activeFile: session.activeFile,
+
+            // ⭐ إضافات ضرورية للكيرنل الجديد
+            fileName: session.activeFile?.fileName,
+            filePath: session.activeFile?.filePath,
+            extractedContent: session.activeFile?.extractedContent,
+            metadata: session.activeFile?.metadata
         };
 
         console.log(`🧠 [Orchestrator] تسليم القيادة للـ Kernel...`);
         const kernelOutput = await kernel(sessionId, message, kernelContext);
 
-        memory.appendChatHistory(sessionId, { role: "assistant", content: kernelOutput.reply || "تم." });
+        // 🧠 حفظ رد المساعد
+        memory.appendChatHistory(sessionId, {
+            role: "assistant",
+            content: kernelOutput.reply || "تم."
+        });
 
         return {
             ok: true,
             reply: kernelOutput.reply,
             fileBase64: kernelOutput.fileBase64,
             fileName: kernelOutput.fileName || session.activeFile?.fileName,
-            operations: kernelOutput.operations || []
+            operations: kernelOutput.operations || [],
+            execution: kernelOutput.execution || null
         };
 
     } catch (err) {
         console.error("🔥 [Orchestrator Critical Error]:", err);
         return {
-            ok: false, reply: `⚠️ صار خطأ: ${err.message}`, error: err.message, fileBase64: null, fileName: null, operations: []
+            ok: false,
+            reply: `⚠️ صار خطأ: ${err.message}`,
+            error: err.message,
+            fileBase64: null,
+            fileName: null,
+            operations: []
         };
     }
-}
-
+    }
