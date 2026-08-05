@@ -14,7 +14,6 @@ def safe_str(value):
 def extract_sheet_preview(wb, sheet_name, max_rows=MAX_PREVIEW_ROWS):
     ws = wb[sheet_name]
 
-    # Preview بسيط
     preview_rows = []
     rows_count = 0
     cols_count = ws.max_column
@@ -23,7 +22,6 @@ def extract_sheet_preview(wb, sheet_name, max_rows=MAX_PREVIEW_ROWS):
         preview_rows.append([safe_str(c) for c in row])
         rows_count = r_idx
 
-    # كشف الصيغ فقط
     formulas = []
     for row in ws.iter_rows():
         for cell in row:
@@ -37,7 +35,6 @@ def extract_sheet_preview(wb, sheet_name, max_rows=MAX_PREVIEW_ROWS):
         if len(formulas) >= MAX_FORMULAS:
             break
 
-    # كشف الدمج فقط
     merged_cells = [str(rng) for rng in ws.merged_cells.ranges]
 
     return {
