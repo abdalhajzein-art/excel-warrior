@@ -33,9 +33,6 @@ export default async function handler(req, res) {
         const isExcelRequest = userContent.match(/إكسل|Excel|ملف\s*إكسل|جدول|spreadsheet/i);
         const isNewFileRequest = userContent.match(/أنشئ|اعمل|عمل لي|generate|create|new\s*file|من الصفر/i);
 
-        // ✅ التحقق: هل المستخدم يطلب تطوير ملف موجود؟
-        const isModifyRequest = userContent.match(/طور|عدل|حسن|ضيف|أضف|تطوير|إضافة|add|update|modify/i);
-
         // ✅ إذا كان طلب إنشاء ملف جديد (بدون ملف مرفق)
         if (isExcelRequest && isNewFileRequest && !fileData) {
             console.log("📊 [الأثير] تم اكتشاف طلب إنشاء ملف Excel جديد");
