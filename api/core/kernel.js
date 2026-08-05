@@ -11,7 +11,7 @@ import path from "path";
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
-import { executeDynamicPython } from "./dynamic_executor.js";
+import { executeDynamicPython, extractPreviewAsync } from "./dynamic_executor.js";
 import fusionMemory from "./fusion_memory.js";
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
@@ -54,6 +54,12 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     // تحديد ما إذا كان الطلب "توليد من الصفر" (Greenfield) أو "تعديل"
     const isGenerationRequest = (!hasExistingFile) || (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message));
 
+    // ✅ إذا كان تعديلاً ولكن لا يوجد مسار ملف، حاول استرجاعه من البصمة
+    if (!isGenerationRequest && !hasExistingFile && fingerprintText) {
+        console.log("🔍 [Kernel] محاولة استرجاع الملف من البصمة...");
+        // سيتم التعامل مع هذا في orchestrator
+    }
+
     let systemContent = SYSTEM_PROMPT;
     if (fileContext) {
         systemContent += `\n\n[سياق الملف الحالي]:\n${fileContext}`;
@@ -66,13 +72,22 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         systemContent += `\n\n[تعليمات]: هذا الملف جديد، قم بإنشائه من الصفر مع الحفاظ على تنسيق احترافي.`;
     }
 
+    // ✅ تحديد مسار الملف بشكل صحيح
     if (isGenerationRequest && !hasExistingFile) {
         // إنشاء مسار افتراضي آمن للملف الجديد
         fileName = `Alatheer_Report_${Date.now()}.xlsx`;
         filePath = path.join(process.cwd(), fileName);
         systemContent += `\n\n[تعليمات النظام للتوليد]: المستخدم يطلب توليد ملف إكسل جديد كلياً. قم بكتابة كود بايثون متكامل باستخدام مكتبة openpyxl لإنشاء الملف، تعبئة البيانات، تنسيق الترويسة بلون مميز وخط غامق ومحاذاة مركزية، وحفظه حصراً في مسار الملف المستلم عبر sys.argv[1].`;
     } else if (!isGenerationRequest && hasExistingFile) {
+        // ✅ تأكد من أن المسار صحيح
+        console.log(`📂 [Kernel] تعديل الملف الموجود: ${filePath}`);
         systemContent += `\n\n[تعليمات النظام للتعديل المباشر]: المستخدم يطلب تعديل الملف الحالي الموجود في مسار sys.argv[1]. يجب قراءة الملف باستخدام pandas أو openpyxl، تطبيق التعديلات المطلوبة بدقة، وحفظ التعديلات **نفسها** على نفس المسار (sys.argv[1]) دون تغيير اسمه أو إنشاء ملف جديد.`;
+    } else if (!isGenerationRequest && !hasExistingFile) {
+        // ✅ حالة خاصة: طلب تعديل ولكن لا يوجد ملف - نتعامل كتوليد جديد
+        console.log(`🆕 [Kernel] لا يوجد ملف موجود، سيتم التوليد من الصفر`);
+        fileName = `Alatheer_Report_${Date.now()}.xlsx`;
+        filePath = path.join(process.cwd(), fileName);
+        systemContent += `\n\n[تعليمات النظام]: لا يوجد ملف سابق، سيتم إنشاء ملف جديد.`;
     }
 
     // ✅ تعليمات إضافية للحفاظ على التنسيق
@@ -126,7 +141,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
         }
         if (!pythonMatch) {
-            // ✅ محاولة أخيرة: البحث عن أي كود بين ```
             pythonMatch = finalReplyText.match(/```([\s\S]*?)```/);
         }
 
@@ -136,11 +150,9 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             // ✅ إخفاء الكود عن المستخدم
             finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
             if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
-                // إزالة أي كتل كود متبقية
                 finalReplyText = finalReplyText.replace(/```[\s\S]*?```/g, "").trim();
             }
             
-            // ✅ إذا أصبح الرد فارغاً، ضع رسالة بديلة
             if (!finalReplyText) {
                 finalReplyText = "جاري تجهيز الملف يا شريكي...";
             }
@@ -164,18 +176,13 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                     fileBase64 = fs.readFileSync(filePath).toString("base64");
                     
                     // ✅ تخزين البصمة بعد النجاح
-                    if (extractedContent && !extractedContent.error) {
-                        fusionMemory.storeFileFingerprint(sessionId, filePath, extractedContent);
-                    } else {
-                        // محاولة استخراج بصمة من الملف المُنشأ
-                        try {
-                            const previewData = await extractPreviewAsync(filePath);
-                            if (previewData && !previewData.error) {
-                                fusionMemory.storeFileFingerprint(sessionId, filePath, previewData);
-                            }
-                        } catch (e) {
-                            console.warn("⚠️ [Kernel] فشل تخزين البصمة:", e.message);
+                    try {
+                        const previewData = await extractPreviewAsync(filePath);
+                        if (previewData && !previewData.error) {
+                            fusionMemory.storeFileFingerprint(sessionId, filePath, previewData);
                         }
+                    } catch (e) {
+                        console.warn("⚠️ [Kernel] فشل تخزين البصمة:", e.message);
                     }
                 } else {
                     const actualError = executionResult?.error || executionResult?.output || "خطأ منطقي في التنفيذ";
@@ -198,7 +205,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                             systemInstruction: systemContent
                         });
 
-                        // ✅ محاولة استخراج الكود المصحح
                         let newMatch = fixReply.match(/```python\s*\n([\s\S]*?)\n\s*```/);
                         if (!newMatch) {
                             newMatch = fixReply.match(/```python\s*([\s\S]*?)\s*```/);
@@ -219,7 +225,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                 }
             }
         } else {
-            // ✅ إذا لم يجد الكود، نضيف رسالة توضيحية
             console.warn("⚠️ [Kernel] لم يتم العثور على كود Python في رد Gemini");
             finalReplyText += `\n\n⚠️ طلبت عملية إكسل ولكن لم يُرجع النموذج كود بايثون للتنفيذ.`;
         }
@@ -237,4 +242,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         operations: [],
         execution: executionResult
     };
-}
+                                                            }
