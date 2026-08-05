@@ -29,14 +29,17 @@ export default async function handler(req, res) {
         let extractedContent = null;
         let finalFileName = fileName;
 
-        // ✅ التحقق: هل المستخدم طلب إنشاء ملف Excel؟
+        // ✅ التحقق: هل المستخدم طلب إنشاء ملف Excel جديد من الصفر؟
         const isExcelRequest = userContent.match(/إكسل|Excel|ملف\s*إكسل|جدول|spreadsheet/i);
-        const isNewFileRequest = userContent.match(/أنشئ|اعمل|عمل لي|generate|create|new\s*file/i);
+        const isNewFileRequest = userContent.match(/أنشئ|اعمل|عمل لي|generate|create|new\s*file|من الصفر/i);
 
+        // ✅ التحقق: هل المستخدم يطلب تطوير ملف موجود؟
+        const isModifyRequest = userContent.match(/طور|عدل|حسن|ضيف|أضف|تطوير|إضافة|add|update|modify/i);
+
+        // ✅ إذا كان طلب إنشاء ملف جديد (بدون ملف مرفق)
         if (isExcelRequest && isNewFileRequest && !fileData) {
             console.log("📊 [الأثير] تم اكتشاف طلب إنشاء ملف Excel جديد");
             
-            // ✅ نرسل الطلب إلى الـ orchestrator للحصول على كود Python
             const orchestratorInput = {
                 fileData: null,
                 fileName: null,
@@ -49,13 +52,11 @@ export default async function handler(req, res) {
 
             const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
             
-            // ✅ نستخرج كود Python من الرد
             const pythonCodeMatch = output?.reply?.match(/```python\n([\s\S]*?)```/);
             
             if (pythonCodeMatch) {
                 const pythonCode = pythonCodeMatch[1];
                 
-                // ✅ إنشاء مسار للملف الجديد
                 const generatedDir = path.join(__dirname, '../generated');
                 if (!fs.existsSync(generatedDir)) {
                     fs.mkdirSync(generatedDir, { recursive: true });
@@ -66,18 +67,13 @@ export default async function handler(req, res) {
                 
                 console.log(`🔧 [الأثير] تنفيذ كود Python لإنشاء ملف: ${newFilePath}`);
                 
-                // ✅ تنفيذ الكود
                 const result = await executeDynamicPython(pythonCode, newFilePath, true);
                 
                 if (result.success && fs.existsSync(newFilePath)) {
-                    // ✅ قراءة الملف وتحويله لـ Base64
                     const fileBuffer = fs.readFileSync(newFilePath);
                     const fileBase64 = fileBuffer.toString('base64');
-                    
-                    // ✅ رابط التحميل
                     const downloadUrl = `/generated/${newFileName}`;
                     
-                    // ✅ تخزين البصمة للملف المُنشأ
                     try {
                         const previewData = await extractPreviewAsync(newFilePath);
                         if (previewData && !previewData.error) {
@@ -103,7 +99,7 @@ export default async function handler(req, res) {
             }
         }
 
-        // ✅ معالجة الملفات المرفوعة (كالمعتاد)
+        // ✅ معالجة الملفات المرفوعة
         if (fileData && fileName) {
             const persistentDir = path.join(__dirname, '../persistent_uploads');
             if (!fs.existsSync(persistentDir)) fs.mkdirSync(persistentDir, { recursive: true });
@@ -125,7 +121,6 @@ export default async function handler(req, res) {
                 console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
             }
 
-            // ✅ استدعاء المعاينة من الجسر الجديد
             const previewData = await extractPreviewAsync(sovereignFilePath);
             if (!previewData.error) {
                 extractedContent = {
@@ -138,8 +133,6 @@ export default async function handler(req, res) {
                     }
                 };
                 console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح.`);
-                
-                // ✅ تخزين بصمة الملف في الذاكرة
                 fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
             } else {
                 console.warn(`⚠️ [الأثير Preview] فشلت المعاينة: ${previewData.error}`);
@@ -148,23 +141,27 @@ export default async function handler(req, res) {
 
         // ✅ المعالجة العادية عبر الـ orchestrator
         const orchestratorInput = {
-            fileData, fileName, filePath: sovereignFilePath, history, metadata, extractedContent
+            fileData, 
+            fileName: finalFileName, 
+            filePath: sovereignFilePath, 
+            history, 
+            metadata, 
+            extractedContent
         };
 
         const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
 
         let reply = output?.reply || output?.message || "تكرم عينك يا شريكي، أنجزت لك المطلوب.";
         let fileBase64 = output?.fileBase64 || null;
-        let returnedFileName = output?.fileName || fileName || "modified_file.xlsx";
+        let returnedFileName = output?.fileName || finalFileName || "modified_file.xlsx";
 
-        // ✅ التحقق مما إذا كان Kernel قد عدل الملف ولم يرسل Base64 بعد
+        // ✅ التحقق من الملف المعدل
         if (sovereignFilePath && fs.existsSync(sovereignFilePath) && !fileBase64 && output?.execution?.success) {
             try {
                 const fileBuffer = fs.readFileSync(sovereignFilePath);
                 fileBase64 = fileBuffer.toString('base64');
-                returnedFileName = `modified_${Date.now()}-${fileName}`;
+                returnedFileName = `modified_${Date.now()}-${fileName || 'file'}`;
                 
-                // ✅ تحديث البصمة بعد التعديل
                 try {
                     const previewData = await extractPreviewAsync(sovereignFilePath);
                     if (previewData && !previewData.error) {
@@ -193,4 +190,4 @@ export default async function handler(req, res) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-                                                                            }
+                }
