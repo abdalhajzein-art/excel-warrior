@@ -1,6 +1,6 @@
 """
-api/core/excel_preview.py – Sovereign Excel Engine (Preview, Schema & Safe Dynamic Modifier)
-⚡ استخراج المعاينة، تحليل المخطط ديناميكياً، وتنفيذ التعديلات البرمجية مع الحفاظ التام على التنسيقات، المخططات، والتنسيق الشرطي.
+api/core/excel_preview.py – Sovereign Excel Engine (Preview & Dynamic Modifier)
+⚡ استخراج المعاينة، تحليل المخطط ديناميكياً، وتنفيذ التعديلات البرمجية مع الحفاظ على التنسيقات.
 """
 
 import sys
@@ -66,20 +66,18 @@ def extract_sheet_preview(wb, sheet_name, max_rows=MAX_PREVIEW_ROWS):
 
 def execute_excel_operation(file_path, output_path, operation_type, target_keyword=None, options=None):
     """
-    محرك عام آمن لتنفيذ التعديلات (إضافة أعمدة، قوائم منسدلة، وتحديث البيانات)
-    مع حماية كاملة للمخططات والتنسيقات الشرطية في ملفات نظام الأثير.
+    محرك عام لتنفيذ التعديلات (مثل إضافة أعمدة، قوائم منسدلة، وتحديث البيانات) 
+    مع الاعتماد على الاكتشاف الذكي لصف الترويسة واستنساخ التنسيقات بدقة.
     """
     options = options or {}
-    
-    # 🛡️ تحميل الملف مع data_only=False لحماية المخططات والعناصر البرمجية والـ XML الداخلي
-    wb = openpyxl.load_workbook(file_path, data_only=False)
-    ws = wb.active
+    wb = openpyxl.load_workbook(file_path)
+    ws = wb.active  # أو يمكن تطويرها لتحديد الورقة عبر options["sheet_name"]
 
-    # 1. الاكتشاف الذكي لصف الترويسة والمخطط
+    # 1. الاستفادة من الاكتشاف الذكي للترويسة والمخطط
     header_row_idx, schema = find_header_row_and_schema(ws)
 
     if operation_type == "add_column_with_dropdown":
-        # البحث الديناميكي عن العمود المستهدف بناءً على الكلمة المفتاحية
+        # البحث الديناميكي عن العمود المستهدف بناءً على الكلمة المفتاحية في المخطط المكتشف
         col_idx = None
         for c_idx, h_val in schema.items():
             if target_keyword and target_keyword in h_val:
@@ -90,8 +88,6 @@ def execute_excel_operation(file_path, output_path, operation_type, target_keywo
             raise ValueError(f"لم يتم العثور على عمود مطابق لـ '{target_keyword}' في الترويسة المكتشفة.")
 
         target_col_idx = col_idx + 1
-        
-        # إدراج العمود (openpyxl يقوم بتحديث نطاقات المخططات والتنسيق الشرطي تلقائياً)
         ws.insert_cols(target_col_idx)
 
         # 2. إعداد ترويسة العمود الجديد ونسخ التنسيق تماماً من العمود المرجعي
@@ -130,15 +126,9 @@ def execute_excel_operation(file_path, output_path, operation_type, target_keywo
             if dv:
                 dv.add(cell)
 
-    elif operation_type == "update_cells":
-        # تحديث مباشر للخلايا للحفاظ على المخططات والتنسيقات
-        cell_updates = options.get("cell_updates", {})
-        for coord, val in cell_updates.items():
-            ws[coord] = val
-
     wb.save(output_path)
     wb.close()
-    return {"status": "success", "output": output_path, "message": "تم تنفيذ العملية بنجاح والحفاظ على بنية الملف والمخططات."}
+    return {"status": "success", "output": output_path, "message": "تم تنفيذ العملية بنجاح."}
 
 def main():
     if len(sys.argv) < 2:
@@ -147,7 +137,7 @@ def main():
 
     file_path = sys.argv[1]
     
-    # 🎯 الحالة الأولى: تنفيذ تعديل عند تمرير معامل ثانٍ بصيغة JSON
+    # 🎯 الحالة الأولى: إذا تم تمرير معامل ثاني (بيانات العملية بصيغة JSON) -> تنفيذ تعديل
     if len(sys.argv) >= 3:
         try:
             op_data = json.loads(sys.argv[2])
@@ -162,7 +152,7 @@ def main():
             print(json.dumps({"error": str(e)}, ensure_ascii=False))
         return
 
-    # 🔍 الحالة الثانية: المعاينة الافتراضية واستخراج المخطط
+    # 🔍 الحالة الثانية: المعاينة الافتراضية واستخراج المخطط (عند تمرير الملف وحده)
     wb = None
     try:
         wb = openpyxl.load_workbook(file_path, data_only=False)
@@ -184,4 +174,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
