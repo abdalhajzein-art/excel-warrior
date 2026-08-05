@@ -1,13 +1,13 @@
 /**
  * api/core/kernel.js – Sovereign Kernel (Simplified + Self-Correction)
- * يفصل بين الدردشة وتنفيذ سكربتات بايثون على الإكسل بشكل بسيط ومستقر.
+ * يفصل بين الدردشة وتنفيذ سكربتات بايثون على الإكسل مع وعي مكاني وتحقق ذاتي.
  */
 
+import fs from "fs";
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 import { executeDynamicPython } from "./dynamic_executor.js";
-import fs from "fs";
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const message = (rawMessage || "").trim();
@@ -28,9 +28,10 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     let fileContext = ctx.activeFileSummary || "";
     if (!fileContext && extractedContent && !extractedContent.error) {
-        const meta = extractedContent.metadata || {};
-        const text = extractedContent.text || "";
-        fileContext = `ملف: ${fileName}\nصفوف: ${meta.rows || 0}، أعمدة: ${meta.columns || 0}\nعينة:\n${text.slice(0, 5000)}`;
+        // نستخدم المخطط الذكي الجديد من المعالج المسبق
+        const schema = extractedContent.columns_schema || {};
+        const headerRow = extractedContent.detected_header_row || 1;
+        fileContext = `ملف: ${fileName}\nمؤشر صف العناوين: ${headerRow}\nالأعمدة المتوفرة: ${JSON.stringify(schema)}\n`;
     }
 
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
@@ -55,7 +56,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     let executionResult = null;
 
     try {
-        console.log("🧠 [Kernel] استدعاء النموذج...");
+        console.log("🧠 [Kernel] استدعاء النموذج للتحليل الأولي...");
 
         const rawReply = await geminiService.chat(conversationMessages, {
             fileName,
@@ -82,7 +83,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             let pythonCode = pythonMatch[1].trim();
             finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
 
-            const maxRetries = 2;
+            const maxRetries = 2; // محاولتان كحد أقصى لتوفير التوكنز
             let currentAttempt = 0;
             let isSuccess = false;
 
@@ -92,17 +93,22 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
                 executionResult = await executeDynamicPython(pythonCode, filePath);
 
-                if (executionResult && executionResult.success) {
+                // فحص الأخطاء البرمجية + الأخطاء المنطقية القادمة من التحقق الذاتي (Self-Verification)
+                const outputStr = (executionResult?.output || "").toLowerCase();
+                const hasLogicalError = outputStr.includes("error:") || outputStr.includes("valueerror") || outputStr.includes("exception");
+
+                if (executionResult && executionResult.success && !hasLogicalError) {
                     isSuccess = true;
-                    finalReplyText += `\n\n✅ تم تنفيذ السكربت على الملف بنجاح، والملف جاهز للتحميل.`;
+                    finalReplyText += `\n\n✅ تم التنفيذ والتحقق من صحة البيانات. الملف جاهز يا هندسة.`;
                     fileBase64 = fs.readFileSync(filePath).toString("base64");
                 } else {
-                    console.warn(`⚠️ فشل التنفيذ في المحاولة ${currentAttempt}:`, executionResult?.error);
+                    const actualError = executionResult?.error || executionResult?.output || "خطأ منطقي في التحقق الذاتي";
+                    console.warn(`⚠️ فشل التنفيذ أو التحقق في المحاولة ${currentAttempt}:`, actualError);
 
                     if (currentAttempt < maxRetries) {
                         const errorFeedbackPrompt =
-                            `حدث خطأ في تنفيذ سكربت بايثون السابق:\n\`\`\`text\n${executionResult?.error || "Unknown Error"}\n\`\`\`\n` +
-                            `رجاءً صحّح الكود وأرجع سكربت بايثون جديد داخل وسم \`\`\`python فقط.`;
+                            `الكود السابق واجه مشكلة أثناء التنفيذ أو التحقق الذاتي:\n\`\`\`text\n${actualError}\n\`\`\`\n` +
+                            `اكتشف الخطأ برمجياً (تأكد من استخدامك للبحث الديناميكي عن اسم العمود بدلاً من الفهرس الثابت). قم بتصحيح الكود وأرجع سكربت بايثون جديد وموثوق داخل وسم \`\`\`python فقط.`;
 
                         const correctionMessages = [
                             ...conversationMessages,
@@ -119,22 +125,22 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                         const newMatch = fixReply.match(/```python\s*([\s\S]*?)\s*```/);
                         if (newMatch) {
                             pythonCode = newMatch[1].trim();
-                            finalReplyText = fixReply.replace(/```python[\s\S]*?```/g, "").trim();
+                            // سيستمر في الحلقة للمحاولة الثانية
                         } else {
-                            break;
+                            break; // فشل النموذج في إرجاع كود للإصلاح
                         }
                     } else {
                         finalReplyText +=
-                            `\n\n❌ فشل التنفيذ بعد ${maxRetries} محاولات:\n\`\`\`text\n${executionResult?.error || "خطأ غير معروف"}\n\`\`\``;
+                            `\n\n❌ حاولت لكن واجهتني مشكلة بالتعديل:\n\`\`\`text\n${actualError.substring(0, 500)}\n\`\`\`\nشريكي، جرب توضح الطلب أكثر أو تتأكد من أسماء الأعمدة.`;
                     }
                 }
             }
         } else {
-            finalReplyText += `\n\n⚠️ طلبت تعديل على الملف لكن النموذج ما رجّع سكربت بايثون للتنفيذ. جرّب توضّح الطلب أكثر.`;
+            finalReplyText += `\n\n⚠️ طلبت تعديل على الملف لكن لم أتمكن من توليد السكربت. جرّب توضّح الطلب أكثر.`;
         }
     } catch (error) {
         console.error("❌ [Kernel Exception]:", error);
-        finalReplyText = `صار في خطأ تقني: ${error.message}`;
+        finalReplyText = `صار في خطأ تقني داخلي: ${error.message}`;
     }
 
     memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
@@ -147,3 +153,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         execution: executionResult
     };
 }
+
