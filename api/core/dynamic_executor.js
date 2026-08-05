@@ -19,6 +19,17 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
             return resolve({ success: false, error: "مسار الملف غير صالح." });
         }
 
+        // ✅ التحقق من صحة الكود
+        if (!pythonCode || pythonCode.trim().length === 0) {
+            return resolve({ success: false, error: "لا يوجد كود بايثون للتنفيذ." });
+        }
+
+        // ✅ التأكد من وجود المجلد
+        const dir = path.dirname(targetFilePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
         if (!isNewFile && !fs.existsSync(targetFilePath)) {
             return resolve({ success: false, error: "مسار الملف المراد تعديله غير موجود." });
         }
@@ -36,52 +47,100 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
                 fs.copyFileSync(targetFilePath, backupPath);
             }
 
-            // 2. ✅ لا نضيف sys.argv، نمرر المسار كـ argument مباشرة
-            // نعدل الكود قليلاً للتأكد من أن sys.argv[1] موجود
+            // ✅ تعديل الكود: نضمن أن sys.argv[1] موجود دائماً
+            // ✅ ونضيف catch للخطأ عشان ما يعلق السيرفر
             const safeCode = `
 import sys
+import traceback
+
+# ✅ التأكد من وجود المسار في argv
 if len(sys.argv) < 2:
     sys.argv.append('${targetFilePath}')
-${pythonCode}
+
+try:
+    # ✅ تنفيذ الكود الأصلي
+${pythonCode.split('\n').map(line => '    ' + line).join('\n')}
+    
+    # ✅ إذا وصلنا لهنا يعني نجحنا
+    print("SUCCESS: تم التنفيذ بنجاح ✓")
+
+except Exception as e:
+    # ✅ طباعة الخطأ بشكل واضح
+    print(f"ERROR: {str(e)}")
+    print(traceback.format_exc())
+    sys.exit(1)
 `;
 
             fs.writeFileSync(scriptPath, safeCode, "utf8");
+
+            console.log(`🔧 تنفيذ سكربت: ${scriptPath}`);
+            console.log(`📁 الملف المستهدف: ${targetFilePath}`);
 
             // 3. التنفيذ
             execFile(
                 "python3", 
                 [scriptPath, targetFilePath], 
-                { maxBuffer: 10 * 1024 * 1024 },
+                { maxBuffer: 50 * 1024 * 1024 }, // ✅ زيادة البافر للملفات الكبيرة
                 (error, stdout, stderr) => {
-                    if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
+                    // ✅ تنظيف الملف المؤقت
+                    if (fs.existsSync(scriptPath)) {
+                        try { fs.unlinkSync(scriptPath); } catch(e) {}
+                    }
+
+                    // ✅ طباعة المخرجات للتصحيح
+                    console.log("📤 stdout:", stdout);
+                    if (stderr) console.log("⚠️ stderr:", stderr);
 
                     if (error) {
                         console.error("❌ Python Error:", stderr || error.message);
 
+                        // ✅ استرجاع النسخة الاحتياطية
                         if (!isNewFile && fs.existsSync(backupPath)) {
                             fs.copyFileSync(backupPath, targetFilePath);
-                            fs.unlinkSync(backupPath);
+                            try { fs.unlinkSync(backupPath); } catch(e) {}
                         } else if (isNewFile && fs.existsSync(targetFilePath)) {
                             try { fs.unlinkSync(targetFilePath); } catch(e) {}
                         }
 
-                        return resolve({ success: false, error: stderr || error.message });
+                        return resolve({ 
+                            success: false, 
+                            error: stderr || error.message,
+                            output: stdout 
+                        });
                     }
 
+                    // ✅ تنظيف النسخة الاحتياطية
                     if (!isNewFile && fs.existsSync(backupPath)) {
-                        fs.unlinkSync(backupPath);
+                        try { fs.unlinkSync(backupPath); } catch(e) {}
                     }
 
-                    return resolve({ success: true, output: stdout });
+                    // ✅ التحقق من وجود الملف الناتج
+                    if (isNewFile && !fs.existsSync(targetFilePath)) {
+                        return resolve({ 
+                            success: false, 
+                            error: "لم يتم إنشاء الملف المطلوب",
+                            output: stdout 
+                        });
+                    }
+
+                    return resolve({ 
+                        success: true, 
+                        output: stdout,
+                        filePath: targetFilePath 
+                    });
                 }
             );
         } catch (err) {
             console.error("❌ Executor Exception:", err.message);
 
-            if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
+            if (fs.existsSync(scriptPath)) {
+                try { fs.unlinkSync(scriptPath); } catch(e) {}
+            }
             if (!isNewFile && fs.existsSync(backupPath)) {
-                fs.copyFileSync(backupPath, targetFilePath);
-                fs.unlinkSync(backupPath);
+                try {
+                    fs.copyFileSync(backupPath, targetFilePath);
+                    fs.unlinkSync(backupPath);
+                } catch(e) {}
             }
 
             return resolve({ success: false, error: err.message });
@@ -104,4 +163,4 @@ export async function extractPreviewAsync(filePath) {
         console.warn("⚠️ Preview Error:", error.message);
         return { error: error.message };
     }
-                 }
+}
