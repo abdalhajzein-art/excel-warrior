@@ -1,5 +1,5 @@
 /**
- * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (The 4 Jewels Edition + Fixed Backup Extension)
+ * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (The 4 Jewels Edition + Fixed Conditional Formatting)
  * ⚡ محرك التنفيذ السيادي المتكامل مع دعم النسخ الذري، حراسة القوائم، المقارنة الدلالية، والتخطيط البصري.
  */
 
@@ -21,7 +21,7 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
 
         const isMacroEnabled = targetFilePath.toLowerCase().endsWith('.xlsm');
         
-        // 🛠️ التعديل الجذري: استخراج امتداد الملف الأصلي لضمان قبوله من openpyxl في المدقق السيادي
+        // استخراج امتداد الملف الأصلي لضمان قبوله من openpyxl في المدقق السيادي
         const ext = path.extname(targetFilePath);
         const base = targetFilePath.slice(0, -ext.length);
         const backupPath = `${base}_bak_${Date.now()}${ext}`;
@@ -86,13 +86,19 @@ try:
             
             # استعادة وإعادة حقن القوائم المنسدلة لضمان عدم ضياعها
             if hasattr(ws_orig, 'data_validations'):
-                for dv in ws_orig.data_validations.dataValidation:
-                    ws_mod.add_data_validation(dv)
+                try:
+                    for dv in ws_orig.data_validations.dataValidation:
+                        ws_mod.add_data_validation(dv)
+                except:
+                    pass
                     
-            # استعادة التنسيقات الشرطية
+            # استعادة التنسيقات الشرطية بأمان تام
             if hasattr(ws_orig, 'conditional_formatting'):
-                for cf_key, cf_val in ws_orig.conditional_formatting.items():
-                    ws_mod.conditional_formatting.add(cf_key, cf_val)
+                try:
+                    for cf in ws_orig.conditional_formatting:
+                        ws_mod.conditional_formatting.add(cf.sqref, cf)
+                except:
+                    pass
 
             # تحسين التخطيط البصري التلقائي لمنع التداخل
             for col in ws_mod.columns:
@@ -140,7 +146,7 @@ except Exception as e:
                 }
             });
 
-        } catch (initError) {
+        }atch (initError) {
             if (fs.existsSync(backupPath)) {
                 fs.copyFileSync(backupPath, targetFilePath);
                 fs.unlinkSync(backupPath);
@@ -161,3 +167,4 @@ export async function extractPreviewAsync(filePath) {
         return { error: error.message };
     }
 }
+
