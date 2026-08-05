@@ -40,19 +40,25 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const excelActionRegex = /(ضيف|أضف|احذف|شيل|امسح|عدل|غيّر|حدث|نسّق|لوّن|دمج|فك دمج|معادلة|صيغة|عمود|أعمدة|صف|صفوف|خلية|خلايا|شيت|ورقة|أنشئ|ولد|صمم|اعمل|سوي|اطبع|جدول|تقرير)/i;
     const isExcelAction = excelActionRegex.test(message);
 
+    // 🛡️ [تعديل سيادي صارم]: التحقق الحاسم من وجود ملف حقيقي وتحديد نوع الطلب
+    const userExplicitlyWantsNew = /(ملف جديد|من الصفر|جديد كلياً|اصنع ملفاً جديداً)/i.test(message);
+    const hasExistingFile = filePath && fs.existsSync(filePath);
+
     // تحديد ما إذا كان الطلب "توليد من الصفر" (Greenfield) أو "تعديل"
-    const isGenerationRequest = /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message) && (!filePath || !fs.existsSync(filePath));
+    const isGenerationRequest = (!hasExistingFile) || (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message));
 
     let systemContent = SYSTEM_PROMPT;
     if (fileContext) {
         systemContent += `\n\n[سياق الملف الحالي]:\n${fileContext}`;
     }
 
-    if (isGenerationRequest && !filePath) {
+    if (isGenerationRequest && !hasExistingFile) {
         // إنشاء مسار افتراضي آمن للملف الجديد
         fileName = `Alatheer_Report_${Date.now()}.xlsx`;
         filePath = path.join(process.cwd(), fileName);
         systemContent += `\n\n[تعليمات النظام للتوليد]: المستخدم يطلب توليد ملف إكسل جديد كلياً. قم بكتابة كود بايثون متكامل باستخدام مكتبة openpyxl لإنشاء الملف، تعبئة البيانات، تنسيق الترويسة بلون مميز وخط غامق ومحاذاة مركزية، وحفظه حصراً في مسار الملف المستلم عبر sys.argv[1].`;
+    } else if (!isGenerationRequest && hasExistingFile) {
+        systemContent += `\n\n[تعليمات النظام للتعديل المباشر]: المستخدم يطلب تعديل الملف الحالي الموجود في مسار sys.argv[1]. يجب قراءة الملف باستخدام pandas أو openpyxl، تطبيق التعديلات المطلوبة بدقة، وحفظ التعديلات **نفسها** على نفس المسار (sys.argv[1]) دون تغيير اسمه أو إنشاء ملف جديد.`;
     }
 
     const conversationMessages = [
@@ -101,7 +107,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                 currentAttempt++;
                 console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (${isGenerationRequest ? 'توليد جديد' : 'تعديل'}) - محاولة ${currentAttempt}...`);
 
-                // إذا كان ملف جديد، نسمح للمتنفيذ بتجاوز فحص الوجود المسبق للنسخ الاحتياطي
                 executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest);
 
                 const outputStr = (executionResult?.output || "").toLowerCase();
