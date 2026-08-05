@@ -230,20 +230,79 @@ export async function handleSendMessage(renderCallbacks) {
         assistantMsgDiv.className = 'message ai';
         chatArea.appendChild(assistantMsgDiv);
 
+        // ✅ عرض النص مع التأثير
         await streamTextEffect(assistantMsgDiv, cleanedReply, 25, getIsGenerating);
 
         addCopyButtonToMessage(assistantMsgDiv, cleanedReply);
 
         let savedFileData = null;
 
-        if (data.fileBase64) {
+        // ✅ 1. معالجة الملف المُنشأ من الـ AI (حالة جديدة)
+        if (data.isFileGenerated && data.downloadUrl) {
+            const safeFileName = data.fileName || 'generated_file.xlsx';
+            
+            // ✅ إنشاء رابط التحميل
+            const downloadUrl = data.downloadUrl;
+            
+            savedFileData = {
+                downloadUrl: downloadUrl,
+                name: safeFileName,
+                isGenerated: true
+            };
+
+            // ✅ إضافة زر التحميل بشكل جميل
+            const downloadBtn = document.createElement('a');
+            downloadBtn.href = downloadUrl;
+            downloadBtn.download = safeFileName;
+            downloadBtn.className = 'alatheer-download-btn generated-file';
+            downloadBtn.innerHTML = `📥 تحميل الملف المُنشأ (${safeFileName})`;
+            downloadBtn.style.cssText = `
+                display: inline-block;
+                margin-top: 12px;
+                background: linear-gradient(135deg, #d4af37, #f5d76e);
+                color: #1a1a2e;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-weight: bold;
+                text-decoration: none;
+                border: none;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                box-shadow: 0 2px 10px rgba(212, 175, 55, 0.3);
+            `;
+            downloadBtn.addEventListener('mouseenter', () => {
+                downloadBtn.style.transform = 'scale(1.02)';
+                downloadBtn.style.boxShadow = '0 4px 20px rgba(212, 175, 55, 0.5)';
+            });
+            downloadBtn.addEventListener('mouseleave', () => {
+                downloadBtn.style.transform = 'scale(1)';
+                downloadBtn.style.boxShadow = '0 2px 10px rgba(212, 175, 55, 0.3)';
+            });
+            
+            assistantMsgDiv.appendChild(downloadBtn);
+            
+            // ✅ إضافة رسالة نجاح
+            const successMsg = document.createElement('div');
+            successMsg.style.cssText = `
+                margin-top: 8px;
+                color: #4CAF50;
+                font-size: 14px;
+                font-weight: bold;
+            `;
+            successMsg.innerHTML = '✅ تم إنشاء الملف بنجاح!';
+            assistantMsgDiv.appendChild(successMsg);
+        }
+
+        // ✅ 2. معالجة الملف المُعدل (حالة تعديل ملف موجود)
+        if (data.fileBase64 && !data.isFileGenerated) {
             const safeFileName = data.fileName || 'modified_file.xlsx';
             const fileDownloadUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${data.fileBase64}`;
             
             savedFileData = {
                 downloadUrl: fileDownloadUrl,
                 base64: data.fileBase64,
-                name: safeFileName
+                name: safeFileName,
+                isGenerated: false
             };
 
             const downloadBtn = document.createElement('a');
@@ -356,18 +415,34 @@ export function appendMessageToDOM(sender, text, fileData = null) {
         addCopyButtonToMessage(messageDiv, text);
     }
 
-    const downloadUrl = fileData?.downloadUrl || (fileData?.base64
-        ? `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${fileData.base64}`
-        : null);
-    
-    if (downloadUrl) {
+    // ✅ دعم روابط التحميل من السيرفر
+    if (fileData?.downloadUrl) {
         const downloadBtn = document.createElement('a');
-        downloadBtn.href = downloadUrl;
-        downloadBtn.download = fileData.name || 'modified_file.xlsx';
+        downloadBtn.href = fileData.downloadUrl;
+        downloadBtn.download = fileData.name || 'file.xlsx';
         downloadBtn.className = 'alatheer-download-btn';
-        downloadBtn.innerHTML = `📥 اضغط هنا لتحميل الملف الناتج (${fileData.name || 'modified_file.xlsx'})`;
+        
+        if (fileData.isGenerated) {
+            downloadBtn.innerHTML = `📥 تحميل الملف المُنشأ (${fileData.name || 'file.xlsx'})`;
+            downloadBtn.style.cssText = `
+                display: inline-block;
+                margin-top: 12px;
+                background: linear-gradient(135deg, #d4af37, #f5d76e);
+                color: #1a1a2e;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-weight: bold;
+                text-decoration: none;
+                border: none;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                box-shadow: 0 2px 10px rgba(212, 175, 55, 0.3);
+            `;
+        } else {
+            downloadBtn.innerHTML = `📥 اضغط هنا لتحميل الملف الناتج (${fileData.name || 'file.xlsx'})`;
+        }
         messageDiv.appendChild(downloadBtn);
     }
 
     chatArea.scrollTop = chatArea.scrollHeight;
-}
+            }
