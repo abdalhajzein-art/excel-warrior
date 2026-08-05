@@ -1,6 +1,6 @@
 /**
- * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (AutoFit Fixed Edition)
- * ⚡ محرك التنفيذ السيادي المتكامل مع النسخ الذري، حراسة القوائم، والتدقيق البصري الذكي.
+ * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (Stable Edition)
+ * ⚡ محرك التنفيذ السيادي المتكامل مع النسخ الذري، حراسة القوائم، والتخطيط البصري الذكي.
  */
 
 import fs from 'fs';
@@ -14,7 +14,7 @@ const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
 
 export async function executeDynamicPython(pythonCode, targetFilePath) {
-    return new Promise(async (resolve, reject) => {
+    return new Promise(async (resolve) => {
         if (!targetFilePath || !fs.existsSync(targetFilePath)) {
             return resolve({ success: false, error: "مسار الملف المستهدف غير موجود أو غير صالح يا هندسة." });
         }
@@ -29,11 +29,11 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
         const scriptPath = path.join(process.cwd(), scriptName);
 
         try {
-            // 🛡️ 1. النسخ الاحتياطي الذري الفوري (Atomic Snapshot)
+            // 🛡️ النسخ الاحتياطي الذري
             fs.copyFileSync(targetFilePath, backupPath);
             console.log(`🛡️ [Sovereign Guard] تم إنشاء نسخة احتياطية ذرية للملف: ${path.basename(backupPath)}`);
 
-            // حقن دعم الـ VBA تلقائياً إذا لزم الأمر
+            // حقن keep_vba تلقائياً
             let enhancedPythonCode = pythonCode;
             if (isMacroEnabled && !pythonCode.includes('keep_vba')) {
                 enhancedPythonCode = pythonCode.replace(
@@ -49,19 +49,20 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
 
                 if (error) {
                     console.error(`❌ [Dynamic Executor Error]:`, error.message);
-                    console.error(`❌ [Dynamic Executor Python Error Details]:`, stderr);
+                    console.error(`❌ [Python Error Details]:`, stderr);
 
                     if (fs.existsSync(backupPath)) {
                         fs.copyFileSync(backupPath, targetFilePath);
                         fs.unlinkSync(backupPath);
-                        console.log(`🔄 [Sovereign Guard] تم استعادة الملف الأصلي من النسخة الاحتياطية بنجاح إثر خطأ برمجي.`);
+                        console.log(`🔄 [Sovereign Guard] تم استعادة الملف الأصلي إثر خطأ برمجي.`);
                     }
+
                     return resolve({ success: false, error: stderr || error.message });
                 }
 
-                // 🔍 2. التدقيق السيادي مع AutoFit ذكي
+                // 🔍 المدقق السيادي
                 try {
-                    const sovereignValidatorScript = `
+                    const validatorScript = `
 import sys
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -75,7 +76,7 @@ try:
     wb_modified = openpyxl.load_workbook(modified_path, keep_vba=is_xlsm)
 
     if len(wb_modified.sheetnames) == 0:
-        raise Exception("الملف المعدل فارغ تماماً من أوراق العمل!")
+        raise Exception("الملف المعدل فارغ تماماً!")
 
     for sheetname in wb_backup.sheetnames:
         if sheetname in wb_modified.sheetnames:
@@ -98,16 +99,14 @@ try:
                 except:
                     pass
 
-            # AutoFit ذكي للأعمدة بدون تمدد مبالغ فيه
+            # AutoFit ذكي
             for col in ws_mod.columns:
                 try:
-                    # نقيّد القراءة على أول 20 صف فقط
                     values = [str(cell.value or '') for cell in col[:20]]
                     if not values:
                         continue
                     avg_len = sum(len(v) for v in values) / len(values)
                     col_letter = get_column_letter(col[0].column)
-                    # عرض منطقي بين 12 و 35
                     ws_mod.column_dimensions[col_letter].width = min(max(avg_len + 2, 12), 35)
                 except:
                     pass
@@ -119,24 +118,32 @@ except Exception as e:
     print(f"SOVEREIGN_ERROR: {str(e)}")
     sys.exit(1)
 `;
-                    const validatorPath = path.join(process.cwd(), `sovereign_validator_${Date.now()}.py`);
-                    fs.writeFileSync(validatorPath, sovereignValidatorScript, 'utf8');
+
+                    const validatorPath = path.join(process.cwd(), `validator_${Date.now()}.py`);
+                    fs.writeFileSync(validatorPath, validatorScript, 'utf8');
 
                     exec(`python3 "${validatorPath}" "${backupPath}" "${targetFilePath}"`, (valError, valStdout, valStderr) => {
                         if (fs.existsSync(validatorPath)) fs.unlinkSync(validatorPath);
 
-                        if (valError || not valStdout or "SOVEREIGN_VALIDATION_OK" not in valStdout):
-                            const valMsg = valStderr or valStdout or "فشل الفحص السيادي"
-                            console.warn("⚠️ [Sovereign Guard Warning] التدقيق السيادي كشف تلفاً وتم الاسترجاع:", valMsg)
+                        // ✔ إصلاح الشرط بالكامل (جافاسكربت صحيح)
+                        if (valError || !valStdout || !valStdout.includes("SOVEREIGN_VALIDATION_OK")) {
+                            const valMsg = valStderr || valStdout || "فشل الفحص السيادي";
+                            console.warn(`⚠️ [Sovereign Guard Warning] التدقيق السيادي كشف تلفاً:`, valMsg);
 
-                            if (fs.existsSync(backupPath)):
-                                fs.copyFileSync(backupPath, targetFilePath)
-                                fs.unlinkSync(backupPath)
-                            return resolve({ success: False, error: "فشل الفحص السيادي للملف: تم استعادة النسخة الأصلية الآمنة تلقائياً." })
+                            if (fs.existsSync(backupPath)) {
+                                fs.copyFileSync(backupPath, targetFilePath);
+                                fs.unlinkSync(backupPath);
+                            }
+
+                            return resolve({
+                                success: false,
+                                error: "فشل الفحص السيادي للملف: تم استعادة النسخة الأصلية."
+                            });
+                        }
 
                         if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
 
-                        console.log(`✅ [Alatheer Sovereign Master Success]: تمت معالجة الملف وتفعيل كافة الجواهر السيادية بنجاح تام.`);
+                        console.log(`✅ [Alatheer Sovereign Master Success]: تمت معالجة الملف بنجاح.`);
                         resolve({ success: true, output: stdout });
                     });
 
@@ -160,10 +167,12 @@ except Exception as e:
 export async function extractPreviewAsync(filePath) {
     const pythonPreviewPath = path.join(__dirname, 'excel_preview.py');
     try {
-        const { stdout } = await execFileAsync('python3', [pythonPreviewPath, filePath], { maxBuffer: 10 * 1024 * 1024 });
+        const { stdout } = await execFileAsync('python3', [pythonPreviewPath, filePath], {
+            maxBuffer: 10 * 1024 * 1024
+        });
         return JSON.parse(stdout);
     } catch (error) {
         console.warn("⚠️ Preview Engine Error:", error.message);
         return { error: error.message };
     }
-            }
+    }
