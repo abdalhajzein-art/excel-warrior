@@ -68,18 +68,25 @@ def main():
         return
 
     file_path = sys.argv[1]
-
+    wb = None
+    
     try:
-        with openpyxl.load_workbook(file_path, data_only=False) as wb:
-            output = {
-                "file": file_path,
-                "sheets_count": len(wb.sheetnames),
-                "sheets": wb.sheetnames,
-                "previews": [extract_sheet_preview(wb, sheet) for sheet in wb.sheetnames]
-            }
-            print(json.dumps(output, ensure_ascii=False))
+        wb = openpyxl.load_workbook(file_path, data_only=False)
+        output = {
+            "file": file_path,
+            "sheets_count": len(wb.sheetnames),
+            "sheets": wb.sheetnames,
+            "previews": [extract_sheet_preview(wb, sheet) for sheet in wb.sheetnames]
+        }
+        print(json.dumps(output, ensure_ascii=False))
     except Exception as e:
         print(json.dumps({"error": str(e)}, ensure_ascii=False))
+    finally:
+        if wb:
+            try:
+                wb.close()
+            except:
+                pass
 
 if __name__ == "__main__":
     main()
