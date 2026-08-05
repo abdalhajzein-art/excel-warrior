@@ -1,6 +1,6 @@
 """
 api/core/excel_preview.py – Sovereign Excel Engine (Preview, Dynamic Modifier & Greenfield Generator)
-⚡ استخراج المعاينة، تحليل المخطط ديناميكياً، تنفيذ التعديلات، وتوليد الملفات الجديدة من الصفر.
+⚡ استخراج المعاينة، تحليل المخطط ديناميكياً، تنفيذ التعديلات، وتوليد الملفات الجديدة من الصفر بمعمارية RTL السيادية.
 """
 
 import sys
@@ -66,13 +66,16 @@ def extract_sheet_preview(wb, sheet_name, max_rows=MAX_PREVIEW_ROWS):
 
 def generate_new_excel_file(output_path, sheet_name, headers, rows_data):
     """
-    توليد ملف إكسل جديد كلياً من الصفر مع تنسيق احترافي للترويسة، المحاذاة التلقائية، والحدود.
+    توليد ملف إكسل جديد كلياً من الصفر بمعمارية RTL، بدون فراغات علوية، ترويسة من الصف الأول، وتجميد الألواح.
     """
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = sheet_name
 
-    # 1. إعداد ترويسة احترافية
+    # 🌐 تفعيل اتجاه ورقة العمل من اليمين إلى اليسار (RTL) لدعم اللغة العربية بشكل سيادي
+    ws.sheet_view.rightToLeft = True
+
+    # 1. إعداد ترويسة احترافية تبدأ مباشرة من الصف الأول
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     center_alignment = Alignment(horizontal="center", vertical="center")
@@ -91,7 +94,7 @@ def generate_new_excel_file(output_path, sheet_name, headers, rows_data):
         cell.alignment = center_alignment
         cell.border = thin_border
 
-    # 2. إدخال بيانات الصفوف وتنسيقها
+    # 2. إدخال بيانات الصفوف وتنسيقها ابتداءً من الصف الثاني
     data_font = Font(name="Calibri", size=11)
     for r_idx, row_data in enumerate(rows_data, start=2):
         for c_idx, val in enumerate(row_data, start=1):
@@ -100,15 +103,18 @@ def generate_new_excel_file(output_path, sheet_name, headers, rows_data):
             cell.alignment = center_alignment
             cell.border = thin_border
 
-    # 3. ضبط عرض الأعمدة تلقائياً لمنع اقتطاع النصوص
+    # 3. تجميد صف الترويسة العلوي لتسهيل التمرير
+    ws.freeze_panes = "A2"
+
+    # 4. ضبط عرض الأعمدة تلقائياً لمنع اقتطاع النصوص
     for col in ws.columns:
         max_len = max(len(str(cell.value or '')) for cell in col)
         col_letter = openpyxl.utils.get_column_letter(col[0].column)
-        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+        ws.column_dimensions[col_letter].width = max(max_len + 5, 14)
 
     wb.save(output_path)
     wb.close()
-    return {"status": "success", "output": output_path, "message": "تم توليد الملف بنجاح من الصفر."}
+    return {"status": "success", "output": output_path, "message": "تم توليد الملف بنجاح بمعمارية RTL وتنسيق الترويسة."}
 
 def execute_excel_operation(file_path, output_path, operation_type, target_keyword=None, options=None):
     """
@@ -223,3 +229,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
