@@ -1,10 +1,10 @@
 /**
- * api/core/dynamic_executor.js – Sovereign Minimal Edition
- * ⚡ تنفيذ سكربت بايثون على ملف إكسل مع نسخ احتياطي واستعادة عند الخطأ.
+ * api/core/dynamic_executor.js – Sovereign Minimal Edition (Optimized)
+ * ⚡ تنفيذ سكربت بايثون على ملف إكسل مع نسخ احتياطي، استعادة عند الخطأ، وحماية من ثغرات الحقن.
  */
 
 import fs from "fs";
-import { exec, execFile } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -27,24 +27,25 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
         const scriptPath = path.join(process.cwd(), scriptName);
 
         try {
-            // نسخ احتياطي بسيط
+            // 1. أخذ نسخة احتياطية (لحماية الملف الأصلي)
             fs.copyFileSync(targetFilePath, backupPath);
 
-            // كتابة سكربت بايثون
+            // 2. كتابة سكربت بايثون المؤقت
             fs.writeFileSync(scriptPath, pythonCode, "utf8");
 
-            // تنفيذ بايثون
-            exec(
-                `python3 "${scriptPath}" "${targetFilePath}"`,
-                { maxBuffer: 10 * 1024 * 1024 },
+            // 3. التنفيذ الآمن باستخدام execFile بدلاً من exec
+            execFile(
+                "python3", 
+                [scriptPath, targetFilePath], 
+                { maxBuffer: 10 * 1024 * 1024 }, // 10 ميغابايت لمنع توقف السكربتات ذات المخرجات الطويلة
                 (error, stdout, stderr) => {
-                    // حذف السكربت المؤقت
+                    // تنظيف: حذف السكربت المؤقت فور انتهاء التنفيذ
                     if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
 
                     if (error) {
                         console.error("❌ Python Error:", stderr || error.message);
 
-                        // استعادة النسخة الأصلية
+                        // التراجع (Rollback): استعادة النسخة الأصلية إذا فشل بايثون
                         if (fs.existsSync(backupPath)) {
                             fs.copyFileSync(backupPath, targetFilePath);
                             fs.unlinkSync(backupPath);
@@ -53,7 +54,7 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
                         return resolve({ success: false, error: stderr || error.message });
                     }
 
-                    // حذف النسخة الاحتياطية بعد نجاح التنفيذ
+                    // نجاح: حذف النسخة الاحتياطية وتأكيد التعديل
                     if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
 
                     return resolve({ success: true, output: stdout });
@@ -62,6 +63,8 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
         } catch (err) {
             console.error("❌ Executor Exception:", err.message);
 
+            // تنظيف في حال حدوث استثناء (Exception) مفاجئ
+            if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
             if (fs.existsSync(backupPath)) {
                 fs.copyFileSync(backupPath, targetFilePath);
                 fs.unlinkSync(backupPath);
@@ -75,12 +78,18 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
 export async function extractPreviewAsync(filePath) {
     const pythonPreviewPath = path.join(__dirname, "excel_preview.py");
     try {
+        // التنفيذ الآمن والمباشر
         const { stdout } = await execFileAsync("python3", [pythonPreviewPath, filePath], {
             maxBuffer: 10 * 1024 * 1024
         });
-        return JSON.parse(stdout);
+        
+        // محاولة استخراج JSON فقط في حال قام بايثون بطباعة تحذيرات إضافية
+        const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+        const cleanStdout = jsonMatch ? jsonMatch[0] : stdout;
+
+        return JSON.parse(cleanStdout);
     } catch (error) {
         console.warn("⚠️ Preview Error:", error.message);
         return { error: error.message };
     }
-                                                                 }
+}
