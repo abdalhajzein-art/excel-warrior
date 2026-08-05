@@ -1,12 +1,12 @@
 /**
- * api/core/kernel.js – Alatheer Sovereign Kernel
- * ✅ الاعتماد على التنفيذ الديناميكي (Zero-Middleman Architecture)
+ * api/core/kernel.js – Alatheer Sovereign Kernel (Self-Correction Edition)
+ * ✅ الاعتماد على التنفيذ الديناميكي وحلقة التصحيح الذاتي المتقدمة.
  */
 
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
-import { executeDynamicPython } from "./dynamic_executor.js"; // الجسر الجديد!
+import { executeDynamicPython } from "./dynamic_executor.js";
 import fs from "fs";
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
@@ -43,33 +43,71 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     try {
         console.log(`🧠 [Kernel] معالجة الطلب في جيميني...`);
-        const rawReply = await geminiService.chat(conversationMessages, { fileName, extractedContent, systemInstruction: systemContent });
+        let rawReply = await geminiService.chat(conversationMessages, { fileName, extractedContent, systemInstruction: systemContent });
         finalReplyText = rawReply || "تم يا شريكي.";
 
-        // ✅ البحث عن كود بايثون بدلاً من JSON
-        const pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
+        // ✅ البحث عن كود بايثون
+        let pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
 
         if (pythonMatch && filePath && fs.existsSync(filePath)) {
-            const pythonCode = pythonMatch[1].trim();
+            let pythonCode = pythonMatch[1].trim();
             
-            // إزالة بلوك الكود من الرد حتى لا يظهر للمستخدم
+            // إزالة بلوك الكود من الرد الأساسي للمستخدم
             finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
             
-            console.log(`⚡ [Kernel] تم استخراج سكربت بايثون ديناميكي، جاري التنفيذ...`);
-            executionResult = await executeDynamicPython(pythonCode, filePath);
-            
-            if (executionResult && executionResult.success) {
-                finalReplyText += `\n\n✅ تم تنفيذ السكربت على الملف بنجاح يا شريكي، والملف جاهز للتحميل!`;
-                fileBase64 = fs.readFileSync(filePath).toString("base64");
-            } else {
-                finalReplyText += `\n\n❌ **فشل التنفيذ:** \n\`\`\`text\n${executionResult?.error || 'خطأ غير معروف'}\n\`\`\``;
-                console.error("❌ [Execution Error]:", executionResult?.error);
+            // 🔄 حلقة التصحيح الذاتي (Self-Correction Loop - ماكس محاولتان)
+            const maxRetries = 2;
+            let currentAttempt = 0;
+            let isSuccess = false;
+
+            while (currentAttempt < maxRetries && !isSuccess) {
+                currentAttempt++;
+                console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (محاولة رقم ${currentAttempt})...`);
+                
+                executionResult = await executeDynamicPython(pythonCode, filePath);
+
+                if (executionResult && executionResult.success) {
+                    isSuccess = true;
+                    console.log(`✅ [Kernel] نجح التنفيذ في المحاولة ${currentAttempt}`);
+                    finalReplyText += `\n\n✅ تم تنفيذ السكربت على الملف بنجاح يا هندسة، والملف جاهز للتحميل!`;
+                    fileBase64 = fs.readFileSync(filePath).toString("base64");
+                } else {
+                    console.warn(`⚠️ [Kernel Warning] فشل التنفيذ في المحاولة ${currentAttempt}:`, executionResult?.error);
+
+                    if (currentAttempt < maxRetries) {
+                        console.log(`🔄 [Kernel Self-Correction] إرسال الخطأ إلى جيميني للإصلاح التلقائي...`);
+                        
+                        const errorFeedbackPrompt = `حدث خطأ تقني في تنفيذ سكربت بايثون السابق:\n\`\`\`text\n${executionResult.error}\n\`\`\`\nالرجاء تحليل الخطأ، تصحيح الكود البرمجي، وإرجاع سكربت بايثون جديد وكامل ومصحح حصراً داخل وسم python.`;
+
+                        // توسيع سياق المحادثة مؤقتاً لتنبيه النموذج بالخطأ
+                        const correctionMessages = [
+                            ...conversationMessages,
+                            { role: "assistant", content: pythonMatch[0] },
+                            { role: "user", content: errorFeedbackPrompt }
+                        ];
+
+                        const fixReply = await geminiService.chat(correctionMessages, { fileName, extractedContent, systemInstruction: systemContent });
+                        const newMatch = fixReply.match(/```python\s*([\s\S]*?)\s*```/);
+
+                        if (newMatch) {
+                            pythonCode = newMatch[1].trim();
+                            // تحديث نص الرد ليكون متوافقاً مع الإصلاح الأخير
+                            finalReplyText = fixReply.replace(/```python[\s\S]*?```/g, "").trim();
+                        } else {
+                            break; // إذا لم يُرجع النموذج كوداً جديداً، نخرج من الحلقة
+                        }
+                    } else {
+                        // استنفاد المحاولات
+                        finalReplyText += `\n\n❌ **فشل التنفيذ بعد ${maxRetries} محاولات تصحيح:** \n\`\`\`text\n${executionResult?.error || 'خطأ غير معروف'}\n\`\`\``;
+                        console.error("❌ [Kernel Critical Error]: فشل التنفيذ النهائي.");
+                    }
+                }
             }
         }
 
     } catch (error) {
-        console.error("❌ [Kernel] خطأ:", error);
-        finalReplyText = `معليش يا شريكي، صار في خطأ بالاتصال: ${error.message}`;
+        console.error("❌ [Kernel Exception]:", error);
+        finalReplyText = `معليش يا شريكي، صار في خطأ تقني بالاتصال: ${error.message}`;
     }
 
     memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
