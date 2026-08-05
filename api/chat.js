@@ -4,7 +4,7 @@
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
-import { extractPreviewAsync } from "./core/dynamic_executor.js";
+import { extractPreviewAsync, executeDynamicPython } from "./core/dynamic_executor.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -27,6 +27,71 @@ export default async function handler(req, res) {
         let extractedContent = null;
         let finalFileName = fileName;
 
+        // ✅ التحقق: هل المستخدم طلب إنشاء ملف Excel؟
+        const isExcelRequest = userContent.match(/إكسل|Excel|ملف\s*إكسل|جدول|spreadsheet/i);
+        const isNewFileRequest = userContent.match(/أنشئ|اعمل|عمل لي|generate|create|new\s*file/i);
+
+        if (isExcelRequest && isNewFileRequest && !fileData) {
+            console.log("📊 [الأثير] تم اكتشاف طلب إنشاء ملف Excel جديد");
+            
+            // ✅ نرسل الطلب إلى الـ orchestrator للحصول على كود Python
+            const orchestratorInput = {
+                fileData: null,
+                fileName: null,
+                filePath: null,
+                history,
+                metadata,
+                extractedContent: null,
+                isNewExcelRequest: true // ✅ علامة جديدة
+            };
+
+            const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
+            
+            // ✅ نستخرج كود Python من الرد
+            const pythonCodeMatch = output?.reply?.match(/```python\n([\s\S]*?)```/);
+            
+            if (pythonCodeMatch) {
+                const pythonCode = pythonCodeMatch[1];
+                
+                // ✅ إنشاء مسار للملف الجديد
+                const generatedDir = path.join(__dirname, '../generated');
+                if (!fs.existsSync(generatedDir)) {
+                    fs.mkdirSync(generatedDir, { recursive: true });
+                }
+                
+                const newFileName = `excel_${Date.now()}.xlsx`;
+                const newFilePath = path.join(generatedDir, newFileName);
+                
+                console.log(`🔧 [الأثير] تنفيذ كود Python لإنشاء ملف: ${newFilePath}`);
+                
+                // ✅ تنفيذ الكود
+                const result = await executeDynamicPython(pythonCode, newFilePath, true);
+                
+                if (result.success && fs.existsSync(newFilePath)) {
+                    // ✅ قراءة الملف وتحويله لـ Base64
+                    const fileBuffer = fs.readFileSync(newFilePath);
+                    const fileBase64 = fileBuffer.toString('base64');
+                    
+                    // ✅ رابط التحميل
+                    const downloadUrl = `/generated/${newFileName}`;
+                    
+                    return res.status(200).json({
+                        reply: `✅ **تم إنشاء ملف Excel بنجاح يا هندسة!**\n\n📥 [اضغط هنا لتحميل الملف](${downloadUrl})\n\n📁 اسم الملف: ${newFileName}`,
+                        fileBase64: fileBase64,
+                        fileName: newFileName,
+                        downloadUrl: downloadUrl,
+                        isFileGenerated: true
+                    });
+                } else {
+                    return res.status(200).json({
+                        reply: `❌ **فشل إنشاء الملف**: ${result.error || "خطأ غير معروف"}\n\n${output?.reply || ""}`,
+                        isFileGenerated: false
+                    });
+                }
+            }
+        }
+
+        // ✅ معالجة الملفات المرفوعة (كالمعتاد)
         if (fileData && fileName) {
             const persistentDir = path.join(__dirname, '../persistent_uploads');
             if (!fs.existsSync(persistentDir)) fs.mkdirSync(persistentDir, { recursive: true });
@@ -66,6 +131,7 @@ export default async function handler(req, res) {
             }
         }
 
+        // ✅ المعالجة العادية عبر الـ orchestrator
         const orchestratorInput = {
             fileData, fileName, filePath: sovereignFilePath, history, metadata, extractedContent
         };
@@ -76,7 +142,7 @@ export default async function handler(req, res) {
         let fileBase64 = output?.fileBase64 || null;
         let returnedFileName = output?.fileName || fileName || "modified_file.xlsx";
 
-        // التحقق مما إذا كان Kernel قد عدل الملف ولم يرسل Base64 بعد
+        // ✅ التحقق مما إذا كان Kernel قد عدل الملف ولم يرسل Base64 بعد
         if (sovereignFilePath && fs.existsSync(sovereignFilePath) && !fileBase64 && output?.execution?.success) {
             try {
                 const fileBuffer = fs.readFileSync(sovereignFilePath);
@@ -102,5 +168,4 @@ export default async function handler(req, res) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-}
-
+                        }
