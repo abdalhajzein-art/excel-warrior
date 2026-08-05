@@ -1,6 +1,6 @@
 /**
- * api/core/kernel.js – Alatheer Sovereign Kernel (Dual-Mode + Self-Correction)
- * ✅ يفصل بين وضع الدردشة ووضع تنفيذ سكربتات بايثون على الإكسل.
+ * api/core/kernel.js – Sovereign Kernel (Simplified + Self-Correction)
+ * يفصل بين الدردشة وتنفيذ سكربتات بايثون على الإكسل بشكل بسيط ومستقر.
  */
 
 import geminiService from "../geminiService.js";
@@ -13,7 +13,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const message = (rawMessage || "").trim();
     if (!message) {
         return {
-            reply: "هلا والله يا شريكي... آمرني، شو عنا شغل اليوم؟",
+            reply: "هلا يا شريكي... آمرني.",
             fileBase64: null,
             fileName: null,
             operations: [],
@@ -26,32 +26,28 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const fileName = ctx.fileName || activeFile?.fileName || "الملف النشط";
     const filePath = ctx.filePath || activeFile?.filePath || null;
 
-    // 🧠 سياق الملف (لما يكون في ملف فعّال)
     let fileContext = ctx.activeFileSummary || "";
     if (!fileContext && extractedContent && !extractedContent.error) {
         const meta = extractedContent.metadata || {};
         const text = extractedContent.text || "";
-        fileContext = `📄 **معلومات الملف:** [${fileName}]\n📊 **الأبعاد:** ${meta.rows || 0} صف، ${meta.columns || 0} عمود.\n📝 **عينة:**\n${text.slice(0, 25000)}`;
+        fileContext = `ملف: ${fileName}\nصفوف: ${meta.rows || 0}، أعمدة: ${meta.columns || 0}\nعينة:\n${text.slice(0, 5000)}`;
     }
 
-    // 🧠 تاريخ المحادثة
-    const history = Array.isArray(ctx.history) ? ctx.history.slice(-30) : [];
+    const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
 
-    // 🧠 Detector بسيط لتمييز طلبات تعديل الإكسل عن الدردشة
     const excelModificationRegex =
-        /(ضيف|أضف|احذف|شيل|امسح|عدل|غيّر|حدث|نسّق|لوّن|دمج|فك دمج|pivot|فلتر|معادلة|صيغة|عمود|أعمدة|صف|صفوف|خلية|خلايا|شيت|ورقة)/i;
+        /(ضيف|أضف|احذف|شيل|امسح|عدل|غيّر|حدث|نسّق|لوّن|دمج|فك دمج|معادلة|صيغة|عمود|أعمدة|صف|صفوف|خلية|خلايا|شيت|ورقة)/i;
     const isExcelModification = excelModificationRegex.test(message);
 
-    // 🧠 بناء systemContent مع سياق الملف
     let systemContent = SYSTEM_PROMPT;
     if (fileContext) {
-        systemContent += `\n\n[سياق الملف الحالي للرجوع إليه]:\n${fileContext}`;
+        systemContent += `\n\n[سياق الملف الحالي]:\n${fileContext}`;
     }
 
     const conversationMessages = [
         { role: "system", content: systemContent },
         ...history.map((h) => ({ role: h.role, content: h.content })),
-        { role: "user", content: message },
+        { role: "user", content: message }
     ];
 
     let finalReplyText = "";
@@ -59,10 +55,9 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     let executionResult = null;
 
     try {
-        console.log(`🧠 [Kernel] معالجة الطلب في جيميني...`);
+        console.log("🧠 [Kernel] استدعاء النموذج...");
 
-        // 🧠 استدعاء النموذج
-        let rawReply = await geminiService.chat(conversationMessages, {
+        const rawReply = await geminiService.chat(conversationMessages, {
             fileName,
             extractedContent,
             systemInstruction: systemContent
@@ -70,9 +65,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
         finalReplyText = rawReply || "تم يا شريكي.";
 
-        // إذا الطلب **مو تعديل إكسل** → نعتبره دردشة/تحليل نصي ونرجّع الرد كما هو
         if (!isExcelModification || !filePath || !fs.existsSync(filePath)) {
-            // ما مندوّر على بايثون، وما مننفّذ شي
             memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
             return {
                 reply: finalReplyText,
@@ -83,40 +76,33 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             };
         }
 
-        // إذا الطلب تعديل إكسل → نبحث عن سكربت بايثون وننفّذه
         let pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
 
         if (pythonMatch) {
             let pythonCode = pythonMatch[1].trim();
-
-            // إزالة بلوك الكود من الرد الظاهر للمستخدم
             finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
 
-            // 🔄 حلقة التصحيح الذاتي (محاولتان كحد أقصى)
             const maxRetries = 2;
             let currentAttempt = 0;
             let isSuccess = false;
 
             while (currentAttempt < maxRetries && !isSuccess) {
                 currentAttempt++;
-                console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (محاولة رقم ${currentAttempt})...`);
+                console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (محاولة ${currentAttempt})...`);
 
                 executionResult = await executeDynamicPython(pythonCode, filePath);
 
                 if (executionResult && executionResult.success) {
                     isSuccess = true;
-                    console.log(`✅ [Kernel] نجح التنفيذ في المحاولة ${currentAttempt}`);
-                    finalReplyText += `\n\n✅ تم تنفيذ السكربت على الملف بنجاح يا هندسة، والملف جاهز للتحميل!`;
+                    finalReplyText += `\n\n✅ تم تنفيذ السكربت على الملف بنجاح، والملف جاهز للتحميل.`;
                     fileBase64 = fs.readFileSync(filePath).toString("base64");
                 } else {
-                    console.warn(`⚠️ [Kernel Warning] فشل التنفيذ في المحاولة ${currentAttempt}:`, executionResult?.error);
+                    console.warn(`⚠️ فشل التنفيذ في المحاولة ${currentAttempt}:`, executionResult?.error);
 
                     if (currentAttempt < maxRetries) {
-                        console.log(`🔄 [Kernel Self-Correction] إرسال الخطأ إلى جيميني للإصلاح التلقائي...`);
-
                         const errorFeedbackPrompt =
-                            `حدث خطأ تقني في تنفيذ سكربت بايثون السابق:\n\`\`\`text\n${executionResult?.error || "Unknown Error"}\n\`\`\`\n` +
-                            `الرجاء تحليل الخطأ، تصحيح الكود البرمجي، وإرجاع سكربت بايثون جديد وكامل ومصحح حصراً داخل وسم python.`;
+                            `حدث خطأ في تنفيذ سكربت بايثون السابق:\n\`\`\`text\n${executionResult?.error || "Unknown Error"}\n\`\`\`\n` +
+                            `رجاءً صحّح الكود وأرجع سكربت بايثون جديد داخل وسم \`\`\`python فقط.`;
 
                         const correctionMessages = [
                             ...conversationMessages,
@@ -139,21 +125,16 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                         }
                     } else {
                         finalReplyText +=
-                            `\n\n❌ **فشل التنفيذ بعد ${maxRetries} محاولات تصحيح:** \n` +
-                            `\`\`\`text\n${executionResult?.error || "خطأ غير معروف"}\n\`\`\``;
-                        console.error("❌ [Kernel Critical Error]: فشل التنفيذ النهائي.");
+                            `\n\n❌ فشل التنفيذ بعد ${maxRetries} محاولات:\n\`\`\`text\n${executionResult?.error || "خطأ غير معروف"}\n\`\`\``;
                     }
                 }
             }
         } else {
-            // طلب تعديل، لكن النموذج ما رجّع سكربت بايثون
-            console.warn("⚠️ [Kernel] طلب تعديل إكسل لكن النموذج لم يرجّع سكربت بايثون.");
-            finalReplyText += `\n\n⚠️ يا هندسة، شكلك طلبت تعديل على الملف بس النموذج ما رجّع سكربت بايثون لتنفيذه. جرّب توضّح الطلب أكثر.`;
+            finalReplyText += `\n\n⚠️ طلبت تعديل على الملف لكن النموذج ما رجّع سكربت بايثون للتنفيذ. جرّب توضّح الطلب أكثر.`;
         }
-
     } catch (error) {
         console.error("❌ [Kernel Exception]:", error);
-        finalReplyText = `معليش يا شريكي، صار في خطأ تقني بالاتصال: ${error.message}`;
+        finalReplyText = `صار في خطأ تقني: ${error.message}`;
     }
 
     memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
@@ -165,4 +146,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         operations: [],
         execution: executionResult
     };
-    }
+}
