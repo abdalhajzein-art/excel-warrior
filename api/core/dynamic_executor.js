@@ -1,5 +1,5 @@
 /**
- * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (The 4 Jewels Edition + Detailed Stderr)
+ * api/core/dynamic_executor.js – Alatheer Master Sovereign Engine (The 4 Jewels Edition + Fixed Backup Extension)
  * ⚡ محرك التنفيذ السيادي المتكامل مع دعم النسخ الذري، حراسة القوائم، المقارنة الدلالية، والتخطيط البصري.
  */
 
@@ -20,7 +20,12 @@ export async function executeDynamicPython(pythonCode, targetFilePath) {
         }
 
         const isMacroEnabled = targetFilePath.toLowerCase().endsWith('.xlsm');
-        const backupPath = `${targetFilePath}.bak_${Date.now()}`;
+        
+        // 🛠️ التعديل الجذري: استخراج امتداد الملف الأصلي لضمان قبوله من openpyxl في المدقق السيادي
+        const ext = path.extname(targetFilePath);
+        const base = targetFilePath.slice(0, -ext.length);
+        const backupPath = `${base}_bak_${Date.now()}${ext}`;
+
         const scriptName = `temp_script_${Date.now()}_${Math.floor(Math.random() * 1000)}.py`;
         const scriptPath = path.join(process.cwd(), scriptName);
 
