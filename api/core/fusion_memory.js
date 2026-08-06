@@ -1,6 +1,6 @@
 /**
  * api/core/fusion_memory.js – Sovereign Memory Fusion (Sovereign Edition)
- * ذاكرة سياقية خفيفة، دقيقة، بدون نوايا، بدون حماية، بدون طبقات زائدة.
+ * ذاكرة سياقية سيادية: تمسك الملف الحالي، العملية، وضع الجلسة، والنية، فوق التاريخ العادي.
  */
 
 import memory from "./memory.js";
@@ -16,23 +16,45 @@ export default {
         userProfile: null,
         lastTopics: [],
         tags: [],
-        fileFingerprint: null
+        fileFingerprint: null,
+        fileFingerprintText: null,
+        currentFile: null,
+        currentOperation: null,
+        sessionMode: "idle",
+        intent: null,
+        contextDrift: false
       };
     }
 
-    const history = session.chat.history || [];
+    const history = session.chat?.history || [];
     const recentHistory = history.slice(-30);
+
     const lastTopics = extractTopics(recentHistory);
     const tags = extractTags(recentHistory);
-    const userProfile = session.userProfile || null;
-    const fileFingerprint = session.fileFingerprint || null;
+
+    const intent = detectIntent(recentHistory);
+    const contextDrift = detectContextDrift({
+      currentOperation: session.currentOperation || null,
+      intent
+    });
+
+    // تحديث النية داخل الجلسة
+    memory.updateSession(sessionId, { intent });
 
     return {
       history: recentHistory,
-      userProfile,
+      userProfile: session.userProfile || null,
       lastTopics,
       tags,
-      fileFingerprint
+      fileFingerprint: session.fileFingerprint || null,
+      fileFingerprintText: session.fileFingerprintText || (session.fileFingerprint ? fingerprintToText(session.fileFingerprint) : null),
+
+      // الحقول السيادية
+      currentFile: session.currentFile || null,
+      currentOperation: session.currentOperation || null,
+      sessionMode: session.sessionMode || "idle",
+      intent,
+      contextDrift
     };
   },
 
@@ -42,17 +64,17 @@ export default {
       memory.createSession(sessionId);
       session = memory.getSession(sessionId);
     }
-    
+
     const newFingerprint = generateFingerprint(filePath, previewData);
     const existingFingerprint = session.fileFingerprint || null;
     const mergedFingerprint = mergeFingerprints(existingFingerprint, newFingerprint);
-    
-    // ✅ استخدام updateSession
+
     memory.updateSession(sessionId, {
       fileFingerprint: mergedFingerprint,
-      fileFingerprintText: fingerprintToText(mergedFingerprint)
+      fileFingerprintText: fingerprintToText(mergedFingerprint),
+      currentFile: filePath
     });
-    
+
     return mergedFingerprint;
   },
 
@@ -68,6 +90,23 @@ export default {
     const history = memory.getChatHistory(sessionId, 5);
     const userMessages = history.filter(msg => msg.role === "user");
     return userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
+  },
+
+  // سيطرة سيادية على السياق
+  storeCurrentFile(sessionId, filePath) {
+    memory.updateSession(sessionId, { currentFile: filePath });
+  },
+
+  storeOperation(sessionId, operation) {
+    memory.updateSession(sessionId, { currentOperation: operation });
+  },
+
+  storeSessionMode(sessionId, mode) {
+    memory.updateSession(sessionId, { sessionMode: mode });
+  },
+
+  storeIntent(sessionId, intent) {
+    memory.updateSession(sessionId, { intent });
   }
 };
 
@@ -103,4 +142,31 @@ function extractTags(history) {
     if (text.includes("احترافي")) tags.push("professional");
   });
   return [...new Set(tags)].slice(-10);
+}
+
+function detectIntent(history) {
+  if (!history || history.length === 0) return null;
+  const lastMsg = history[history.length - 1];
+  const text = (lastMsg.content || "").toLowerCase();
+
+  if (text.includes("طوّر") || text.includes("طور") || text.includes("حسّن")) return "improve_file";
+  if (text.includes("طبق") || text.includes("نفّذ")) return "apply_changes";
+  if (text.includes("أضف ورقة") || text.includes("ورقة جديدة") || text.includes("sheet")) return "add_sheet";
+  if (text.includes("تعديل") || text.includes("عدّل")) return "modify_file";
+  if (text.includes("توليد") || text.includes("أنشئ ملف") || text.includes("ملف جديد")) return "generate_file";
+  if (text.includes("اعرض") || text.includes("معاينة") || text.includes("preview")) return "preview_file";
+
+  return "general";
+}
+
+function detectContextDrift(session) {
+  const lastOp = session.currentOperation;
+  const intent = session.intent;
+
+  // مثال بسيط: إذا كنا في وضع تعديل ملف، والنية صارت "general" فجأة، نعتبره انزلاق محتمل
+  if (lastOp === "modify_file" && intent === "general") {
+    return true;
   }
+
+  return false;
+      }
