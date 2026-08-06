@@ -30,6 +30,46 @@ export function setCurrentSessionId(id) {
     localStorage.setItem('alatheer_current_session', id);
 }
 
+/**
+ * حفظ مرجع الملف الأخير في الجلسة الحالية أو جلسة محددة.
+ * fileObj يمكن أن يحتوي على الحقول: { fileId, filePath, fileName, publicPath, size }
+ */
+export function setSessionLastFile(sessionId, fileObj) {
+    if (!sessionId) sessionId = getCurrentSessionId();
+    let sessions = getStoredSessions();
+    sessions[sessionId] = sessions[sessionId] || { title: 'جلسة جديدة', messages: [], pinned: false, lastFile: null };
+    sessions[sessionId].lastFile = {
+        fileId: fileObj.fileId || null,
+        filePath: fileObj.filePath || null,
+        fileName: fileObj.fileName || null,
+        publicPath: fileObj.publicPath || null,
+        size: fileObj.size || null,
+        savedAt: new Date().toISOString()
+    };
+    saveSessions(sessions);
+}
+
+/**
+ * استرجاع مرجع الملف الأخير لجلسة معينة
+ */
+export function getSessionLastFile(sessionId) {
+    if (!sessionId) sessionId = getCurrentSessionId();
+    const sessions = getStoredSessions();
+    return sessions[sessionId]?.lastFile || null;
+}
+
+/**
+ * مسح مرجع الملف الأخير من الجلسة (مثلاً عند حذف الملف يدوياً أو فشل الرفع)
+ */
+export function clearSessionLastFile(sessionId) {
+    if (!sessionId) sessionId = getCurrentSessionId();
+    let sessions = getStoredSessions();
+    if (sessions[sessionId]) {
+        sessions[sessionId].lastFile = null;
+        saveSessions(sessions);
+    }
+}
+
 export function initSessions(callbacks) {
     let sessions = getStoredSessions();
     if (!sessions || Object.keys(sessions).length === 0) {
@@ -169,7 +209,9 @@ export function loadSession(sessionId, callbacks) {
     const session = sessions[sessionId];
 
     if (callbacks && typeof callbacks.onResetFile === 'function') {
-        callbacks.onResetFile();
+        // نمرّر حالة الملف الحالية للجلسة إلى الواجهة ليعرضها أو يعالجها
+        const lastFile = session?.lastFile || null;
+        callbacks.onResetFile(lastFile);
     }
 
     if (session && session.messages && session.messages.length > 0) {
@@ -232,4 +274,4 @@ export function createNewSession(callbacks) {
     saveSessions(sessions);
     renderSessionsList(callbacks);
     loadSession(currentSessionId, callbacks);
-                             }
+}
