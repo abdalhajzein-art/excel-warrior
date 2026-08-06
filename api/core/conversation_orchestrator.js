@@ -1,11 +1,10 @@
 /**
- * api/core/conversation_orchestrator.js – Sovereign Clean Orchestrator (Excel Dual-Mode Ready)
+ * api/core/conversation_orchestrator.js – Sovereign Clean Orchestrator (Gemini Harmonized Edition)
  *
- * تحسينات سيادية:
- * - حل fileId/filePath من index.json إذا لزم
- * - عدم إنشاء activeFile من قيمة null صريحة
- * - فحوصات وجود الملف قبل تمريره للـ Kernel
- * - ربط السياق مع fusionMemory (currentFile / currentOperation / sessionMode / intent / contextDrift)
+ * تحسينات سيادية وتفاعلية:
+ * - حل fileId/filePath من index.json بأمان
+ * - وعي ذكي بالنيات (Intent Detection) يفرق بدقة بين الدردشة الاستفسارية وتعديل الملفات
+ * - ربط مستمر مع fusionMemory و kernel
  */
 
 import fs from "fs";
@@ -74,9 +73,6 @@ async function resolveFileReference({ fileId, filePath, fileName }) {
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
   try {
     console.log(`📥 [Orchestrator] جلسة ${sessionId} | "${(message || "").substring(0, 50)}..."`);
-    console.log(
-      `📥 [Orchestrator] extraCtx.filePath=${extraCtx.filePath}, extraCtx.fileName=${extraCtx.fileName}, extraCtx.fileId=${extraCtx.fileId}`
-    );
 
     const session = memory.getSession(sessionId) || memory.createSession(sessionId);
     const lowerMsg = (message || "").toLowerCase();
@@ -113,9 +109,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
     }
 
     if (resolved) {
-      console.log(
-        `📂 [Orchestrator] استقبال/حل مرجع ملف: storedPath=${resolved.storedPath}, fileName=${resolved.fileName}`
-      );
+      console.log(`📂 [Orchestrator] استقبال/حل مرجع ملف: storedPath=${resolved.storedPath}`);
       session.activeFile = {
         fileName: resolved.fileName || "file.xlsx",
         filePath: resolved.storedPath,
@@ -139,7 +133,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
       if (!session.activeFile && session.sovereign && session.sovereign.lastFile) {
         const last = session.sovereign.lastFile;
         if (last.filePath && fs.existsSync(last.filePath)) {
-          console.log(`📂 [Orchestrator] استرجاع الملف من sovereign.lastFile: ${last.filePath}`);
           session.activeFile = {
             fileName: last.fileName || "file.xlsx",
             filePath: last.filePath,
@@ -149,58 +142,32 @@ export default async function conversationOrchestrator(sessionId, message, extra
           };
           fusionMemory.storeCurrentFile(sessionId, session.activeFile.filePath);
           fusionMemory.storeSessionMode(sessionId, "file_active");
-        } else if (last.fileId) {
-          const resolvedLast = await resolveFileReference({ fileId: last.fileId });
-          if (resolvedLast) {
-            console.log(
-              `📂 [Orchestrator] استرجاع الملف من sovereign.lastFile عبر fileId: ${resolvedLast.storedPath}`
-            );
-            session.activeFile = {
-              fileName: resolvedLast.fileName || "file.xlsx",
-              filePath: resolvedLast.storedPath,
-              metadata: last.metadata || {},
-              extractedContent: last.extractedContent || null,
-              timestamp: Date.now()
-            };
-            fusionMemory.storeCurrentFile(sessionId, session.activeFile.filePath);
-            fusionMemory.storeSessionMode(sessionId, "file_active");
-          }
         }
       }
     }
-
-    console.log(
-      `📂 [Orchestrator] activeFile بعد المعالجة: ${session.activeFile?.filePath || "لا يوجد"}`
-    );
 
     memory.appendChatHistory(sessionId, { role: "user", content: message });
 
     const fusedMemory = fusionMemory.apply(sessionId);
 
-    // 🧠 Intent Reinforcement Layer – بدون كلمات مفتاحية
+    // 🧠 Intent Reinforcement Layer – تحليل ذكي غير قسري للنيات
     if (session.activeFile) {
       const msg = (message || "").trim();
+      const editKeywords = /(عدل|غير|أضف|احذف|حط|ضبط|لون|رتب|تحديث|تعديل|إضافة|حذف|سوي|اعمل)/i;
+      const questionKeywords = /(كيف|ليش|لماذا|ما هو|ما هي|كم|هل|رأيك|اشرح|وضح|وين|مين|\?|؟)/i;
 
-      const isExecutionStyle =
-        msg.length <= 40 &&
-        !msg.includes("؟") &&
-        !msg.includes("?") &&
-        !msg.match(/(ليش|لماذا|شو رأيك|شو الأفضل|اقترح|فكّر|برأيك)/i);
-
-      if (isExecutionStyle) {
+      // إذا كانت الرسالة تحتوي على كلمات تعديل واضحة وليست مجرد استفسار
+      if (editKeywords.test(msg) && !questionKeywords.test(msg)) {
         fusionMemory.storeOperation(sessionId, "modify_file");
         fusionMemory.storeSessionMode(sessionId, "file_edit");
-        console.log("🧠 [Orchestrator] Intent Reinforcement: تعديل الملف الحالي بدون كلمات مفتاحية.");
+        console.log("🧠 [Orchestrator] Intent: نية تعديل مستندي صريحة.");
       }
     }
 
-    // تحديث وضع الجلسة والعملية بناءً على الرسالة والملف
+    // تحديد وضع الجلسة والعملية بناءً على طلب المستخدم
     if (session.activeFile) {
       if (lowerMsg.includes("طوّر") || lowerMsg.includes("طور") || lowerMsg.includes("حسّن")) {
         fusionMemory.storeOperation(sessionId, "improve_file");
-        fusionMemory.storeSessionMode(sessionId, "file_edit");
-      } else if (lowerMsg.includes("طبق") || lowerMsg.includes("نفّذ")) {
-        fusionMemory.storeOperation(sessionId, "apply_changes");
         fusionMemory.storeSessionMode(sessionId, "file_edit");
       } else if (lowerMsg.includes("أضف ورقة") || lowerMsg.includes("ورقة جديدة") || lowerMsg.includes("sheet")) {
         fusionMemory.storeOperation(sessionId, "add_sheet");
@@ -208,22 +175,16 @@ export default async function conversationOrchestrator(sessionId, message, extra
       } else if (lowerMsg.includes("تعديل") || lowerMsg.includes("عدّل")) {
         fusionMemory.storeOperation(sessionId, "modify_file");
         fusionMemory.storeSessionMode(sessionId, "file_edit");
-      } else if (lowerMsg.includes("توليد") || lowerMsg.includes("أنشئ ملف") || lowerMsg.includes("ملف جديد")) {
+      } else if (lowerMsg.includes("توليد") || lowerMsg.includes("أنشئ ملف")) {
         fusionMemory.storeOperation(sessionId, "generate_file");
         fusionMemory.storeSessionMode(sessionId, "file_generate");
-      } else if (lowerMsg.includes("اعرض") || lowerMsg.includes("معاينة") || lowerMsg.includes("preview")) {
-        fusionMemory.storeOperation(sessionId, "preview_file");
-        fusionMemory.storeSessionMode(sessionId, "file_preview");
       } else {
+        // وضع الحوار الطبيعي حول الملف
         fusionMemory.storeSessionMode(sessionId, "file_context");
       }
     } else {
       fusionMemory.storeSessionMode(sessionId, "idle");
       fusionMemory.storeOperation(sessionId, null);
-    }
-
-    if (fusedMemory.contextDrift) {
-      console.log("⚠️ [Orchestrator] contextDrift detected – سيتم الحفاظ على الملف الحالي وعدم البدء من الصفر.");
     }
 
     let history = memory.getChatHistory(sessionId, 50).map(msg => ({
@@ -236,7 +197,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
       fusedMemory,
       activeFileSummary: formatFileContextForKernel(session.activeFile),
       activeFile: session.activeFile,
-
       fileName: session.activeFile?.fileName || null,
       filePath: session.activeFile?.filePath || null,
       extractedContent: session.activeFile?.extractedContent || null,
@@ -244,10 +204,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
     };
 
     console.log(`🧠 [Orchestrator] تسليم القيادة للـ Kernel...`);
-    console.log(
-      `🧠 [Orchestrator] kernelContext.filePath=${kernelContext.filePath}, kernelContext.fileName=${kernelContext.fileName}`
-    );
-
     const kernelOutput = await kernel(sessionId, message, kernelContext);
 
     memory.appendChatHistory(sessionId, {
@@ -274,4 +230,4 @@ export default async function conversationOrchestrator(sessionId, message, extra
       operations: []
     };
   }
-  }
+}
