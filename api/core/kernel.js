@@ -4,6 +4,7 @@
  * ✅ إخفاء كود بايثون عن المستخدم
  * ✅ إصلاح مشكلة استخراج كود Python من رد Gemini
  * ✅ دعم بصمة الملف (Fingerprint) لتوفير التوكنز
+ * ✅ إصلاح مشكلة تمرير filePath للتعديل
  */
 
 import fs from "fs";
@@ -31,6 +32,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     let fileName = ctx.fileName || activeFile?.fileName || null;
     let filePath = ctx.filePath || activeFile?.filePath || null;
 
+    console.log(`🔍 [Kernel] استقبال: fileName=${fileName}, filePath=${filePath}`);
+
     let fileContext = ctx.activeFileSummary || "";
     if (!fileContext && extractedContent && !extractedContent.error) {
         const schema = extractedContent.columns_schema || {};
@@ -49,10 +52,31 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     // 🛡️ [تعديل سيادي صارم]: التحقق الحاسم من وجود ملف حقيقي وتحديد نوع الطلب
     const userExplicitlyWantsNew = /(ملف جديد|من الصفر|جديد كلياً|اصنع ملفاً جديداً)/i.test(message);
+    const isModifyRequest = /طور|عدل|حسن|ضيف|أضف|تطوير|إضافة|add|update|modify|تحسين|توسيع/i.test(message);
     const hasExistingFile = filePath && fs.existsSync(filePath);
 
-    // تحديد ما إذا كان الطلب "توليد من الصفر" (Greenfield) أو "تعديل"
-    const isGenerationRequest = (!hasExistingFile) || (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message));
+    console.log(`📂 [Kernel] hasExistingFile=${hasExistingFile}, filePath=${filePath}`);
+
+    // ✅ تحديد نوع الطلب بشكل صحيح
+    let isGenerationRequest = false;
+
+    if (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message)) {
+        // ✅ طلب صريح لملف جديد
+        isGenerationRequest = true;
+        console.log("🆕 [Kernel] طلب صريح لملف جديد");
+    } else if (!hasExistingFile) {
+        // ✅ لا يوجد ملف موجود -> توليد جديد
+        isGenerationRequest = true;
+        console.log("🆕 [Kernel] لا يوجد ملف موجود، توليد جديد");
+    } else if (isModifyRequest && hasExistingFile) {
+        // ✅ تعديل ملف موجود
+        isGenerationRequest = false;
+        console.log(`📂 [Kernel] تطوير الملف الموجود: ${filePath}`);
+    } else {
+        // ✅ افتراضي: إذا كان هناك ملف، اعتبره تعديل
+        isGenerationRequest = false;
+        console.log(`📂 [Kernel] استخدام الملف الموجود: ${filePath}`);
+    }
 
     let systemContent = SYSTEM_PROMPT;
     if (fileContext) {
@@ -157,6 +181,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             while (currentAttempt < maxRetries && !isSuccess) {
                 currentAttempt++;
                 console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (${isGenerationRequest ? 'توليد جديد' : 'تعديل'}) - محاولة ${currentAttempt}...`);
+                console.log(`📁 [Kernel] المسار المستهدف: ${filePath}`);
 
                 executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest);
 
@@ -235,4 +260,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         operations: [],
         execution: executionResult
     };
-}
+        }
