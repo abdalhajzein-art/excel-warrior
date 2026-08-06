@@ -1,6 +1,8 @@
 /**
- * api/geminiService.js – Sovereign Gemini Service (Gemini-Like Harmonized Edition)
- * ⭐ النسخة المصحّحة بالكامل – مع تمرير systemInstruction داخل startChat
+ * api/geminiService.js – Sovereign Gemini Service (Corrected Edition)
+ * ⭐ إصلاح كامل لمشكلة system_instruction
+ * ⭐ SYSTEM_PROMPT يُمرّر فقط عبر رسالة system داخل messages
+ * ⭐ system_instruction يبقى بسيط جداً حتى لا ترفضه Google
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -18,48 +20,54 @@ function getClient() {
 }
 
 const MODEL_FALLBACK_LIST = [
-    'gemini-3.6-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.1-pro-preview'
+  "gemini-3.6-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-pro-preview"
 ];
 
 function isQuotaError(error) {
-    return error?.message?.includes('quota') || 
-           error?.status === 429 || 
-           error?.message?.includes('rate limit') ||
-           error?.message?.includes('exhausted');
+  return (
+    error?.message?.includes("quota") ||
+    error?.status === 429 ||
+    error?.message?.includes("rate limit") ||
+    error?.message?.includes("exhausted")
+  );
 }
 
 async function executeWithFallback(fn, modelList = MODEL_FALLBACK_LIST) {
-    let lastError = null;
+  let lastError = null;
 
-    for (let i = 0; i < modelList.length; i++) {
-        const modelName = modelList[i];
-        try {
-            const result = await fn(modelName);
-            return result;
-        } catch (err) {
-            lastError = err;
-            if (isQuotaError(err)) {
-                console.warn(`⚠️ [GeminiService] النموذج ${modelName} تجاوز الحدود، جرب التالي...`);
-                continue;
-            }
-            throw err;
-        }
+  for (let i = 0; i < modelList.length; i++) {
+    const modelName = modelList[i];
+    try {
+      const result = await fn(modelName);
+      return result;
+    } catch (err) {
+      lastError = err;
+      if (isQuotaError(err)) {
+        console.warn(`⚠️ [GeminiService] النموذج ${modelName} تجاوز الحد — الانتقال للذي بعده...`);
+        continue;
+      }
+      throw err;
     }
+  }
 
-    throw new Error(`❌ جميع النماذج فشلت: ${lastError?.message || 'خطأ غير معروف'}`);
+  throw new Error(`❌ جميع النماذج فشلت: ${lastError?.message || "خطأ غير معروف"}`);
 }
 
+/* ============================================================
+   🧠 وضع generateContent (نادر الاستخدام)
+   ============================================================ */
 export default async function geminiService(prompt, ctx = {}) {
   return executeWithFallback(async (modelName) => {
     const client = getClient();
+
     const model = client.getGenerativeModel({
       model: modelName,
-      systemInstruction: ctx.systemInstruction || "أنت مساعد سيادي في منصة الأثير.",
+      systemInstruction: "أنت مساعد سيادي متخصص بإدارة ملفات الإكسل.", // بسيط جداً
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 32768,
+        maxOutputTokens: 32768
       }
     });
 
@@ -73,23 +81,31 @@ export default async function geminiService(prompt, ctx = {}) {
 }
 
 /* ============================================================
-   💬 وضع المحادثة المتعدد الأدوار (Gemini-Like Chat)
+   💬 وضع المحادثة المتعدد الأدوار (Chat Mode)
    ============================================================ */
-geminiService.chat = async function(messages, extra = {}) {
+geminiService.chat = async function (messages, extra = {}) {
   return executeWithFallback(async (modelName) => {
+    /* استخراج SYSTEM_PROMPT الحقيقي من الرسائل */
+    const systemMessages = messages.filter((m) => m.role === "system");
+    const systemPromptText = systemMessages.map((m) => m.content).join("\n\n");
 
-    let systemMessages = messages.filter(m => m.role === "system");
-    let systemInstruction = systemMessages.map(m => m.content).join("\n\n");
-
+    /* إضافة سياق الملف */
+    let enrichedSystemPrompt = systemPromptText;
     if (extra.fileName && extra.extractedContent) {
       const meta = extra.extractedContent;
-      const fileContextDesc = `\n\n[سياق الملف النشط حالياً في الجلسة]:\n- اسم الملف: ${extra.fileName}\n- عينة المحتوى:\n${meta.text ? meta.text.slice(0, 2000) : 'متاح للتحليل'}\n`;
-      systemInstruction += fileContextDesc;
+      enrichedSystemPrompt += `
+
+[سياق الملف النشط]:
+- اسم الملف: ${extra.fileName}
+- عينة المحتوى:
+${meta.text ? meta.text.slice(0, 2000) : "متاح للتحليل"}
+`;
     }
 
+    /* بناء التاريخ */
     const history = [];
     let lastUserMessage = "";
-    const conv = messages.filter(m => m.role !== "system");
+    const conv = messages.filter((m) => m.role !== "system");
 
     for (let i = 0; i < conv.length; i++) {
       const msg = conv[i];
@@ -110,25 +126,28 @@ geminiService.chat = async function(messages, extra = {}) {
       }
     }
 
+    /* إنشاء النموذج */
     const client = getClient();
     const model = client.getGenerativeModel({
       model: modelName,
-      systemInstruction,   // ← مهم جداً
+      systemInstruction: "أنت مساعد سيادي متخصص بإدارة ملفات الإكسل.", // بسيط جداً
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 32768,
+        maxOutputTokens: 32768
       }
     });
 
+    /* بدء جلسة الدردشة */
     const chat = model.startChat({
       history,
-      systemInstruction,   // ← السطر السحري الذي كان ناقصاً
+      systemInstruction: enrichedSystemPrompt, // ← هنا نحقن SYSTEM_PROMPT الحقيقي
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 32768,
+        maxOutputTokens: 32768
       }
     });
 
+    /* إرسال الرسالة */
     const result = await chat.sendMessage(lastUserMessage || "مرحبا");
     const response = await result.response;
 
