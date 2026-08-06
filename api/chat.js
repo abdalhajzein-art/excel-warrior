@@ -1,8 +1,7 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
- * ✅ نظيف تماماً ومتوافق مع معمارية Zero-Middleman
- * ✅ دعم بصمة الملف (Fingerprint) لتوفير التوكنز
- * ✅ إصلاح مشكلة استرجاع الملف من الذاكرة عند التعديل
+ * مصحّح ليدعم استرجاع الملفات عبر fileId/filePath من upload.index.json
+ * ويحافظ على سلوك حفظ البصمات وتحديث الذاكرة كما كان.
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -16,29 +15,96 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const PERSISTENT_DIR = path.join(__dirname, '../persistent_uploads');
+const INDEX_FILE = path.join(PERSISTENT_DIR, 'index.json');
+const GENERATED_DIR = path.join(__dirname, '../generated');
+
+async function ensureIndexReady() {
+    try {
+        await fs.promises.mkdir(PERSISTENT_DIR, { recursive: true });
+        try {
+            await fs.promises.access(INDEX_FILE, fs.constants.F_OK);
+        } catch {
+            await fs.promises.writeFile(INDEX_FILE, JSON.stringify({}), 'utf8');
+        }
+    } catch (e) {
+        console.warn("⚠️ ensureIndexReady failed:", e.message);
+    }
+}
+
+async function readIndex() {
+    try {
+        await ensureIndexReady();
+        const raw = await fs.promises.readFile(INDEX_FILE, 'utf8');
+        return JSON.parse(raw || '{}');
+    } catch (e) {
+        console.warn("⚠️ readIndex failed:", e.message);
+        return {};
+    }
+}
+
+async function writeIndex(idx) {
+    try {
+        await fs.promises.writeFile(INDEX_FILE, JSON.stringify(idx, null, 2), 'utf8');
+    } catch (e) {
+        console.warn("⚠️ writeIndex failed:", e.message);
+    }
+}
+
+/**
+ * Resolve a fileId or storedName to an absolute storedPath and metadata using index.json
+ * Returns null if not found.
+ */
+async function resolveFileReference({ fileId, filePath, fileName }) {
+    // If caller already provided an absolute filePath that exists, prefer it
+    if (filePath && fs.existsSync(filePath)) {
+        return { storedPath: filePath, fileName: fileName || path.basename(filePath) };
+    }
+
+    // If fileId provided, look up in index.json
+    if (fileId) {
+        const idx = await readIndex();
+        if (idx[fileId]) {
+            const entry = idx[fileId];
+            if (entry.storedPath && fs.existsSync(entry.storedPath)) {
+                return { storedPath: entry.storedPath, fileName: entry.fileName || entry.storedName };
+            }
+        }
+    }
+
+    // If fileName matches a stored file in persistent dir, try that (fallback)
+    if (fileName) {
+        const candidate = path.join(PERSISTENT_DIR, fileName);
+        if (fs.existsSync(candidate)) {
+            return { storedPath: candidate, fileName };
+        }
+    }
+
+    return null;
+}
+
 export default async function handler(req, res) {
     try {
         const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
         const userContent = (body.message || body.prompt || "").trim();
         const sessionKey = body.sessionId || "default_session";
-        const { fileData, fileName, history, metadata } = body;
+        const { fileData, fileName, fileId, filePath: clientFilePath, history, metadata } = body;
 
-        if (!userContent && !fileData) {
+        if (!userContent && !fileData && !fileId && !clientFilePath) {
             return res.status(400).json({ reply: "⚠️ الرجاء إرسال رسالة أو ملف لنتمكن من خدمتك يا شريكي." });
         }
 
         let sovereignFilePath = null;
         let extractedContent = null;
-        let finalFileName = fileName;
+        let finalFileName = fileName || null;
 
-        // ✅ التحقق: هل المستخدم طلب إنشاء ملف Excel جديد من الصفر؟
+        // Detect new Excel creation intent
         const isExcelRequest = userContent.match(/إكسل|Excel|ملف\s*إكسل|جدول|spreadsheet/i);
         const isNewFileRequest = userContent.match(/أنشئ|اعمل|عمل لي|generate|create|new\s*file|من الصفر/i);
 
-        // ✅ إذا كان طلب إنشاء ملف جديد (بدون ملف مرفق)
-        if (isExcelRequest && isNewFileRequest && !fileData) {
+        // Handle explicit "create new excel" requests (no file)
+        if (isExcelRequest && isNewFileRequest && !fileData && !fileId && !clientFilePath) {
             console.log("📊 [الأثير] تم اكتشاف طلب إنشاء ملف Excel جديد");
-            
             const orchestratorInput = {
                 fileData: null,
                 fileName: null,
@@ -50,41 +116,38 @@ export default async function handler(req, res) {
             };
 
             const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
-            
+
             const pythonCodeMatch = output?.reply?.match(/```python\n([\s\S]*?)```/);
-            
             if (pythonCodeMatch) {
                 const pythonCode = pythonCodeMatch[1];
-                
-                const generatedDir = path.join(__dirname, '../generated');
-                if (!fs.existsSync(generatedDir)) {
-                    fs.mkdirSync(generatedDir, { recursive: true });
+
+                if (!fs.existsSync(GENERATED_DIR)) {
+                    fs.mkdirSync(GENERATED_DIR, { recursive: true });
                 }
-                
+
                 const newFileName = `excel_${Date.now()}.xlsx`;
-                const newFilePath = path.join(generatedDir, newFileName);
-                
+                const newFilePath = path.join(GENERATED_DIR, newFileName);
+
                 console.log(`🔧 [الأثير] تنفيذ كود Python لإنشاء ملف: ${newFilePath}`);
-                
+
                 const result = await executeDynamicPython(pythonCode, newFilePath, true);
-                
+
                 if (result.success && fs.existsSync(newFilePath)) {
                     const fileBuffer = fs.readFileSync(newFilePath);
                     const fileBase64 = fileBuffer.toString('base64');
                     const downloadUrl = `/generated/${newFileName}`;
-                    
-                    // ✅ تخزين البصمة
+
+                    // store fingerprint and memory reference
                     try {
                         const previewData = await extractPreviewAsync(newFilePath);
                         if (previewData && !previewData.error) {
                             fusionMemory.storeFileFingerprint(sessionKey, newFilePath, previewData);
-                            // ✅ تخزين مسار الملف في الذاكرة
                             memory.saveFile(sessionKey, { filePath: newFilePath, fileName: newFileName });
                         }
                     } catch (e) {
                         console.warn("⚠️ [chat.js] فشل تخزين البصمة للملف المُنشأ:", e.message);
                     }
-                    
+
                     return res.status(200).json({
                         reply: `✅ **تم إنشاء ملف Excel بنجاح يا هندسة!**\n\n📥 [اضغط هنا لتحميل الملف](${downloadUrl})\n\n📁 اسم الملف: ${newFileName}`,
                         fileBase64: fileBase64,
@@ -101,14 +164,28 @@ export default async function handler(req, res) {
             }
         }
 
-        // ✅ معالجة الملفات المرفوعة
+        // If client provided a fileId or clientFilePath (from upload endpoint), resolve it first
+        if ((fileId || clientFilePath) && !fileData) {
+            const resolved = await resolveFileReference({ fileId, filePath: clientFilePath, fileName });
+            if (resolved) {
+                sovereignFilePath = resolved.storedPath;
+                finalFileName = resolved.fileName || finalFileName;
+                console.log(`🔄 [chat.js] resolved file reference -> ${sovereignFilePath}`);
+                // ensure memory also knows about it
+                try {
+                    memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
+                } catch (e) {
+                    console.warn("⚠️ memory.saveFile failed:", e.message);
+                }
+            } else {
+                console.warn("⚠️ [chat.js] لم يتم العثور على مرجع الملف عبر fileId/filePath.");
+            }
+        }
+
+        // If raw base64 fileData is provided in the request body, persist it to persistent_uploads
         if (fileData && fileName) {
-            const persistentDir = path.join(__dirname, '../persistent_uploads');
-            if (!fs.existsSync(persistentDir)) fs.mkdirSync(persistentDir, { recursive: true });
-
-            const uniqueFileName = `${Date.now()}-${fileName}`;
-            sovereignFilePath = path.join(persistentDir, uniqueFileName);
-
+            await ensureIndexReady();
+            // normalize base64
             let buffer = null;
             if (typeof fileData === 'string') {
                 let cleanBase64 = fileData.includes('base64,') ? fileData.split('base64,')[1] : fileData;
@@ -119,49 +196,95 @@ export default async function handler(req, res) {
             }
 
             if (buffer && buffer.length > 0) {
-                fs.writeFileSync(sovereignFilePath, buffer);
-                console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
-                // ✅ تحديث finalFileName ليكون اسم الملف المحفوظ
-                finalFileName = uniqueFileName;
-                // ✅ تخزين مسار الملف في الذاكرة
-                memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
-            }
+                // create persistent dir if needed
+                if (!fs.existsSync(PERSISTENT_DIR)) fs.mkdirSync(PERSISTENT_DIR, { recursive: true });
 
-            const previewData = await extractPreviewAsync(sovereignFilePath);
-            if (!previewData.error) {
-                extractedContent = {
-                    text: previewData.text,
-                    metadata: { 
-                        fileName: finalFileName, 
-                        rows: previewData.rows, 
-                        columns: previewData.columns,
-                        sheets: previewData.sheets || 1 
-                    }
+                const safeStoredName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9_.-]/g, "_")}`;
+                const storedPath = path.join(PERSISTENT_DIR, safeStoredName);
+
+                fs.writeFileSync(storedPath, buffer);
+                try { await fs.promises.chmod(storedPath, 0o600); } catch (e) { /* ignore */ }
+
+                // update index.json
+                const idx = await readIndex();
+                const fileIdGenerated = safeStoredName.split("-")[0];
+                idx[fileIdGenerated] = {
+                    fileId: fileIdGenerated,
+                    fileName,
+                    storedName: safeStoredName,
+                    storedPath,
+                    size: buffer.length,
+                    uploadedAt: new Date().toISOString()
                 };
-                console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح.`);
-                fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
-            } else {
-                console.warn(`⚠️ [الأثير Preview] فشلت المعاينة: ${previewData.error}`);
+                await writeIndex(idx);
+
+                sovereignFilePath = storedPath;
+                finalFileName = safeStoredName;
+                console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
+
+                // store in memory for session
+                try {
+                    memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
+                } catch (e) {
+                    console.warn("⚠️ memory.saveFile failed:", e.message);
+                }
+
+                // extract preview
+                try {
+                    const previewData = await extractPreviewAsync(sovereignFilePath);
+                    if (!previewData.error) {
+                        extractedContent = {
+                            text: previewData.text,
+                            metadata: {
+                                fileName: finalFileName,
+                                rows: previewData.rows,
+                                columns: previewData.columns,
+                                sheets: previewData.sheets || 1
+                            }
+                        };
+                        fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
+                        console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح.`);
+                    } else {
+                        console.warn(`⚠️ [الأثير Preview] فشلت المعاينة: ${previewData.error}`);
+                    }
+                } catch (e) {
+                    console.warn("⚠️ extractPreviewAsync failed:", e.message);
+                }
             }
         }
 
-        // ✅ إذا لم يكن هناك ملف مرفق، حاول استرجاعه من الذاكرة
-        if (!fileData && !sovereignFilePath) {
-            const session = memory.getSession(sessionKey);
-            if (session && session.sovereign && session.sovereign.lastFile) {
-                sovereignFilePath = session.sovereign.lastFile.filePath;
-                finalFileName = session.sovereign.lastFile.fileName;
-                console.log(`🔄 [chat.js] استرجاع الملف من الذاكرة: ${sovereignFilePath}`);
+        // If still no sovereignFilePath, try to recover from memory (older sessions)
+        if (!sovereignFilePath) {
+            try {
+                const session = memory.getSession(sessionKey);
+                if (session && session.sovereign && session.sovereign.lastFile) {
+                    const last = session.sovereign.lastFile;
+                    if (last.filePath && fs.existsSync(last.filePath)) {
+                        sovereignFilePath = last.filePath;
+                        finalFileName = finalFileName || last.fileName;
+                        console.log(`🔄 [chat.js] استرجاع الملف من الذاكرة: ${sovereignFilePath}`);
+                    } else if (last.fileId) {
+                        // try resolve via index.json
+                        const resolved = await resolveFileReference({ fileId: last.fileId });
+                        if (resolved) {
+                            sovereignFilePath = resolved.storedPath;
+                            finalFileName = finalFileName || resolved.fileName;
+                            console.log(`🔄 [chat.js] استرجاع الملف من الذاكرة عبر fileId: ${sovereignFilePath}`);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("⚠️ memory.getSession check failed:", e.message);
             }
         }
 
-        // ✅ المعالجة العادية عبر الـ orchestrator
+        // Build orchestrator input
         const orchestratorInput = {
-            fileData, 
-            fileName: finalFileName || fileName, 
-            filePath: sovereignFilePath, 
-            history, 
-            metadata, 
+            fileData: fileData || null,
+            fileName: finalFileName || fileName || null,
+            filePath: sovereignFilePath || null,
+            history,
+            metadata,
             extractedContent
         };
 
@@ -173,19 +296,19 @@ export default async function handler(req, res) {
         let fileBase64 = output?.fileBase64 || null;
         let returnedFileName = output?.fileName || finalFileName || fileName || "modified_file.xlsx";
 
-        // ✅ التحقق من الملف المعدل
-        if (sovereignFilePath && fs.existsSync(sovereignFilePath) && !fileBase64 && output?.execution?.success) {
+        // If orchestrator executed and modified the sovereignFilePath file, read it and return base64
+        if (orchestratorInput.filePath && fs.existsSync(orchestratorInput.filePath) && !fileBase64 && output?.execution?.success) {
             try {
-                const fileBuffer = fs.readFileSync(sovereignFilePath);
+                const fileBuffer = fs.readFileSync(orchestratorInput.filePath);
                 fileBase64 = fileBuffer.toString('base64');
-                returnedFileName = `modified_${Date.now()}-${path.basename(sovereignFilePath)}`;
-                
-                // ✅ تحديث البصمة
+                returnedFileName = `modified_${Date.now()}-${path.basename(orchestratorInput.filePath)}`;
+
+                // update fingerprint and memory
                 try {
-                    const previewData = await extractPreviewAsync(sovereignFilePath);
+                    const previewData = await extractPreviewAsync(orchestratorInput.filePath);
                     if (previewData && !previewData.error) {
-                        fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
-                        memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: returnedFileName });
+                        fusionMemory.storeFileFingerprint(sessionKey, orchestratorInput.filePath, previewData);
+                        memory.saveFile(sessionKey, { filePath: orchestratorInput.filePath, fileName: returnedFileName });
                     }
                 } catch (e) {
                     console.warn("⚠️ [chat.js] فشل تحديث البصمة:", e.message);
@@ -195,6 +318,7 @@ export default async function handler(req, res) {
             }
         }
 
+        // If we have a fileBase64 to return, ensure reply contains a download link to persistent path
         if (fileBase64 && returnedFileName) {
             const baseName = path.basename(returnedFileName);
             const realFileUrl = encodeURI(`/persistent_uploads/${baseName}`);
@@ -204,11 +328,14 @@ export default async function handler(req, res) {
         }
 
         return res.status(200).json({
-            reply, fileBase64, fileName: returnedFileName, metadata: extractedContent?.metadata || null
+            reply,
+            fileBase64,
+            fileName: returnedFileName,
+            metadata: extractedContent?.metadata || null
         });
 
     } catch (error) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-            }
+                          }
