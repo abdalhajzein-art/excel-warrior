@@ -1,11 +1,11 @@
 /**
- * api/geminiService.js – Sovereign Gemini Service (Final Stable Edition)
+ * api/geminiService.js – Sovereign Gemini Service (Flash‑Safe Edition)
  * ⭐ SYSTEM_PROMPT داخل history فقط
- * ⭐ system_instruction بسيط جداً
+ * ⭐ بدون أي systemInstruction نهائياً
  * ⭐ أول رسالة داخل history = user
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google-generative-ai";
 import { auditExecution } from "./core/execution_monitor.js";
 
 const rawKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";
@@ -40,14 +40,10 @@ async function executeWithFallback(fn, modelList = MODEL_FALLBACK_LIST) {
   for (let i = 0; i < modelList.length; i++) {
     const modelName = modelList[i];
     try {
-      const result = await fn(modelName);
-      return result;
+      return await fn(modelName);
     } catch (err) {
       lastError = err;
-      if (isQuotaError(err)) {
-        console.warn(`⚠️ [GeminiService] النموذج ${modelName} تجاوز الحد — الانتقال للذي بعده...`);
-        continue;
-      }
+      if (isQuotaError(err)) continue;
       throw err;
     }
   }
@@ -56,15 +52,14 @@ async function executeWithFallback(fn, modelList = MODEL_FALLBACK_LIST) {
 }
 
 /* ============================================================
-   🧠 generateContent
+   🧠 generateContent (بدون systemInstruction)
    ============================================================ */
-export default async function geminiService(prompt, ctx = {}) {
+export default async function geminiService(prompt) {
   return executeWithFallback(async (modelName) => {
     const client = getClient();
 
     const model = client.getGenerativeModel({
       model: modelName,
-      systemInstruction: "أنت مساعد سيادي متخصص بإدارة ملفات الإكسل.",
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 32768
@@ -75,69 +70,50 @@ export default async function geminiService(prompt, ctx = {}) {
       contents: [{ role: "user", parts: [{ text: prompt }] }]
     });
 
-    const response = await result.response;
-    return response.text().trim();
+    return (await result.response).text().trim();
   });
 }
 
 /* ============================================================
-   💬 Chat Mode
+   💬 Chat Mode (Flash‑Safe)
    ============================================================ */
 geminiService.chat = async function (messages, extra = {}) {
   return executeWithFallback(async (modelName) => {
 
     /* استخراج SYSTEM_PROMPT */
-    const systemMessages = messages.filter((m) => m.role === "system");
-    const systemPromptText = systemMessages.map((m) => m.content).join("\n\n");
+    const systemMessages = messages.filter(m => m.role === "system");
+    const systemPromptText = systemMessages.map(m => m.content).join("\n\n");
 
-    /* إضافة سياق الملف */
-    let enrichedSystemPrompt = systemPromptText;
-    if (extra.fileName && extra.extractedContent) {
-      const meta = extra.extractedContent;
-      enrichedSystemPrompt += `
-
-[سياق الملف النشط]:
-- اسم الملف: ${extra.fileName}
-- عينة المحتوى:
-${meta.text ? meta.text.slice(0, 2000) : "متاح للتحليل"}
-`;
-    }
-
-    /* بناء التاريخ */
+    /* بناء history */
     const history = [];
     let lastUserMessage = "";
-    const conv = messages.filter((m) => m.role !== "system");
+
+    const conv = messages.filter(m => m.role !== "system");
 
     for (let i = 0; i < conv.length; i++) {
       const msg = conv[i];
       const isLast = i === conv.length - 1;
 
       if (msg.role === "user") {
-        if (isLast) {
-          lastUserMessage = msg.content;
-        } else {
-          history.push({ role: "user", parts: [{ text: msg.content }] });
-        }
+        if (isLast) lastUserMessage = msg.content;
+        else history.push({ role: "user", parts: [{ text: msg.content }] });
       }
 
-      if (msg.role === "assistant") {
-        if (!isLast) {
-          history.push({ role: "model", parts: [{ text: msg.content }] });
-        }
+      if (msg.role === "assistant" && !isLast) {
+        history.push({ role: "model", parts: [{ text: msg.content }] });
       }
     }
 
-    /* نضيف SYSTEM_PROMPT داخل history (لكن ليس أول رسالة) */
+    /* نضيف SYSTEM_PROMPT داخل history */
     history.push({
       role: "system",
-      parts: [{ text: enrichedSystemPrompt }]
+      parts: [{ text: systemPromptText }]
     });
 
-    /* إنشاء النموذج */
+    /* إنشاء النموذج بدون systemInstruction */
     const client = getClient();
     const model = client.getGenerativeModel({
       model: modelName,
-      systemInstruction: "أنت مساعد سيادي متخصص بإدارة ملفات الإكسل.",
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 32768
@@ -147,14 +123,12 @@ ${meta.text ? meta.text.slice(0, 2000) : "متاح للتحليل"}
     /* بدء جلسة الدردشة */
     const chat = model.startChat({
       history,
-      systemInstruction: "أنت مساعد سيادي متخصص بإدارة ملفات الإكسل.",
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 32768
       }
     });
 
-    /* إرسال الرسالة */
     const result = await chat.sendMessage(lastUserMessage || "مرحبا");
     const response = await result.response;
 
