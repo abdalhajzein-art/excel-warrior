@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-venv \
     python3-pip \
-    git \   # ← ✅ إضافة Git عشان pip يقدر يجيب excel-agent-tools من GitHub
+    git \
     libxml2-dev \
     libxslt-dev \
     zlib1g-dev \
