@@ -1,308 +1,379 @@
 /**
  * api/core/kernel.js – Sovereign Kernel (Dual-Mode: Modification & Greenfield Generation)
- * يفصل بذكاء بين تعديل الملفات القائمة وتوليد الملفات الجديدة من الصفر مع التحقق الذاتي.
- * ✅ إخفاء كود بايثون عن المستخدم
- * ✅ إصلاح مشكلة استخراج كود Python من رد Gemini
- * ✅ دعم بصمة الملف (Fingerprint) لتوفير التوكنز
- * ✅ إصلاح مشكلة تمرير filePath للتعديل
- * ✅ تعليمات أوضح لكتابة المعادلات والألوان
+ * نسخة نهائية مُحسّنة لتوحيد مسارات الملفات مع persistent_uploads، وتحديث index.json بعد التوليد/التعديل.
  */
 
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 import { executeDynamicPython, extractPreviewAsync } from "./dynamic_executor.js";
 import fusionMemory from "./fusion_memory.js";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// مجلدات موحّدة داخل المشروع
+const PERSISTENT_DIR = path.join(process.cwd(), "persistent_uploads");
+const GENERATED_DIR = path.join(process.cwd(), "generated");
+const INDEX_FILE = path.join(PERSISTENT_DIR, "index.json");
+
+// تأكد من وجود المجلدات وملف الفهرس
+function ensureDirs() {
+  try {
+    if (!fs.existsSync(PERSISTENT_DIR)) fs.mkdirSync(PERSISTENT_DIR, { recursive: true });
+    if (!fs.existsSync(GENERATED_DIR)) fs.mkdirSync(GENERATED_DIR, { recursive: true });
+    if (!fs.existsSync(INDEX_FILE)) fs.writeFileSync(INDEX_FILE, JSON.stringify({}), "utf8");
+  } catch (e) {
+    console.warn("⚠️ [Kernel] ensureDirs failed:", e.message);
+  }
+}
+
+async function readIndexSafe() {
+  try {
+    ensureDirs();
+    const raw = await fs.promises.readFile(INDEX_FILE, "utf8");
+    return JSON.parse(raw || "{}");
+  } catch (e) {
+    console.warn("⚠️ [Kernel] readIndexSafe failed:", e.message);
+    return {};
+  }
+}
+
+async function writeIndex(idx) {
+  try {
+    await fs.promises.writeFile(INDEX_FILE, JSON.stringify(idx, null, 2), "utf8");
+  } catch (e) {
+    console.warn("⚠️ [Kernel] writeIndex failed:", e.message);
+  }
+}
+
+function generateFileId() {
+  return `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+}
+
+function sanitizeName(name) {
+  return (name || "file").replace(/[^a-zA-Z0-9_.-]/g, "_");
+}
 
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
-    const message = (rawMessage || "").trim();
-    if (!message) {
-        return {
-            reply: "هلا يا شريكي... آمرني.",
-            fileBase64: null,
-            fileName: null,
-            operations: [],
-            execution: null
-        };
-    }
+  const message = (rawMessage || "").trim();
+  if (!message) {
+    return {
+      reply: "هلا يا شريكي... آمرني.",
+      fileBase64: null,
+      fileName: null,
+      operations: [],
+      execution: null
+    };
+  }
 
-    const activeFile = ctx.activeFile || null;
-    const extractedContent = ctx.extractedContent || activeFile?.extractedContent || null;
-    
-    // ✅ تحسين استقبال filePath و fileName من ctx
-    let fileName = ctx.fileName || activeFile?.fileName || null;
-    let filePath = ctx.filePath || activeFile?.filePath || null;
+  ensureDirs();
 
-    // ✅ تأكد من أن filePath و fileName يتم تمريرهما بشكل صحيح
-    // إذا كان ctx.filePath موجود ولكن activeFile.filePath لا، استخدم ctx.filePath
-    if (!filePath && ctx.filePath) {
-        filePath = ctx.filePath;
-    }
-    if (!fileName && ctx.fileName) {
-        fileName = ctx.fileName;
-    }
+  const activeFile = ctx.activeFile || null;
+  const extractedContent = ctx.extractedContent || activeFile?.extractedContent || null;
 
-    console.log(`🔍 [Kernel] استقبال: fileName=${fileName}, filePath=${filePath}`);
-    console.log(`🔍 [Kernel] ctx.filePath=${ctx.filePath}, ctx.fileName=${ctx.fileName}`);
-    console.log(`🔍 [Kernel] activeFile?.filePath=${activeFile?.filePath}, activeFile?.fileName=${activeFile?.fileName}`);
+  // استقبال fileName/filePath من ctx أو activeFile
+  let fileName = ctx.fileName || activeFile?.fileName || null;
+  let filePath = ctx.filePath || activeFile?.filePath || null;
 
-    let fileContext = ctx.activeFileSummary || "";
-    if (!fileContext && extractedContent && !extractedContent.error) {
-        const schema = extractedContent.columns_schema || {};
-        const headerRow = extractedContent.detected_header_row || 1;
-        fileContext = `ملف: ${fileName}\nمؤشر صف العناوين: ${headerRow}\nالأعمدة المتوفرة: ${JSON.stringify(schema)}\n`;
-    }
+  // لو كان ctx يعطي قيمة صريحة null لا نعتبرها صالحة
+  if (filePath === null || filePath === undefined) {
+    filePath = activeFile?.filePath || null;
+  }
+  if (fileName === null || fileName === undefined) {
+    fileName = activeFile?.fileName || null;
+  }
 
-    const fingerprintText = fusionMemory.getFingerprintText(sessionId);
-    const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
+  console.log(`🔍 [Kernel] استقبال: fileName=${fileName}, filePath=${filePath}`);
+  console.log(`🔍 [Kernel] ctx.filePath=${ctx.filePath}, ctx.fileName=${ctx.fileName}`);
+  console.log(`🔍 [Kernel] activeFile?.filePath=${activeFile?.filePath}, activeFile?.fileName=${activeFile?.fileName}`);
 
-    const excelActionRegex = /(ضيف|أضف|احذف|شيل|امسح|عدل|غيّر|حدث|نسّق|لوّن|دمج|فك دمج|معادلة|صيغة|عمود|أعمدة|صف|صفوف|خلية|خلايا|شيت|ورقة|أنشئ|ولد|صمم|اعمل|سوي|اطبع|جدول|تقرير)/i;
-    const isExcelAction = excelActionRegex.test(message);
+  let fileContext = ctx.activeFileSummary || "";
+  if (!fileContext && extractedContent && !extractedContent.error) {
+    const schema = extractedContent.columns_schema || {};
+    const headerRow = extractedContent.detected_header_row || 1;
+    fileContext = `ملف: ${fileName}\nمؤشر صف العناوين: ${headerRow}\nالأعمدة المتوفرة: ${JSON.stringify(schema)}\n`;
+  }
 
-    const userExplicitlyWantsNew = /(ملف جديد|من الصفر|جديد كلياً|اصنع ملفاً جديداً)/i.test(message);
-    const isModifyRequest = /طور|عدل|حسن|ضيف|أضف|تطوير|إضافة|add|update|modify|تحسين|توسيع/i.test(message);
-    
-    // ✅ التحقق من وجود الملف بشكل صحيح
-    const hasExistingFile = filePath && fs.existsSync(filePath);
-    // ✅ التحقق من وجود مسار في ctx حتى لو الملف غير موجود (قد يكون مساراً جديداً للتوليد)
-    const hasFilePath = filePath !== null && filePath !== undefined;
+  const fingerprintText = fusionMemory.getFingerprintText(sessionId);
+  const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
 
-    console.log(`📂 [Kernel] hasExistingFile=${hasExistingFile}, hasFilePath=${hasFilePath}, filePath=${filePath}`);
+  const excelActionRegex = /(ضيف|أضف|احذف|شيل|امسح|عدل|غيّر|حدث|نسّق|لوّن|دمج|فك دمج|معادلة|صيغة|عمود|أعمدة|صف|صفوف|خلية|خلايا|شيت|ورقة|أنشئ|ولد|صمم|اعمل|سوي|اطبع|جدول|تقرير)/i;
+  const isExcelAction = excelActionRegex.test(message);
 
-    let isGenerationRequest = false;
+  const userExplicitlyWantsNew = /(ملف جديد|من الصفر|جديد كلياً|اصنع ملفاً جديد)/i.test(message);
+  const isModifyRequest = /طور|عدل|حسن|ضيف|أضف|تطوير|إضافة|add|update|modify|تحسين|توسيع/i.test(message);
 
-    // ✅ قرار التوليد أو التعديل
-    if (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message)) {
-        // طلب صريح لملف جديد
-        isGenerationRequest = true;
-        console.log("🆕 [Kernel] طلب صريح لملف جديد");
-    } else if (!hasExistingFile && !hasFilePath) {
-        // لا يوجد ملف ولا مسار -> توليد جديد
-        isGenerationRequest = true;
-        console.log("🆕 [Kernel] لا يوجد ملف ولا مسار، توليد جديد");
-    } else if (!hasExistingFile && hasFilePath) {
-        // يوجد مسار ولكن الملف غير موجود -> توليد جديد
-        isGenerationRequest = true;
-        console.log("🆕 [Kernel] يوجد مسار ولكن الملف غير موجود، توليد جديد");
-    } else if (isModifyRequest && hasExistingFile) {
-        // تعديل ملف موجود
-        isGenerationRequest = false;
-        console.log(`📂 [Kernel] تطوير الملف الموجود: ${filePath}`);
-    } else if (hasExistingFile) {
-        // يوجد ملف -> اعتبره تعديل
-        isGenerationRequest = false;
-        console.log(`📂 [Kernel] استخدام الملف الموجود: ${filePath}`);
-    } else {
-        // افتراضي: توليد جديد
-        isGenerationRequest = true;
-        console.log("🆕 [Kernel] افتراضي: توليد جديد");
-    }
+  // تحقق من وجود الملف فعلياً
+  const hasExistingFile = filePath && fs.existsSync(filePath);
+  const hasFilePath = filePath !== null && filePath !== undefined;
 
-    let systemContent = SYSTEM_PROMPT;
-    if (fileContext) {
-        systemContent += `\n\n[سياق الملف الحالي]:\n${fileContext}`;
-    }
+  console.log(`📂 [Kernel] hasExistingFile=${hasExistingFile}, hasFilePath=${hasFilePath}, filePath=${filePath}`);
 
-    if (fingerprintText) {
-        systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
-    }
+  let isGenerationRequest = false;
 
-    // ✅ تحديد مسار الملف بشكل صحيح
-    if (isGenerationRequest) {
-        // إنشاء مسار جديد للملف
-        fileName = `Alatheer_Report_${Date.now()}.xlsx`;
-        filePath = path.join(process.cwd(), fileName);
-        systemContent += `\n\n[تعليمات النظام للتوليد]: المستخدم يطلب توليد ملف إكسل جديد كلياً. قم بكتابة كود بايثون متكامل باستخدام مكتبة openpyxl لإنشاء الملف، تعبئة البيانات، تنسيق الترويسة بلون مميز وخط غامق ومحاذاة مركزية، وحفظه حصراً في مسار الملف المستلم عبر sys.argv[1].`;
-    } else if (!isGenerationRequest && hasExistingFile) {
-        // ✅ تعديل الملف الموجود - استخدم نفس المسار
-        console.log(`📂 [Kernel] تعديل الملف الموجود: ${filePath}`);
-        systemContent += `\n\n[تعليمات النظام للتعديل المباشر]: المستخدم يطلب تعديل الملف الحالي الموجود في مسار sys.argv[1]. يجب قراءة الملف باستخدام pandas أو openpyxl، تطبيق التعديلات المطلوبة بدقة، وحفظ التعديلات **نفسها** على نفس المسار (sys.argv[1]) دون تغيير اسمه أو إنشاء ملف جديد.`;
-    } else if (!isGenerationRequest && !hasExistingFile) {
-        // ✅ حالة خاصة: طلب تعديل ولكن لا يوجد ملف - نتعامل كتوليد جديد
-        console.log(`🆕 [Kernel] لا يوجد ملف موجود، سيتم التوليد من الصفر`);
-        fileName = `Alatheer_Report_${Date.now()}.xlsx`;
-        filePath = path.join(process.cwd(), fileName);
-        systemContent += `\n\n[تعليمات النظام]: لا يوجد ملف سابق، سيتم إنشاء ملف جديد.`;
-    }
+  // قرار التوليد أو التعديل
+  if (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message)) {
+    isGenerationRequest = true;
+    console.log("🆕 [Kernel] طلب صريح لملف جديد");
+  } else if (!hasExistingFile && !hasFilePath) {
+    isGenerationRequest = true;
+    console.log("🆕 [Kernel] لا يوجد ملف ولا مسار، توليد جديد");
+  } else if (!hasExistingFile && hasFilePath) {
+    // يوجد مسار لكن الملف غير موجود -> توليد جديد في persistent_uploads
+    isGenerationRequest = true;
+    console.log("🆕 [Kernel] يوجد مسار ولكن الملف غير موجود، توليد جديد");
+  } else if (isModifyRequest && hasExistingFile) {
+    isGenerationRequest = false;
+    console.log(`📂 [Kernel] تطوير الملف الموجود: ${filePath}`);
+  } else if (hasExistingFile) {
+    isGenerationRequest = false;
+    console.log(`📂 [Kernel] استخدام الملف الموجود: ${filePath}`);
+  } else {
+    isGenerationRequest = true;
+    console.log("🆕 [Kernel] افتراضي: توليد جديد");
+  }
 
-    // ✅ تعليمات مهمة جداً للأثير
-    systemContent += `
+  let systemContent = SYSTEM_PROMPT;
+  if (fileContext) {
+    systemContent += `\n\n[سياق الملف الحالي]:\n${fileContext}`;
+  }
+  if (fingerprintText) {
+    systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
+  }
+
+  // تحديد مسار الملف النهائي داخل persistent_uploads أو generated
+  if (isGenerationRequest) {
+    // ضع الملفات المولّدة في persistent_uploads لضمان اتساق المسارات
+    const id = generateFileId();
+    const safeName = `${id}-${sanitizeName(fileName || `Alatheer_Report`)}.xlsx`.replace(/\.xlsx\.xlsx$/, ".xlsx");
+    fileName = safeName;
+    filePath = path.join(PERSISTENT_DIR, safeName);
+    systemContent += `\n\n[تعليمات النظام للتوليد]: حفظ الملف في المسار الممرّر عبر sys.argv[1] (المسار النهائي: ${filePath}).`;
+  } else if (!isGenerationRequest && hasExistingFile) {
+    // تعديل الملف الموجود: نستخدم المسار كما هو
+    systemContent += `\n\n[تعليمات النظام للتعديل المباشر]: عدّل الملف الموجود في sys.argv[1] واحفظ التعديلات على نفس المسار (${filePath}).`;
+  } else if (!isGenerationRequest && !hasExistingFile) {
+    // حالة خاصة: طلب تعديل لكن لا يوجد ملف فعلي -> توليد جديد
+    const id = generateFileId();
+    const safeName = `${id}-${sanitizeName(fileName || `Alatheer_Report`)}.xlsx`.replace(/\.xlsx\.xlsx$/, ".xlsx");
+    fileName = safeName;
+    filePath = path.join(PERSISTENT_DIR, safeName);
+    systemContent += `\n\n[تعليمات النظام]: لا يوجد ملف سابق، سيتم إنشاء ملف جديد وحفظه في ${filePath}.`;
+  }
+
+  // تعليمات إضافية للموديل (كما في النسخة الأصلية)
+  systemContent += `
 
 [تعليمات مهمة جداً لكتابة الكود]:
+1. كتابة المعادلات (Formulas): استخدم write_formula(cell, "=FORMULA()") دائماً.
+2. الألوان والتعبئة: استخدم المتغيرات المعرفة مسبقاً أو PatternFill.
+3. أسماء الأوراق العربية: ضعها بين علامات تنصيص مفردة في المعادلات.
+4. التنسيق الشرطي: استخدم add_conditional_formatting(ws, range, formula, style).
+5. تأكد من حفظ الملف في المسار المحدد (sys.argv[1]) وعدم تغيير اسمه.`;
 
-1. **كتابة المعادلات (Formulas):**
-   - استخدم write_formula(cell, "=FORMULA()") دائماً
-   - مثال صحيح: write_formula(cell, "=SUM(A1:A10)")
-   - مثال خاطئ: cell.value = "=SUM(A1:A10)" أو write_formula(cell, "=SUM(=A1:A10)")
-   - تأكد من أن المعادلة تبدأ بـ = واحدة فقط
-
-2. **الألوان والتعبئة (Colors & Fills):**
-   - المتغيرات التالية معرّفة مسبقاً: fill_blue, fill_green, fill_orange, fill_purple, fill_gold, fill_light_blue
-   - استخدمها مباشرة: cell.fill = fill_blue
-   - يمكنك أيضاً استخدام PatternFill مباشرة
-
-3. **أسماء الأوراق العربية:**
-   - ضعها بين علامات تنصيص مفردة في المعادلات: 'ورقة1'
-   - مثال: write_formula(cell, "=SUM('قاعدة البيانات'!A1:A10)")
-
-4. **التنسيق الشرطي:**
-   - استخدم add_conditional_formatting(ws, range, formula, style)
-   - مثال: add_conditional_formatting(ws, "H2:H10", 'H2="مكتمل"', {"fill": "E2EFDA"})
-
-5. **تأكد من:**
-   - حفظ الملف في المسار المحدد (sys.argv[1])
-   - عدم وجود أخطاء نحوية في الكود`;
-
-    if (fingerprintText) {
-        systemContent += `
+  if (fingerprintText) {
+    systemContent += `
 
 [تعليمات الحفاظ على التنسيق]:
-1. لا تحذف أي ورقة من الأوراق الموجودة في البصمة
-2. لا تحذف أي معادلة من المعادلات الموجودة
-3. حافظ على نفس نظام الألوان والتنسيق
-4. أضف الميزات الجديدة فقط دون المساس بالميزات الموجودة`;
-    }
+1. لا تحذف أي ورقة أو معادلة موجودة في البصمة.
+2. أضف الميزات الجديدة دون المساس بالميزات الحالية.`;
+  }
 
-    const conversationMessages = [
-        { role: "system", content: systemContent },
-        ...history.map((h) => ({ role: h.role, content: h.content })),
-        { role: "user", content: message }
-    ];
+  const conversationMessages = [
+    { role: "system", content: systemContent },
+    ...history.map((h) => ({ role: h.role, content: h.content })),
+    { role: "user", content: message }
+  ];
 
-    let finalReplyText = "";
-    let fileBase64 = null;
-    let executionResult = null;
+  let finalReplyText = "";
+  let fileBase64 = null;
+  let executionResult = null;
 
-    try {
-        console.log("🧠 [Kernel] استدعاء النموذج للتحليل الأولي (Dual-Mode)...");
+  try {
+    console.log("🧠 [Kernel] استدعاء النموذج للتحليل الأولي (Dual-Mode)...");
 
-        const rawReply = await geminiService.chat(conversationMessages, {
-            fileName,
-            extractedContent,
-            systemInstruction: systemContent
-        });
+    const rawReply = await geminiService.chat(conversationMessages, {
+      fileName,
+      extractedContent,
+      systemInstruction: systemContent
+    });
 
-        finalReplyText = rawReply || "تم يا شريكي.";
+    finalReplyText = rawReply || "تم يا شريكي.";
 
-        if (!isExcelAction || !filePath) {
-            memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
-            return {
-                reply: finalReplyText,
-                fileName,
-                fileBase64: null,
-                operations: [],
-                execution: null
-            };
-        }
-
-        let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
-        if (!pythonMatch) {
-            pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
-        }
-        if (!pythonMatch) {
-            pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
-        }
-        if (!pythonMatch) {
-            pythonMatch = finalReplyText.match(/```([\s\S]*?)```/);
-        }
-
-        if (pythonMatch) {
-            let pythonCode = pythonMatch[1].trim();
-            
-            finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
-            if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
-                finalReplyText = finalReplyText.replace(/```[\s\S]*?```/g, "").trim();
-            }
-            
-            if (!finalReplyText) {
-                finalReplyText = "جاري تجهيز الملف يا شريكي...";
-            }
-
-            const maxRetries = 2;
-            let currentAttempt = 0;
-            let isSuccess = false;
-
-            while (currentAttempt < maxRetries && !isSuccess) {
-                currentAttempt++;
-                console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (${isGenerationRequest ? 'توليد جديد' : 'تعديل'}) - محاولة ${currentAttempt}...`);
-                console.log(`📁 [Kernel] المسار المستهدف: ${filePath}`);
-
-                executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest);
-
-                const outputStr = (executionResult?.output || "").toLowerCase();
-                const hasLogicalError = outputStr.includes("error:") || outputStr.includes("valueerror") || outputStr.includes("exception");
-
-                if (executionResult && executionResult.success && !hasLogicalError && fs.existsSync(filePath)) {
-                    isSuccess = true;
-                    finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح والتحقق من صحته. جاهز للتحميل يا هندسة!`;
-                    fileBase64 = fs.readFileSync(filePath).toString("base64");
-                    
-                    try {
-                        const previewData = await extractPreviewAsync(filePath);
-                        if (previewData && !previewData.error) {
-                            fusionMemory.storeFileFingerprint(sessionId, filePath, previewData);
-                        }
-                    } catch (e) {
-                        console.warn("⚠️ [Kernel] فشل تخزين البصمة:", e.message);
-                    }
-                } else {
-                    const actualError = executionResult?.error || executionResult?.output || "خطأ منطقي في التنفيذ";
-                    console.warn(`⚠️ فشل التنفيذ في المحاولة ${currentAttempt}:`, actualError);
-
-                    if (currentAttempt < maxRetries) {
-                        const errorFeedbackPrompt =
-                            `الكود واجه مشكلة:\n\`\`\`text\n${actualError}\n\`\`\`\n` +
-                            `قم بتصحيح كود البايثون وتأكد من حفظ الملف في المسار المدرج في sys.argv[1]. أرجع الكود داخل وسم \`\`\`python فقط.`;
-
-                        const correctionMessages = [
-                            ...conversationMessages,
-                            { role: "assistant", content: pythonMatch[0] },
-                            { role: "user", content: errorFeedbackPrompt }
-                        ];
-
-                        const fixReply = await geminiService.chat(correctionMessages, {
-                            fileName,
-                            extractedContent,
-                            systemInstruction: systemContent
-                        });
-
-                        let newMatch = fixReply.match(/```python\s*\n([\s\S]*?)\n\s*```/);
-                        if (!newMatch) {
-                            newMatch = fixReply.match(/```python\s*([\s\S]*?)\s*```/);
-                        }
-                        if (!newMatch) {
-                            newMatch = fixReply.match(/```\s*([\s\S]*?)```/);
-                        }
-                        
-                        if (newMatch) {
-                            pythonCode = newMatch[1].trim();
-                        } else {
-                            break;
-                        }
-                    } else {
-                        finalReplyText +=
-                            `\n\n❌ عذراً يا شريكي، واجهتني مشكلة أثناء بناء الملف:\n\`\`\`text\n${actualError.substring(0, 400)}\n\`\`\``;
-                    }
-                }
-            }
-        } else {
-            console.warn("⚠️ [Kernel] لم يتم العثور على كود Python في رد Gemini");
-            finalReplyText += `\n\n⚠️ طلبت عملية إكسل ولكن لم يُرجع النموذج كود بايثون للتنفيذ.`;
-        }
-    } catch (error) {
-        console.error("❌ [Kernel Exception]:", error);
-        finalReplyText = `صار خطأ تقني داخلي: ${error.message}`;
-    }
-
-    memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
-
-    return {
+    // إذا لم يكن هذا طلب إكسل أو لم نحدد مسار، نعيد النص فقط
+    if (!isExcelAction || !filePath) {
+      memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
+      return {
         reply: finalReplyText,
         fileName,
-        fileBase64,
+        fileBase64: null,
         operations: [],
-        execution: executionResult
-    };
+        execution: null
+      };
+    }
+
+    // استخراج كود بايثون من رد الموديل
+    let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
+    if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
+    if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
+    if (!pythonMatch) pythonMatch = finalReplyText.match(/```([\s\S]*?)```/);
+
+    if (pythonMatch) {
+      let pythonCode = pythonMatch[1].trim();
+
+      // نظف النص المعروض للمستخدم من الكود
+      finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
+      if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
+        finalReplyText = finalReplyText.replace(/```[\s\S]*?```/g, "").trim();
+      }
+      if (!finalReplyText) finalReplyText = "جاري تجهيز الملف يا شريكي...";
+
+      const maxRetries = 2;
+      let currentAttempt = 0;
+      let isSuccess = false;
+
+      while (currentAttempt < maxRetries && !isSuccess) {
+        currentAttempt++;
+        console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (${isGenerationRequest ? 'توليد جديد' : 'تعديل'}) - محاولة ${currentAttempt}...`);
+        console.log(`📁 [Kernel] المسار المستهدف: ${filePath}`);
+
+        // نفّذ السكربت. executeDynamicPython يفترض أنه يستقبل الكود والمسار ويعمل cwd مناسب.
+        executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest);
+
+        const outputStr = (executionResult?.output || "").toLowerCase();
+        const hasLogicalError = outputStr.includes("error:") || outputStr.includes("valueerror") || outputStr.includes("exception");
+
+        if (executionResult && executionResult.success && !hasLogicalError && fs.existsSync(filePath)) {
+          isSuccess = true;
+          finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح والتحقق من صحته. جاهز للتحميل يا هندسة!`;
+          try {
+            fileBase64 = fs.readFileSync(filePath).toString("base64");
+          } catch (e) {
+            console.warn("⚠️ [Kernel] failed to read file for base64:", e.message);
+          }
+
+          // تحديث البصمة وتخزين مرجع الملف في الذاكرة والفهرس
+          try {
+            const previewData = await extractPreviewAsync(filePath);
+            if (previewData && !previewData.error) {
+              fusionMemory.storeFileFingerprint(sessionId, filePath, previewData);
+            }
+          } catch (e) {
+            console.warn("⚠️ [Kernel] فشل تخزين البصمة:", e.message);
+          }
+
+          // تحديث index.json و memory.saveFile
+          try {
+            const idx = await readIndexSafe();
+            // حاول إيجاد ملفId موجود أو أنشئ واحداً جديداً
+            let foundId = null;
+            for (const k of Object.keys(idx)) {
+              if (idx[k].storedPath === filePath) {
+                foundId = k;
+                break;
+              }
+            }
+            if (!foundId) {
+              const newId = generateFileId();
+              const storedName = path.basename(filePath);
+              idx[newId] = {
+                fileId: newId,
+                fileName: storedName,
+                storedName,
+                storedPath: filePath,
+                size: fs.existsSync(filePath) ? fs.statSync(filePath).size : null,
+                uploadedAt: new Date().toISOString()
+              };
+              await writeIndex(idx);
+              foundId = newId;
+            } else {
+              // حدث بيانات الملف إن لزم
+              idx[foundId].fileName = path.basename(filePath);
+              idx[foundId].storedPath = filePath;
+              idx[foundId].size = fs.existsSync(filePath) ? fs.statSync(filePath).size : idx[foundId].size;
+              idx[foundId].uploadedAt = new Date().toISOString();
+              await writeIndex(idx);
+            }
+
+            // حفظ مرجع الملف في الذاكرة السيادية للجلسة
+            try {
+              memory.saveFile(sessionId, {
+                fileId: foundId,
+                filePath,
+                fileName: path.basename(filePath),
+                size: fs.existsSync(filePath) ? fs.statSync(filePath).size : null,
+                metadata: ctx.metadata || {}
+              });
+            } catch (e) {
+              console.warn("⚠️ [Kernel] memory.saveFile failed:", e.message);
+            }
+
+            // ضبط صلاحيات الملف
+            try {
+              await fs.promises.chmod(filePath, 0o600);
+            } catch (e) {
+              // ليس خطأ قاتل
+            }
+          } catch (e) {
+            console.warn("⚠️ [Kernel] index update failed:", e.message);
+          }
+        } else {
+          const actualError = executionResult?.error || executionResult?.output || "خطأ منطقي في التنفيذ";
+          console.warn(`⚠️ فشل التنفيذ في المحاولة ${currentAttempt}:`, actualError);
+
+          if (currentAttempt < maxRetries) {
+            const errorFeedbackPrompt =
+              `الكود واجه مشكلة:\n\`\`\`text\n${actualError}\n\`\`\`\n` +
+              `قم بتصحيح كود البايثون وتأكد من حفظ الملف في المسار المدرج في sys.argv[1]. أرجع الكود داخل وسم \`\`\`python فقط.`;
+
+            const correctionMessages = [
+              ...conversationMessages,
+              { role: "assistant", content: pythonMatch[0] },
+              { role: "user", content: errorFeedbackPrompt }
+            ];
+
+            const fixReply = await geminiService.chat(correctionMessages, {
+              fileName,
+              extractedContent,
+              systemInstruction: systemContent
+            });
+
+            let newMatch = fixReply.match(/```python\s*\n([\s\S]*?)\n\s*```/);
+            if (!newMatch) newMatch = fixReply.match(/```python\s*([\s\S]*?)\s*```/);
+            if (!newMatch) newMatch = fixReply.match(/```\s*([\s\S]*?)```/);
+
+            if (newMatch) {
+              pythonCode = newMatch[1].trim();
+            } else {
+              break;
+            }
+          } else {
+            finalReplyText += `\n\n❌ عذراً يا شريكي، واجهتني مشكلة أثناء بناء الملف:\n\`\`\`text\n${String(actualError).substring(0, 400)}\n\`\`\``;
+          }
+        }
+      } // نهاية حلقة المحاولات
+    } else {
+      console.warn("⚠️ [Kernel] لم يتم العثور على كود Python في رد Gemini");
+      finalReplyText += `\n\n⚠️ طلبت عملية إكسل ولكن لم يُرجع النموذج كود بايثون للتنفيذ.`;
+    }
+  } catch (error) {
+    console.error("❌ [Kernel Exception]:", error);
+    finalReplyText = `صار خطأ تقني داخلي: ${error.message}`;
+  }
+
+  // سجل الرد في الذاكرة السيادية
+  memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
+
+  return {
+    reply: finalReplyText,
+    fileName,
+    fileBase64,
+    operations: [],
+    execution: executionResult
+  };
 }
