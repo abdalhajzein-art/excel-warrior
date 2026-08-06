@@ -2,12 +2,13 @@
  * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
  * ✅ نظيف تماماً ومتوافق مع معمارية Zero-Middleman
  * ✅ دعم بصمة الملف (Fingerprint) لتوفير التوكنز
- * ✅ إصلاح مشكلة تمرير filePath للتعديل
+ * ✅ إصلاح مشكلة استرجاع الملف من الذاكرة عند التعديل
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
 import { extractPreviewAsync, executeDynamicPython } from "./core/dynamic_executor.js";
 import fusionMemory from "./core/fusion_memory.js";
+import memory from "./core/memory.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -72,10 +73,13 @@ export default async function handler(req, res) {
                     const fileBase64 = fileBuffer.toString('base64');
                     const downloadUrl = `/generated/${newFileName}`;
                     
+                    // ✅ تخزين البصمة
                     try {
                         const previewData = await extractPreviewAsync(newFilePath);
                         if (previewData && !previewData.error) {
                             fusionMemory.storeFileFingerprint(sessionKey, newFilePath, previewData);
+                            // ✅ تخزين مسار الملف في الذاكرة
+                            memory.saveFile(sessionKey, { filePath: newFilePath, fileName: newFileName });
                         }
                     } catch (e) {
                         console.warn("⚠️ [chat.js] فشل تخزين البصمة للملف المُنشأ:", e.message);
@@ -119,6 +123,8 @@ export default async function handler(req, res) {
                 console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
                 // ✅ تحديث finalFileName ليكون اسم الملف المحفوظ
                 finalFileName = uniqueFileName;
+                // ✅ تخزين مسار الملف في الذاكرة
+                memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
             }
 
             const previewData = await extractPreviewAsync(sovereignFilePath);
@@ -139,8 +145,17 @@ export default async function handler(req, res) {
             }
         }
 
+        // ✅ إذا لم يكن هناك ملف مرفق، حاول استرجاعه من الذاكرة
+        if (!fileData && !sovereignFilePath) {
+            const session = memory.getSession(sessionKey);
+            if (session && session.sovereign && session.sovereign.lastFile) {
+                sovereignFilePath = session.sovereign.lastFile.filePath;
+                finalFileName = session.sovereign.lastFile.fileName;
+                console.log(`🔄 [chat.js] استرجاع الملف من الذاكرة: ${sovereignFilePath}`);
+            }
+        }
+
         // ✅ المعالجة العادية عبر الـ orchestrator
-        // ✅ تأكد من تمرير filePath و fileName الصحيحين
         const orchestratorInput = {
             fileData, 
             fileName: finalFileName || fileName, 
@@ -165,10 +180,12 @@ export default async function handler(req, res) {
                 fileBase64 = fileBuffer.toString('base64');
                 returnedFileName = `modified_${Date.now()}-${path.basename(sovereignFilePath)}`;
                 
+                // ✅ تحديث البصمة
                 try {
                     const previewData = await extractPreviewAsync(sovereignFilePath);
                     if (previewData && !previewData.error) {
                         fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
+                        memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: returnedFileName });
                     }
                 } catch (e) {
                     console.warn("⚠️ [chat.js] فشل تحديث البصمة:", e.message);
@@ -179,7 +196,6 @@ export default async function handler(req, res) {
         }
 
         if (fileBase64 && returnedFileName) {
-            // ✅ استخدام المسار الصحيح للملف
             const baseName = path.basename(returnedFileName);
             const realFileUrl = encodeURI(`/persistent_uploads/${baseName}`);
             if (!reply.includes("تحميل")) {
@@ -195,4 +211,4 @@ export default async function handler(req, res) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-    }
+            }
