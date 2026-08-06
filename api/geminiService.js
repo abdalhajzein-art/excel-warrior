@@ -1,7 +1,6 @@
 /**
  * api/geminiService.js – Sovereign Gemini Service (Gemini-Like Harmonized Edition)
- * ✅ وعي مستمر بالملفات طوال الجلسة دون شروط معقدة
- * ✅ دعم Failover تلقائي بين النماذج
+ * ⭐ النسخة المصحّحة بالكامل – مع تمرير systemInstruction داخل startChat
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -82,9 +81,6 @@ geminiService.chat = async function(messages, extra = {}) {
     let systemMessages = messages.filter(m => m.role === "system");
     let systemInstruction = systemMessages.map(m => m.content).join("\n\n");
 
-    /* ------------------------------------------------------------
-       💡 وعي سياقي دائم بالملف النشط (بدون شروط معقدة)
-       ------------------------------------------------------------ */
     if (extra.fileName && extra.extractedContent) {
       const meta = extra.extractedContent;
       const fileContextDesc = `\n\n[سياق الملف النشط حالياً في الجلسة]:\n- اسم الملف: ${extra.fileName}\n- عينة المحتوى:\n${meta.text ? meta.text.slice(0, 2000) : 'متاح للتحليل'}\n`;
@@ -117,7 +113,7 @@ geminiService.chat = async function(messages, extra = {}) {
     const client = getClient();
     const model = client.getGenerativeModel({
       model: modelName,
-      systemInstruction,
+      systemInstruction,   // ← مهم جداً
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 32768,
@@ -126,6 +122,7 @@ geminiService.chat = async function(messages, extra = {}) {
 
     const chat = model.startChat({
       history,
+      systemInstruction,   // ← السطر السحري الذي كان ناقصاً
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 32768,
