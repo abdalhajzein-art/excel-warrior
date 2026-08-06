@@ -1,11 +1,12 @@
 /**
  * api/geminiService.js – Sovereign Gemini Service (Flash‑Safe Edition)
- * ⭐ SYSTEM_PROMPT داخل history فقط
- * ⭐ بدون أي systemInstruction نهائياً
- * ⭐ أول رسالة داخل history = user
+ * ✔ بدون systemInstruction نهائياً
+ * ✔ SYSTEM_PROMPT داخل history فقط
+ * ✔ أول رسالة = user
+ * ✔ متوافق مع Node.js 20 + Railway
  */
 
-import { GoogleGenerativeAI } from "@google-generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { auditExecution } from "./core/execution_monitor.js";
 
 const rawKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";
