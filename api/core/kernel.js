@@ -142,16 +142,16 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
   }
 
-  // ✅ إضافة تعليمات excel-agent-tools
+  // ✅ إضافة تعليمات excel-agent-tools المعدلة
   systemContent += `
 
 [🚨 تنبيه صارم - استخدام excel-agent-tools فقط]:
 - **ممنوع** استخدام openpyxl مباشرة.
 - **ممنوع** كتابة wb = load_workbook() أو wb.save().
-- استخدم فقط الأدوات الجاهزة: xls_create_workbook, xls_write_range, xls_add_sheet, xls_add_chart, xls_format_range, xls_set_formula, xls_read_range, xls_validate_workbook.
-- جميع هذه الدوال متاحة في بيئة التنفيذ.
+- الدوال متاحة وجاهزة للاستدعاء الفوري (لا تقم بكتابة def لها): xls_create_workbook, xls_write_range, xls_add_sheet, xls_add_chart, xls_format_range, xls_set_formula, xls_read_range, xls_validate_workbook.
+- استخدم (underscore _) في استدعاء الدوال وليس (hyphen -).
 - sys.argv[1] يحتوي على مسار الملف المستهدف.
-- الأدوات ترجع JSON، تحقق من النتائج.`;
+- الأدوات ترجع JSON، لا حاجة لعمل print إلا للنتائج النهائية.`;
 
   // تحديد مسار الملف النهائي
   if (isGenerationRequest) {
@@ -356,4 +356,5 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     operations: [],
     execution: executionResult
   };
-  }
+}
+
