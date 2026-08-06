@@ -24,6 +24,7 @@ function formatFileContextForKernel(activeFile) {
 export default async function conversationOrchestrator(sessionId, message, extraCtx = {}) {
     try {
         console.log(`📥 [Orchestrator] جلسة ${sessionId} | "${(message || "").substring(0, 50)}..."`);
+        console.log(`📥 [Orchestrator] extraCtx.filePath=${extraCtx.filePath}, extraCtx.fileName=${extraCtx.fileName}`);
 
         const session = memory.getSession(sessionId) || memory.createSession(sessionId);
 
@@ -37,16 +38,43 @@ export default async function conversationOrchestrator(sessionId, message, extra
             delete session.intentCache;
         }
 
-        // 📥 استقبال ملف جديد
+        // ✅ 📥 استقبال ملف جديد - تحسين لاستقبال filePath حتى لو كان null
         if (extraCtx.fileData || extraCtx.filePath) {
+            console.log(`📂 [Orchestrator] استقبال ملف: filePath=${extraCtx.filePath}, fileName=${extraCtx.fileName}`);
             session.activeFile = {
-                fileName: extraCtx.fileName,
+                fileName: extraCtx.fileName || 'file.xlsx',
                 filePath: extraCtx.filePath,
-                metadata: extraCtx.metadata,
-                extractedContent: extraCtx.extractedContent,
+                metadata: extraCtx.metadata || {},
+                extractedContent: extraCtx.extractedContent || null,
                 timestamp: Date.now()
             };
         }
+
+        // ✅ إذا كان هناك filePath في extraCtx ولكن activeFile غير موجود، أنشئه
+        if (!session.activeFile && extraCtx.filePath) {
+            console.log(`📂 [Orchestrator] إنشاء activeFile من extraCtx: filePath=${extraCtx.filePath}`);
+            session.activeFile = {
+                fileName: extraCtx.fileName || 'file.xlsx',
+                filePath: extraCtx.filePath,
+                metadata: extraCtx.metadata || {},
+                extractedContent: extraCtx.extractedContent || null,
+                timestamp: Date.now()
+            };
+        }
+
+        // ✅ إذا كان هناك ملف في الذاكرة (sovereign.lastFile) ولكن activeFile غير موجود
+        if (!session.activeFile && session.sovereign && session.sovereign.lastFile) {
+            console.log(`📂 [Orchestrator] استرجاع الملف من sovereign.lastFile: ${session.sovereign.lastFile.filePath}`);
+            session.activeFile = {
+                fileName: session.sovereign.lastFile.fileName || 'file.xlsx',
+                filePath: session.sovereign.lastFile.filePath,
+                metadata: session.sovereign.lastFile.metadata || {},
+                extractedContent: session.sovereign.lastFile.extractedContent || null,
+                timestamp: Date.now()
+            };
+        }
+
+        console.log(`📂 [Orchestrator] activeFile بعد المعالجة: ${session.activeFile?.filePath || 'لا يوجد'}`);
 
         // 🧠 حفظ الرسالة
         memory.appendChatHistory(sessionId, { role: "user", content: message });
@@ -66,13 +94,15 @@ export default async function conversationOrchestrator(sessionId, message, extra
             activeFile: session.activeFile,
 
             // ⭐ إضافات ضرورية للكيرنل الجديد
-            fileName: session.activeFile?.fileName,
-            filePath: session.activeFile?.filePath,
-            extractedContent: session.activeFile?.extractedContent,
-            metadata: session.activeFile?.metadata
+            fileName: session.activeFile?.fileName || null,
+            filePath: session.activeFile?.filePath || null,
+            extractedContent: session.activeFile?.extractedContent || null,
+            metadata: session.activeFile?.metadata || null
         };
 
         console.log(`🧠 [Orchestrator] تسليم القيادة للـ Kernel...`);
+        console.log(`🧠 [Orchestrator] kernelContext.filePath=${kernelContext.filePath}, kernelContext.fileName=${kernelContext.fileName}`);
+
         const kernelOutput = await kernel(sessionId, message, kernelContext);
 
         // 🧠 حفظ رد المساعد
@@ -101,4 +131,4 @@ export default async function conversationOrchestrator(sessionId, message, extra
             operations: []
         };
     }
-    }
+            }
