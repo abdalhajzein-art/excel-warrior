@@ -30,10 +30,23 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     const activeFile = ctx.activeFile || null;
     const extractedContent = ctx.extractedContent || activeFile?.extractedContent || null;
+    
+    // ✅ تحسين استقبال filePath و fileName من ctx
     let fileName = ctx.fileName || activeFile?.fileName || null;
     let filePath = ctx.filePath || activeFile?.filePath || null;
 
+    // ✅ تأكد من أن filePath و fileName يتم تمريرهما بشكل صحيح
+    // إذا كان ctx.filePath موجود ولكن activeFile.filePath لا، استخدم ctx.filePath
+    if (!filePath && ctx.filePath) {
+        filePath = ctx.filePath;
+    }
+    if (!fileName && ctx.fileName) {
+        fileName = ctx.fileName;
+    }
+
     console.log(`🔍 [Kernel] استقبال: fileName=${fileName}, filePath=${filePath}`);
+    console.log(`🔍 [Kernel] ctx.filePath=${ctx.filePath}, ctx.fileName=${ctx.fileName}`);
+    console.log(`🔍 [Kernel] activeFile?.filePath=${activeFile?.filePath}, activeFile?.fileName=${activeFile?.fileName}`);
 
     let fileContext = ctx.activeFileSummary || "";
     if (!fileContext && extractedContent && !extractedContent.error) {
@@ -50,24 +63,41 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     const userExplicitlyWantsNew = /(ملف جديد|من الصفر|جديد كلياً|اصنع ملفاً جديداً)/i.test(message);
     const isModifyRequest = /طور|عدل|حسن|ضيف|أضف|تطوير|إضافة|add|update|modify|تحسين|توسيع/i.test(message);
+    
+    // ✅ التحقق من وجود الملف بشكل صحيح
     const hasExistingFile = filePath && fs.existsSync(filePath);
+    // ✅ التحقق من وجود مسار في ctx حتى لو الملف غير موجود (قد يكون مساراً جديداً للتوليد)
+    const hasFilePath = filePath !== null && filePath !== undefined;
 
-    console.log(`📂 [Kernel] hasExistingFile=${hasExistingFile}, filePath=${filePath}`);
+    console.log(`📂 [Kernel] hasExistingFile=${hasExistingFile}, hasFilePath=${hasFilePath}, filePath=${filePath}`);
 
     let isGenerationRequest = false;
 
+    // ✅ قرار التوليد أو التعديل
     if (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message)) {
+        // طلب صريح لملف جديد
         isGenerationRequest = true;
         console.log("🆕 [Kernel] طلب صريح لملف جديد");
-    } else if (!hasExistingFile) {
+    } else if (!hasExistingFile && !hasFilePath) {
+        // لا يوجد ملف ولا مسار -> توليد جديد
         isGenerationRequest = true;
-        console.log("🆕 [Kernel] لا يوجد ملف موجود، توليد جديد");
+        console.log("🆕 [Kernel] لا يوجد ملف ولا مسار، توليد جديد");
+    } else if (!hasExistingFile && hasFilePath) {
+        // يوجد مسار ولكن الملف غير موجود -> توليد جديد
+        isGenerationRequest = true;
+        console.log("🆕 [Kernel] يوجد مسار ولكن الملف غير موجود، توليد جديد");
     } else if (isModifyRequest && hasExistingFile) {
+        // تعديل ملف موجود
         isGenerationRequest = false;
         console.log(`📂 [Kernel] تطوير الملف الموجود: ${filePath}`);
-    } else {
+    } else if (hasExistingFile) {
+        // يوجد ملف -> اعتبره تعديل
         isGenerationRequest = false;
         console.log(`📂 [Kernel] استخدام الملف الموجود: ${filePath}`);
+    } else {
+        // افتراضي: توليد جديد
+        isGenerationRequest = true;
+        console.log("🆕 [Kernel] افتراضي: توليد جديد");
     }
 
     let systemContent = SYSTEM_PROMPT;
@@ -79,14 +109,18 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
     }
 
+    // ✅ تحديد مسار الملف بشكل صحيح
     if (isGenerationRequest) {
+        // إنشاء مسار جديد للملف
         fileName = `Alatheer_Report_${Date.now()}.xlsx`;
         filePath = path.join(process.cwd(), fileName);
         systemContent += `\n\n[تعليمات النظام للتوليد]: المستخدم يطلب توليد ملف إكسل جديد كلياً. قم بكتابة كود بايثون متكامل باستخدام مكتبة openpyxl لإنشاء الملف، تعبئة البيانات، تنسيق الترويسة بلون مميز وخط غامق ومحاذاة مركزية، وحفظه حصراً في مسار الملف المستلم عبر sys.argv[1].`;
     } else if (!isGenerationRequest && hasExistingFile) {
+        // ✅ تعديل الملف الموجود - استخدم نفس المسار
         console.log(`📂 [Kernel] تعديل الملف الموجود: ${filePath}`);
         systemContent += `\n\n[تعليمات النظام للتعديل المباشر]: المستخدم يطلب تعديل الملف الحالي الموجود في مسار sys.argv[1]. يجب قراءة الملف باستخدام pandas أو openpyxl، تطبيق التعديلات المطلوبة بدقة، وحفظ التعديلات **نفسها** على نفس المسار (sys.argv[1]) دون تغيير اسمه أو إنشاء ملف جديد.`;
     } else if (!isGenerationRequest && !hasExistingFile) {
+        // ✅ حالة خاصة: طلب تعديل ولكن لا يوجد ملف - نتعامل كتوليد جديد
         console.log(`🆕 [Kernel] لا يوجد ملف موجود، سيتم التوليد من الصفر`);
         fileName = `Alatheer_Report_${Date.now()}.xlsx`;
         filePath = path.join(process.cwd(), fileName);
@@ -271,4 +305,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         operations: [],
         execution: executionResult
     };
-        }
+}
