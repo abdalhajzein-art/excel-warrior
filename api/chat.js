@@ -2,6 +2,7 @@
  * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
  * ✅ نظيف تماماً ومتوافق مع معمارية Zero-Middleman
  * ✅ دعم بصمة الملف (Fingerprint) لتوفير التوكنز
+ * ✅ إصلاح مشكلة تمرير filePath للتعديل
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -116,6 +117,8 @@ export default async function handler(req, res) {
             if (buffer && buffer.length > 0) {
                 fs.writeFileSync(sovereignFilePath, buffer);
                 console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
+                // ✅ تحديث finalFileName ليكون اسم الملف المحفوظ
+                finalFileName = uniqueFileName;
             }
 
             const previewData = await extractPreviewAsync(sovereignFilePath);
@@ -123,7 +126,7 @@ export default async function handler(req, res) {
                 extractedContent = {
                     text: previewData.text,
                     metadata: { 
-                        fileName, 
+                        fileName: finalFileName, 
                         rows: previewData.rows, 
                         columns: previewData.columns,
                         sheets: previewData.sheets || 1 
@@ -137,27 +140,30 @@ export default async function handler(req, res) {
         }
 
         // ✅ المعالجة العادية عبر الـ orchestrator
+        // ✅ تأكد من تمرير filePath و fileName الصحيحين
         const orchestratorInput = {
             fileData, 
-            fileName: finalFileName, 
+            fileName: finalFileName || fileName, 
             filePath: sovereignFilePath, 
             history, 
             metadata, 
             extractedContent
         };
 
+        console.log(`📤 [chat.js] إرسال إلى orchestrator: fileName=${orchestratorInput.fileName}, filePath=${orchestratorInput.filePath}`);
+
         const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
 
         let reply = output?.reply || output?.message || "تكرم عينك يا شريكي، أنجزت لك المطلوب.";
         let fileBase64 = output?.fileBase64 || null;
-        let returnedFileName = output?.fileName || finalFileName || "modified_file.xlsx";
+        let returnedFileName = output?.fileName || finalFileName || fileName || "modified_file.xlsx";
 
         // ✅ التحقق من الملف المعدل
         if (sovereignFilePath && fs.existsSync(sovereignFilePath) && !fileBase64 && output?.execution?.success) {
             try {
                 const fileBuffer = fs.readFileSync(sovereignFilePath);
                 fileBase64 = fileBuffer.toString('base64');
-                returnedFileName = `modified_${Date.now()}-${fileName || 'file'}`;
+                returnedFileName = `modified_${Date.now()}-${path.basename(sovereignFilePath)}`;
                 
                 try {
                     const previewData = await extractPreviewAsync(sovereignFilePath);
@@ -173,7 +179,9 @@ export default async function handler(req, res) {
         }
 
         if (fileBase64 && returnedFileName) {
-            const realFileUrl = encodeURI(`/persistent_uploads/${path.basename(returnedFileName)}`);
+            // ✅ استخدام المسار الصحيح للملف
+            const baseName = path.basename(returnedFileName);
+            const realFileUrl = encodeURI(`/persistent_uploads/${baseName}`);
             if (!reply.includes("تحميل")) {
                 reply += `\n\n📥 **[اضغط هنا لتحميل ملفك يا هندسة](${realFileUrl})**`;
             }
@@ -187,4 +195,4 @@ export default async function handler(req, res) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-                }
+    }
