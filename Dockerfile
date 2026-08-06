@@ -1,10 +1,11 @@
-# 1. استخدام Python 3.12 كقاعدة (بدل node:20-slim)
+# 1. استخدام Python 3.12 كقاعدة
 FROM python:3.12-slim
 
-# 2. تثبيت Node.js 20.x
+# 2. تثبيت Node.js 20.x و Git
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg \
+    git \   # ← ✅ إضافة Git
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean \
