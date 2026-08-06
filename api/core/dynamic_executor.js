@@ -3,6 +3,7 @@
  * ⚡ تنفيذ سكربت بايثون مع دعم التعديل والتوليد
  * ✅ إصلاح مشكلة المعادلات (Formulas) - كتابتها كصيغ وليس كنصوص
  * ✅ إزالة استيراد Formula غير الموجود في openpyxl 3.1.5
+ * ✅ إضافة تعريفات الألوان الأساسية تلقائياً
  */
 
 import fs from "fs";
@@ -21,12 +22,10 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
             return resolve({ success: false, error: "مسار الملف غير صالح." });
         }
 
-        // ✅ التحقق من صحة الكود
         if (!pythonCode || pythonCode.trim().length === 0) {
             return resolve({ success: false, error: "لا يوجد كود بايثون للتنفيذ." });
         }
 
-        // ✅ التأكد من وجود المجلد
         const dir = path.dirname(targetFilePath);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
@@ -44,24 +43,18 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
         const scriptPath = path.join(process.cwd(), scriptName);
 
         try {
-            // 1. نسخة احتياطية
             if (!isNewFile && fs.existsSync(targetFilePath)) {
                 fs.copyFileSync(targetFilePath, backupPath);
             }
 
-            // ✅ تعديل الكود: نضمن أن sys.argv[1] موجود دائماً
-            // ✅ إضافة استيرادات مهمة (بدون Formula)
-            // ✅ إصلاح كتابة المعادلات كصيغ
             const safeCode = `
 import sys
 import traceback
 import os
 
-# ✅ التأكد من وجود المسار في argv
 if len(sys.argv) < 2:
     sys.argv.append('${targetFilePath}')
 
-# ✅ استيراد المكتبات (بدون Formula)
 try:
     import openpyxl
     from openpyxl.utils import get_column_letter
@@ -83,22 +76,27 @@ except ImportError:
     from openpyxl.styles.differential import DifferentialStyle
     from openpyxl.chart import BarChart, PieChart, Reference
 
+# ✅ تعريفات الألوان الأساسية (للاستخدام في الكود)
+fill_blue = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+fill_green = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+fill_orange = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+fill_purple = PatternFill(start_color="EDEDF9", end_color="EDEDF9", fill_type="solid")
+fill_gold = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+fill_light_blue = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+
 # ✅ دالة مساعدة لكتابة المعادلات (بدون Formula)
 def write_formula(cell, formula_string):
-    """
-    كتابة المعادلة كصيغة في Excel
-    openpyxl يتعامل مع أي قيمة تبدأ بـ = كصيغة تلقائياً
-    """
-    cell.value = formula_string
+    """كتابة المعادلة كصيغة في Excel"""
+    # ✅ تأكد من أن المعادلة تبدأ بـ = واحدة فقط
+    if formula_string.startswith('='):
+        cell.value = formula_string
+    else:
+        cell.value = '=' + formula_string
     return cell
 
 # ✅ دالة مساعدة لإضافة تنسيق شرطي بسهولة
 def add_conditional_formatting(ws, cell_range, formula, style):
     """إضافة تنسيق شرطي بسيط"""
-    from openpyxl.formatting.rule import Rule
-    from openpyxl.styles.differential import DifferentialStyle
-    from openpyxl.styles import PatternFill
-    
     diff_style = DifferentialStyle()
     if style.get('fill'):
         diff_style.fill = PatternFill(start_color=style['fill'], end_color=style['fill'], fill_type="solid")
@@ -110,14 +108,9 @@ def add_conditional_formatting(ws, cell_range, formula, style):
     return rule
 
 try:
-    # ✅ تنفيذ الكود الأصلي
 ${pythonCode.split('\n').map(line => '    ' + line).join('\n')}
-    
-    # ✅ إذا وصلنا لهنا يعني نجحنا
     print("SUCCESS: تم التنفيذ بنجاح ✓")
-
 except Exception as e:
-    # ✅ طباعة الخطأ بشكل واضح
     print(f"ERROR: {str(e)}")
     print(traceback.format_exc())
     sys.exit(1)
@@ -128,25 +121,21 @@ except Exception as e:
             console.log(`🔧 تنفيذ سكربت: ${scriptPath}`);
             console.log(`📁 الملف المستهدف: ${targetFilePath}`);
 
-            // 3. التنفيذ
             execFile(
                 "python3", 
                 [scriptPath, targetFilePath], 
                 { maxBuffer: 50 * 1024 * 1024 },
                 (error, stdout, stderr) => {
-                    // ✅ تنظيف الملف المؤقت
                     if (fs.existsSync(scriptPath)) {
                         try { fs.unlinkSync(scriptPath); } catch(e) {}
                     }
 
-                    // ✅ طباعة المخرجات للتصحيح
                     console.log("📤 stdout:", stdout);
                     if (stderr) console.log("⚠️ stderr:", stderr);
 
                     if (error) {
                         console.error("❌ Python Error:", stderr || error.message);
 
-                        // ✅ استرجاع النسخة الاحتياطية
                         if (!isNewFile && fs.existsSync(backupPath)) {
                             fs.copyFileSync(backupPath, targetFilePath);
                             try { fs.unlinkSync(backupPath); } catch(e) {}
@@ -161,12 +150,10 @@ except Exception as e:
                         });
                     }
 
-                    // ✅ تنظيف النسخة الاحتياطية
                     if (!isNewFile && fs.existsSync(backupPath)) {
                         try { fs.unlinkSync(backupPath); } catch(e) {}
                     }
 
-                    // ✅ التحقق من وجود الملف الناتج
                     if (isNewFile && !fs.existsSync(targetFilePath)) {
                         return resolve({ 
                             success: false, 
@@ -215,4 +202,4 @@ export async function extractPreviewAsync(filePath) {
         console.warn("⚠️ Preview Error:", error.message);
         return { error: error.message };
     }
-                            }
+                                          }
