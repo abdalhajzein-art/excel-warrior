@@ -5,6 +5,7 @@
  * ✅ إصلاح مشكلة استخراج كود Python من رد Gemini
  * ✅ دعم بصمة الملف (Fingerprint) لتوفير التوكنز
  * ✅ إصلاح مشكلة تمرير filePath للتعديل
+ * ✅ تعليمات أوضح لكتابة المعادلات والألوان
  */
 
 import fs from "fs";
@@ -41,39 +42,30 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         fileContext = `ملف: ${fileName}\nمؤشر صف العناوين: ${headerRow}\nالأعمدة المتوفرة: ${JSON.stringify(schema)}\n`;
     }
 
-    // ✅ استرجاع بصمة الملف من الذاكرة
     const fingerprintText = fusionMemory.getFingerprintText(sessionId);
-
     const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
 
-    // 🎯 شمولية النية: الكشف عن تعديل ملف قائم أو طلب توليد/إنشاء جدول جديد
     const excelActionRegex = /(ضيف|أضف|احذف|شيل|امسح|عدل|غيّر|حدث|نسّق|لوّن|دمج|فك دمج|معادلة|صيغة|عمود|أعمدة|صف|صفوف|خلية|خلايا|شيت|ورقة|أنشئ|ولد|صمم|اعمل|سوي|اطبع|جدول|تقرير)/i;
     const isExcelAction = excelActionRegex.test(message);
 
-    // 🛡️ [تعديل سيادي صارم]: التحقق الحاسم من وجود ملف حقيقي وتحديد نوع الطلب
     const userExplicitlyWantsNew = /(ملف جديد|من الصفر|جديد كلياً|اصنع ملفاً جديداً)/i.test(message);
     const isModifyRequest = /طور|عدل|حسن|ضيف|أضف|تطوير|إضافة|add|update|modify|تحسين|توسيع/i.test(message);
     const hasExistingFile = filePath && fs.existsSync(filePath);
 
     console.log(`📂 [Kernel] hasExistingFile=${hasExistingFile}, filePath=${filePath}`);
 
-    // ✅ تحديد نوع الطلب بشكل صحيح
     let isGenerationRequest = false;
 
     if (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message)) {
-        // ✅ طلب صريح لملف جديد
         isGenerationRequest = true;
         console.log("🆕 [Kernel] طلب صريح لملف جديد");
     } else if (!hasExistingFile) {
-        // ✅ لا يوجد ملف موجود -> توليد جديد
         isGenerationRequest = true;
         console.log("🆕 [Kernel] لا يوجد ملف موجود، توليد جديد");
     } else if (isModifyRequest && hasExistingFile) {
-        // ✅ تعديل ملف موجود
         isGenerationRequest = false;
         console.log(`📂 [Kernel] تطوير الملف الموجود: ${filePath}`);
     } else {
-        // ✅ افتراضي: إذا كان هناك ملف، اعتبره تعديل
         isGenerationRequest = false;
         console.log(`📂 [Kernel] استخدام الملف الموجود: ${filePath}`);
     }
@@ -83,38 +75,60 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         systemContent += `\n\n[سياق الملف الحالي]:\n${fileContext}`;
     }
 
-    // ✅ إضافة بصمة الملف للنظام إن وجدت
     if (fingerprintText) {
         systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
     }
 
-    // ✅ تحديد مسار الملف بشكل صحيح
     if (isGenerationRequest) {
-        // إنشاء مسار افتراضي آمن للملف الجديد
         fileName = `Alatheer_Report_${Date.now()}.xlsx`;
         filePath = path.join(process.cwd(), fileName);
         systemContent += `\n\n[تعليمات النظام للتوليد]: المستخدم يطلب توليد ملف إكسل جديد كلياً. قم بكتابة كود بايثون متكامل باستخدام مكتبة openpyxl لإنشاء الملف، تعبئة البيانات، تنسيق الترويسة بلون مميز وخط غامق ومحاذاة مركزية، وحفظه حصراً في مسار الملف المستلم عبر sys.argv[1].`;
     } else if (!isGenerationRequest && hasExistingFile) {
-        // ✅ تأكد من أن المسار صحيح
         console.log(`📂 [Kernel] تعديل الملف الموجود: ${filePath}`);
         systemContent += `\n\n[تعليمات النظام للتعديل المباشر]: المستخدم يطلب تعديل الملف الحالي الموجود في مسار sys.argv[1]. يجب قراءة الملف باستخدام pandas أو openpyxl، تطبيق التعديلات المطلوبة بدقة، وحفظ التعديلات **نفسها** على نفس المسار (sys.argv[1]) دون تغيير اسمه أو إنشاء ملف جديد.`;
     } else if (!isGenerationRequest && !hasExistingFile) {
-        // ✅ حالة خاصة: طلب تعديل ولكن لا يوجد ملف - نتعامل كتوليد جديد
         console.log(`🆕 [Kernel] لا يوجد ملف موجود، سيتم التوليد من الصفر`);
         fileName = `Alatheer_Report_${Date.now()}.xlsx`;
         filePath = path.join(process.cwd(), fileName);
         systemContent += `\n\n[تعليمات النظام]: لا يوجد ملف سابق، سيتم إنشاء ملف جديد.`;
     }
 
-    // ✅ تعليمات إضافية للحفاظ على التنسيق
+    // ✅ تعليمات مهمة جداً للأثير
+    systemContent += `
+
+[تعليمات مهمة جداً لكتابة الكود]:
+
+1. **كتابة المعادلات (Formulas):**
+   - استخدم write_formula(cell, "=FORMULA()") دائماً
+   - مثال صحيح: write_formula(cell, "=SUM(A1:A10)")
+   - مثال خاطئ: cell.value = "=SUM(A1:A10)" أو write_formula(cell, "=SUM(=A1:A10)")
+   - تأكد من أن المعادلة تبدأ بـ = واحدة فقط
+
+2. **الألوان والتعبئة (Colors & Fills):**
+   - المتغيرات التالية معرّفة مسبقاً: fill_blue, fill_green, fill_orange, fill_purple, fill_gold, fill_light_blue
+   - استخدمها مباشرة: cell.fill = fill_blue
+   - يمكنك أيضاً استخدام PatternFill مباشرة
+
+3. **أسماء الأوراق العربية:**
+   - ضعها بين علامات تنصيص مفردة في المعادلات: 'ورقة1'
+   - مثال: write_formula(cell, "=SUM('قاعدة البيانات'!A1:A10)")
+
+4. **التنسيق الشرطي:**
+   - استخدم add_conditional_formatting(ws, range, formula, style)
+   - مثال: add_conditional_formatting(ws, "H2:H10", 'H2="مكتمل"', {"fill": "E2EFDA"})
+
+5. **تأكد من:**
+   - حفظ الملف في المسار المحدد (sys.argv[1])
+   - عدم وجود أخطاء نحوية في الكود`;
+
     if (fingerprintText) {
-        systemContent += `\n\n[تعليمات الحفاظ على التنسيق]:
+        systemContent += `
+
+[تعليمات الحفاظ على التنسيق]:
 1. لا تحذف أي ورقة من الأوراق الموجودة في البصمة
 2. لا تحذف أي معادلة من المعادلات الموجودة
 3. حافظ على نفس نظام الألوان والتنسيق
-4. أضف الميزات الجديدة فقط دون المساس بالميزات الموجودة
-5. استخدم openpyxl بشكل صحيح لكتابة المعادلات كصيغ وليس كنصوص
-6. تأكد من استخدام write_formula() لكتابة المعادلات`;
+4. أضف الميزات الجديدة فقط دون المساس بالميزات الموجودة`;
     }
 
     const conversationMessages = [
@@ -149,7 +163,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             };
         }
 
-        // ✅ استخراج كود Python من رد Gemini (متعدد المحاولات)
         let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
         if (!pythonMatch) {
             pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
@@ -164,7 +177,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         if (pythonMatch) {
             let pythonCode = pythonMatch[1].trim();
             
-            // ✅ إخفاء الكود عن المستخدم
             finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
             if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
                 finalReplyText = finalReplyText.replace(/```[\s\S]*?```/g, "").trim();
@@ -193,7 +205,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                     finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح والتحقق من صحته. جاهز للتحميل يا هندسة!`;
                     fileBase64 = fs.readFileSync(filePath).toString("base64");
                     
-                    // ✅ تخزين البصمة بعد النجاح
                     try {
                         const previewData = await extractPreviewAsync(filePath);
                         if (previewData && !previewData.error) {
