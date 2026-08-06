@@ -50,12 +50,10 @@ async function readIndexSafe() {
 
 // حاول حل fileId أو storedName إلى مسار فعلي
 async function resolveFileReference({ fileId, filePath, fileName }) {
-  // إذا أعطانا caller مساراً مطلقاً وملف موجود، نستخدمه فوراً
   if (filePath && fs.existsSync(filePath)) {
     return { storedPath: filePath, fileName: fileName || path.basename(filePath) };
   }
 
-  // حاول حل fileId عبر index.json
   if (fileId) {
     const idx = await readIndexSafe();
     if (idx[fileId] && idx[fileId].storedPath && fs.existsSync(idx[fileId].storedPath)) {
@@ -63,7 +61,6 @@ async function resolveFileReference({ fileId, filePath, fileName }) {
     }
   }
 
-  // حاول البحث عن اسم ملف داخل persistent dir
   if (fileName) {
     const candidate = path.join(PERSISTENT_DIR, fileName);
     if (fs.existsSync(candidate)) {
@@ -82,7 +79,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
     );
 
     const session = memory.getSession(sessionId) || memory.createSession(sessionId);
-
     const lowerMsg = (message || "").toLowerCase();
 
     // تنظيف صريح لطلب المستخدم لمسح الملف
@@ -97,10 +93,9 @@ export default async function conversationOrchestrator(sessionId, message, extra
       fusionMemory.storeSessionMode(sessionId, "idle");
     }
 
-    // محاولة حل مرجع الملف من extraCtx (fileData/filePath/fileId)
+    // محاولة حل مرجع الملف من extraCtx
     let resolved = null;
 
-    // حالة: تم إرسال ملف خام في extraCtx.fileData مع اسم
     if (extraCtx.fileData && extraCtx.fileName) {
       if (extraCtx.filePath && fs.existsSync(extraCtx.filePath)) {
         resolved = { storedPath: extraCtx.filePath, fileName: extraCtx.fileName };
@@ -109,7 +104,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
       }
     }
 
-    // حالة: العميل مرّر fileId أو client-side filePath فقط
     if (!resolved && (extraCtx.fileId || extraCtx.filePath || extraCtx.fileName)) {
       resolved = await resolveFileReference({
         fileId: extraCtx.fileId,
@@ -118,7 +112,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
       });
     }
 
-    // إذا تم حل المرجع بنجاح، أنشئ activeFile أو حدّثه
     if (resolved) {
       console.log(
         `📂 [Orchestrator] استقبال/حل مرجع ملف: storedPath=${resolved.storedPath}, fileName=${resolved.fileName}`
@@ -131,7 +124,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
         timestamp: Date.now()
       };
 
-      // تأكد من أن الذاكرة تعرف هذا الملف
       try {
         memory.saveFile(sessionId, {
           filePath: session.activeFile.filePath,
@@ -141,11 +133,9 @@ export default async function conversationOrchestrator(sessionId, message, extra
         console.warn("⚠️ [Orchestrator] memory.saveFile failed:", e.message);
       }
 
-      // ربط الملف الحالي بالذاكرة السيادية
       fusionMemory.storeCurrentFile(sessionId, session.activeFile.filePath);
       fusionMemory.storeSessionMode(sessionId, "file_active");
     } else {
-      // لم نحل المرجع من extraCtx → حاول استرجاع آخر ملف محفوظ في sovereign
       if (!session.activeFile && session.sovereign && session.sovereign.lastFile) {
         const last = session.sovereign.lastFile;
         if (last.filePath && fs.existsSync(last.filePath)) {
@@ -183,11 +173,26 @@ export default async function conversationOrchestrator(sessionId, message, extra
       `📂 [Orchestrator] activeFile بعد المعالجة: ${session.activeFile?.filePath || "لا يوجد"}`
     );
 
-    // حفظ الرسالة في التاريخ
     memory.appendChatHistory(sessionId, { role: "user", content: message });
 
-    // دمج الذاكرة العميقة السيادية
     const fusedMemory = fusionMemory.apply(sessionId);
+
+    // 🧠 Intent Reinforcement Layer – بدون كلمات مفتاحية
+    if (session.activeFile) {
+      const msg = (message || "").trim();
+
+      const isExecutionStyle =
+        msg.length <= 40 &&
+        !msg.includes("؟") &&
+        !msg.includes("?") &&
+        !msg.match(/(ليش|لماذا|شو رأيك|شو الأفضل|اقترح|فكّر|برأيك)/i);
+
+      if (isExecutionStyle) {
+        fusionMemory.storeOperation(sessionId, "modify_file");
+        fusionMemory.storeSessionMode(sessionId, "file_edit");
+        console.log("🧠 [Orchestrator] Intent Reinforcement: تعديل الملف الحالي بدون كلمات مفتاحية.");
+      }
+    }
 
     // تحديث وضع الجلسة والعملية بناءً على الرسالة والملف
     if (session.activeFile) {
@@ -210,7 +215,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
         fusionMemory.storeOperation(sessionId, "preview_file");
         fusionMemory.storeSessionMode(sessionId, "file_preview");
       } else {
-        // رسالة عامة لكن مع ملف نشط
         fusionMemory.storeSessionMode(sessionId, "file_context");
       }
     } else {
@@ -219,7 +223,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
     }
 
     if (fusedMemory.contextDrift) {
-      console.log("⚠️ [Orchestrator] contextDrift detected من fusionMemory – سيتم الحفاظ على الملف الحالي وعدم البدء من الصفر.");
+      console.log("⚠️ [Orchestrator] contextDrift detected – سيتم الحفاظ على الملف الحالي وعدم البدء من الصفر.");
     }
 
     let history = memory.getChatHistory(sessionId, 50).map(msg => ({
@@ -227,7 +231,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
       content: (msg.content || "").slice(0, 15000)
     }));
 
-    // بناء سياق الكيرنل مع فحوصات وجود الملف
     const kernelContext = {
       history,
       fusedMemory,
@@ -247,7 +250,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
     const kernelOutput = await kernel(sessionId, message, kernelContext);
 
-    // حفظ رد المساعد
     memory.appendChatHistory(sessionId, {
       role: "assistant",
       content: kernelOutput.reply || "تم."
