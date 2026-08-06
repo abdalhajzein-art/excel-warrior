@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية (محدثة لدعم حقن معاينة الملفات وتوليد زر التحميل)
+ * js/chatEngine.js – النسخة السيادية النهائية (مصحّحة بالكامل)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -169,7 +169,7 @@ export async function handleSendMessage(renderCallbacks) {
 
     userInput.value = '';
     userInput.style.height = 'auto';
-    resetFile();
+    // ❌ لا نمسح الملف هنا
     updateSendButtonState();
 
     const isSearchQuery = /(ابحث|ابحثلي|بحث|النت|جوجل|شبكة|عن وصفة|أخبار|مصادر|رابط|روابط|طقس|الجو)/i.test(displayMessage);
@@ -214,14 +214,27 @@ export async function handleSendMessage(renderCallbacks) {
         });
 
         const data = await response.json();
-        
+
+        // ⭐ بعد الرد: نقرر إن كنا نمسح الملف أم لا
+        try {
+            if (currentFileToProcess) {
+                const uploadFailed = processedFileResult && processedFileResult.error;
+                const hasPersistentPath = processedFileResult && processedFileResult.filePath;
+
+                if (uploadFailed || !hasPersistentPath) {
+                    resetFile();
+                }
+            }
+        } catch (e) {
+            console.warn("⚠️ خطأ أثناء تحديد مصير الملف:", e);
+            resetFile();
+        }
+
         if (isSearchQuery) {
             hideSearchIndicator(indicatorId);
         } else {
             hideTypingIndicator(indicatorId);
         }
-
-        if (!isGenerating) return;
 
         const replyText = data.reply || "تم إنجاز طلبك بنجاح!";
         const cleanedReply = cleanArtifacts(replyText);
@@ -230,18 +243,14 @@ export async function handleSendMessage(renderCallbacks) {
         assistantMsgDiv.className = 'message ai';
         chatArea.appendChild(assistantMsgDiv);
 
-        // ✅ عرض النص مع التأثير
         await streamTextEffect(assistantMsgDiv, cleanedReply, 25, getIsGenerating);
 
         addCopyButtonToMessage(assistantMsgDiv, cleanedReply);
 
         let savedFileData = null;
 
-        // ✅ 1. معالجة الملف المُنشأ من الـ AI (حالة جديدة)
         if (data.isFileGenerated && data.downloadUrl) {
             const safeFileName = data.fileName || 'generated_file.xlsx';
-            
-            // ✅ إنشاء رابط التحميل
             const downloadUrl = data.downloadUrl;
             
             savedFileData = {
@@ -250,38 +259,13 @@ export async function handleSendMessage(renderCallbacks) {
                 isGenerated: true
             };
 
-            // ✅ إضافة زر التحميل بشكل جميل
             const downloadBtn = document.createElement('a');
             downloadBtn.href = downloadUrl;
             downloadBtn.download = safeFileName;
             downloadBtn.className = 'alatheer-download-btn generated-file';
             downloadBtn.innerHTML = `📥 تحميل الملف المُنشأ (${safeFileName})`;
-            downloadBtn.style.cssText = `
-                display: inline-block;
-                margin-top: 12px;
-                background: linear-gradient(135deg, #d4af37, #f5d76e);
-                color: #1a1a2e;
-                padding: 10px 20px;
-                border-radius: 8px;
-                font-weight: bold;
-                text-decoration: none;
-                border: none;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                box-shadow: 0 2px 10px rgba(212, 175, 55, 0.3);
-            `;
-            downloadBtn.addEventListener('mouseenter', () => {
-                downloadBtn.style.transform = 'scale(1.02)';
-                downloadBtn.style.boxShadow = '0 4px 20px rgba(212, 175, 55, 0.5)';
-            });
-            downloadBtn.addEventListener('mouseleave', () => {
-                downloadBtn.style.transform = 'scale(1)';
-                downloadBtn.style.boxShadow = '0 2px 10px rgba(212, 175, 55, 0.3)';
-            });
-            
             assistantMsgDiv.appendChild(downloadBtn);
-            
-            // ✅ إضافة رسالة نجاح
+
             const successMsg = document.createElement('div');
             successMsg.style.cssText = `
                 margin-top: 8px;
@@ -293,7 +277,6 @@ export async function handleSendMessage(renderCallbacks) {
             assistantMsgDiv.appendChild(successMsg);
         }
 
-        // ✅ 2. معالجة الملف المُعدل (حالة تعديل ملف موجود)
         if (data.fileBase64 && !data.isFileGenerated) {
             const safeFileName = data.fileName || 'modified_file.xlsx';
             const fileDownloadUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${data.fileBase64}`;
@@ -415,7 +398,6 @@ export function appendMessageToDOM(sender, text, fileData = null) {
         addCopyButtonToMessage(messageDiv, text);
     }
 
-    // ✅ دعم روابط التحميل من السيرفر
     if (fileData?.downloadUrl) {
         const downloadBtn = document.createElement('a');
         downloadBtn.href = fileData.downloadUrl;
@@ -445,4 +427,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     }
 
     chatArea.scrollTop = chatArea.scrollHeight;
-            }
+        }
