@@ -1,7 +1,6 @@
 /**
- * api/core/dynamic_executor.js – Sovereign Strict Edition
- * أقوى نسخة: تمنع الانزلاق، تمنع السكربتات المكسورة، تمنع البدء من الصفر،
- * وتربط التنفيذ بالسياق السيادي (currentFile / currentOperation / sessionMode).
+ * api/core/dynamic_executor.js – Sovereign Edition (Excel-Agent-Tools Only)
+ * 🚀 يدعم فقط excel-agent-tools، يرفض أي كود openpyxl خام
  */
 
 import fs from "fs";
@@ -16,8 +15,7 @@ const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
 
 /* ---------------------------------------------------------
-   🛡️ 1) Sovereign Script Validator
-   يفحص السكربت قبل التنفيذ ويمنع أي سكربت غير صالح
+   🛡️ 1) Sovereign Script Validator (Excel-Agent-Only)
 --------------------------------------------------------- */
 function validateScriptStrict(pythonCode, isNewFile) {
     const errors = [];
@@ -26,43 +24,34 @@ function validateScriptStrict(pythonCode, isNewFile) {
         errors.push("الكود قصير جداً وغير صالح.");
 
     const lines = pythonCode.split("\n").filter(l => l.trim().length > 0);
-    if (lines.length < 5)
-        errors.push("الكود يحتوي على أقل من 5 أسطر — سكربت غير صالح.");
+    if (lines.length < 3)
+        errors.push("الكود يحتوي على أقل من 3 أسطر — سكربت غير صالح.");
 
-    if (!pythonCode.includes("openpyxl"))
-        errors.push("الكود لا يحتوي على import openpyxl — غير صالح.");
+    // ❌ رفض أي كود يستخدم openpyxl مباشرة
+    if (pythonCode.includes("openpyxl") && !pythonCode.includes("excel_agent")) {
+        errors.push("🚫 استخدام openpyxl مباشرة غير مسموح. استخدم excel-agent-tools بدلاً من ذلك.");
+    }
 
-    if (!pythonCode.includes("wb.save"))
-        errors.push("الكود لا يحتوي على wb.save — غير صالح.");
+    // ✅ يجب أن يحتوي على excel-agent-tools
+    if (!pythonCode.includes("excel_agent") && !pythonCode.includes("xls-")) {
+        errors.push("الكود لا يستخدم excel-agent-tools — غير مسموح.");
+    }
 
-    if (!pythonCode.includes("load_workbook") && !isNewFile)
-        errors.push("الكود لا يحتوي على load_workbook رغم أن العملية تعديل.");
-
-    if (pythonCode.includes("Workbook()") && !isNewFile)
-        errors.push("الكود ينشئ Workbook جديد رغم أن العملية تعديل — انزلاق سياقي.");
-
-    if (pythonCode.includes("save(") && !pythonCode.includes("sys.argv[1]"))
-        errors.push("الكود يحفظ الملف باسم ثابت وليس sys.argv[1] — غير مسموح.");
+    // ✅ يجب أن يحتوي على واحدة من دوال الكتابة
+    const hasWriteTool = pythonCode.includes("xls_write_range") || 
+                         pythonCode.includes("xls-write-range") ||
+                         pythonCode.includes("xls_create_workbook") ||
+                         pythonCode.includes("xls-clone-workbook");
+    
+    if (isNewFile && !hasWriteTool) {
+        errors.push("الملف جديد ولكن لا يوجد أداة كتابة (xls-write-range أو xls-create-workbook).");
+    }
 
     return errors;
 }
 
 /* ---------------------------------------------------------
-   🛡️ 2) Sovereign Drift Detector
-   يكشف إذا النموذج بدأ من الصفر أو تجاهل الملف
---------------------------------------------------------- */
-function detectDrift(pythonCode, targetFilePath, isNewFile) {
-    if (!isNewFile && pythonCode.includes("Workbook()"))
-        return "النموذج بدأ ملفاً جديداً رغم أن العملية تعديل.";
-
-    if (!pythonCode.includes(path.basename(targetFilePath)) && !isNewFile)
-        return "الكود لا يشير إلى الملف الحالي — انزلاق سياقي.";
-
-    return null;
-}
-
-/* ---------------------------------------------------------
-   ⚡ 3) التنفيذ الصارم
+   ⚡ 2) التنفيذ
 --------------------------------------------------------- */
 export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile = false, sessionId = null) {
     return new Promise((resolve) => {
@@ -71,21 +60,12 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
         if (!targetFilePath)
             return resolve({ success: false, error: "مسار الملف غير صالح." });
 
-        /* 🛡️ فحص السكربت */
+        /* 🛡️ فحص السكربت - صارم فقط للطريقة الجديدة */
         const validationErrors = validateScriptStrict(pythonCode, isNewFile);
         if (validationErrors.length > 0) {
             return resolve({
                 success: false,
                 error: "❌ سكربت غير صالح:\n" + validationErrors.join("\n")
-            });
-        }
-
-        /* 🛡️ كشف الانزلاق */
-        const drift = detectDrift(pythonCode, targetFilePath, isNewFile);
-        if (drift) {
-            return resolve({
-                success: false,
-                error: `⚠️ انزلاق سياقي:\n${drift}`
             });
         }
 
@@ -106,36 +86,209 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
                 fs.copyFileSync(targetFilePath, backupPath);
             }
 
-            /* 🛡️ بناء سكربت آمن */
+            /* 🛡️ سكربت نظيف - فقط excel-agent-tools */
             const safeCode = `
 import sys
+import json
+import subprocess
 import traceback
-import os
 
 if len(sys.argv) < 2:
     sys.argv.append('${targetFilePath}')
 
-try:
-    import openpyxl
-    from openpyxl.utils import get_column_letter
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.styles.borders import BORDER_THIN
-    from openpyxl.worksheet.datavalidation import DataValidation
-    from openpyxl.formatting.rule import Rule
-    from openpyxl.styles.differential import DifferentialStyle
-    from openpyxl.chart import BarChart, PieChart, Reference
-except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
-    import openpyxl
+# ✅ دوال excel-agent-tools الجاهزة
+def run_xls_tool(tool_name, **kwargs):
+    """تشغيل أداة من excel-agent-tools"""
+    cmd = [tool_name]
+    for key, value in kwargs.items():
+        if value is not None:
+            cmd.append(f"--{key.replace('_', '-')}")
+            cmd.append(str(value))
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception(f"Tool {tool_name} failed: {result.stderr}")
+    try:
+        return json.loads(result.stdout)
+    except:
+        return {"output": result.stdout, "error": result.stderr}
 
-# دوال مساعدة
-def write_formula(cell, formula_string):
-    if formula_string.startswith('='):
-        cell.value = formula_string
-    else:
-        cell.value = '=' + formula_string
-    return cell
+# ============================================
+# 📚 أدوات الكتابة
+# ============================================
+
+def xls_create_workbook(output_path, template=None):
+    """إنشاء ملف Excel جديد"""
+    cmd = ["xls-create-workbook", "--output", output_path]
+    if template:
+        cmd.extend(["--template", template])
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception(f"xls-create-workbook failed: {result.stderr}")
+    return json.loads(result.stdout) if result.stdout else {"status": "success"}
+
+def xls_write_range(file_path, sheet_name, cell_range, data):
+    """كتابة بيانات في نطاق"""
+    data_json = json.dumps(data)
+    return run_xls_tool("xls-write-range",
+        input=file_path,
+        output=file_path,
+        sheet=sheet_name,
+        range=cell_range,
+        values=data_json)
+
+def xls_clone_workbook(input_path, output_dir="./work"):
+    """نسخ الملف للعمل عليه بأمان"""
+    return run_xls_tool("xls-clone-workbook",
+        input=input_path,
+        output_dir=output_dir)
+
+# ============================================
+# 📖 أدوات القراءة
+# ============================================
+
+def xls_read_range(file_path, sheet_name, cell_range):
+    """قراءة نطاق من الخلايا"""
+    return run_xls_tool("xls-read-range",
+        input=file_path,
+        sheet=sheet_name,
+        range=cell_range)
+
+def xls_get_sheet_names(file_path):
+    """الحصول على أسماء الأوراق"""
+    return run_xls_tool("xls-get-sheet-names", input=file_path)
+
+def xls_get_formulas(file_path, sheet_name):
+    """استخراج المعادلات من ورقة"""
+    return run_xls_tool("xls-get-formulas",
+        input=file_path,
+        sheet=sheet_name)
+
+# ============================================
+# 🏗️ أدوات الهيكل
+# ============================================
+
+def xls_add_sheet(file_path, sheet_name, token=None):
+    """إضافة ورقة جديدة"""
+    kwargs = {"input": file_path, "name": sheet_name}
+    if token:
+        kwargs["token"] = token
+    return run_xls_tool("xls-add-sheet", **kwargs)
+
+def xls_delete_sheet(file_path, sheet_name, token):
+    """حذف ورقة (يتطلب توكن)"""
+    return run_xls_tool("xls-delete-sheet",
+        input=file_path,
+        name=sheet_name,
+        token=token)
+
+def xls_insert_row(file_path, row_index, token=None):
+    """إدراج صف"""
+    kwargs = {"input": file_path, "row": str(row_index)}
+    if token:
+        kwargs["token"] = token
+    return run_xls_tool("xls-insert-row", **kwargs)
+
+def xls_insert_column(file_path, col_index, token=None):
+    """إدراج عمود"""
+    kwargs = {"input": file_path, "column": str(col_index)}
+    if token:
+        kwargs["token"] = token
+    return run_xls_tool("xls-insert-column", **kwargs)
+
+# ============================================
+# 🧮 أدوات المعادلات
+# ============================================
+
+def xls_set_formula(file_path, sheet_name, cell, formula):
+    """كتابة معادلة في خلية"""
+    return run_xls_tool("xls-set-formula",
+        input=file_path,
+        sheet=sheet_name,
+        cell=cell,
+        formula=formula)
+
+def xls_recalculate(file_path):
+    """إعادة حساب جميع المعادلات"""
+    return run_xls_tool("xls-recalculate", input=file_path)
+
+# ============================================
+# 📊 أدوات الكائنات
+# ============================================
+
+def xls_add_chart(file_path, sheet_name, chart_type, data_range, title):
+    """إضافة رسم بياني"""
+    return run_xls_tool("xls-add-chart",
+        input=file_path,
+        sheet=sheet_name,
+        type=chart_type,
+        range=data_range,
+        title=title)
+
+def xls_add_table(file_path, sheet_name, data_range, table_name):
+    """إضافة جدول"""
+    return run_xls_tool("xls-add-table",
+        input=file_path,
+        sheet=sheet_name,
+        range=data_range,
+        name=table_name)
+
+# ============================================
+# 🎨 أدوات التنسيق
+# ============================================
+
+def xls_format_range(file_path, sheet_name, cell_range, style):
+    """تنسيق نطاق من الخلايا"""
+    style_json = json.dumps(style)
+    return run_xls_tool("xls-format-range",
+        input=file_path,
+        sheet=sheet_name,
+        range=cell_range,
+        style=style_json)
+
+def xls_add_conditional_format(file_path, sheet_name, cell_range, condition, style):
+    """إضافة تنسيق شرطي"""
+    style_json = json.dumps(style)
+    return run_xls_tool("xls-add-conditional-format",
+        input=file_path,
+        sheet=sheet_name,
+        range=cell_range,
+        condition=condition,
+        style=style_json)
+
+# ============================================
+# 🔐 أدوات الحوكمة
+# ============================================
+
+def xls_validate_workbook(file_path):
+    """التحقق من سلامة الملف"""
+    return run_xls_tool("xls-validate-workbook", input=file_path)
+
+def xls_approve_token(file_path, scope, ttl=300):
+    """توليد توكن للموافقة على العمليات"""
+    return run_xls_tool("xls-approve-token",
+        input=file_path,
+        scope=scope,
+        ttl=str(ttl))
+
+# ============================================
+# 📤 أدوات التصدير
+# ============================================
+
+def xls_export_pdf(file_path, output_path):
+    """تصدير إلى PDF"""
+    return run_xls_tool("xls-export-pdf",
+        input=file_path,
+        output=output_path)
+
+def xls_export_csv(file_path, output_path):
+    """تصدير إلى CSV"""
+    return run_xls_tool("xls-export-csv",
+        input=file_path,
+        output=output_path)
+
+# ============================================
+# ⚡ تنفيذ الكود المطلوب
+# ============================================
 
 try:
 ${pythonCode.split('\n').map(line => '    ' + line).join('\n')}
@@ -155,16 +308,13 @@ except Exception as e:
                 { maxBuffer: 50 * 1024 * 1024 },
                 async (error, stdout, stderr) => {
 
-                    /* حذف السكربت */
                     try { fs.unlinkSync(scriptPath); } catch(e) {}
 
                     if (error) {
-                        /* 🛡️ Rollback */
                         if (!isNewFile && fs.existsSync(backupPath)) {
                             fs.copyFileSync(backupPath, targetFilePath);
                             fs.unlinkSync(backupPath);
                         }
-
                         return resolve({
                             success: false,
                             error: stderr || error.message,
@@ -172,12 +322,10 @@ except Exception as e:
                         });
                     }
 
-                    /* حذف النسخة الاحتياطية */
                     if (!isNewFile && fs.existsSync(backupPath)) {
                         fs.unlinkSync(backupPath);
                     }
 
-                    /* 🛡️ تحقق من وجود الملف */
                     if (isNewFile && !fs.existsSync(targetFilePath)) {
                         return resolve({
                             success: false,
@@ -186,7 +334,6 @@ except Exception as e:
                         });
                     }
 
-                    /* 🧠 تحديث السياق السيادي */
                     if (sessionId) {
                         fusionMemory.storeCurrentFile(sessionId, targetFilePath);
                         fusionMemory.storeOperation(sessionId, isNewFile ? "generate_file" : "modify_file");
@@ -224,4 +371,4 @@ export async function extractPreviewAsync(filePath) {
     } catch (error) {
         return { error: error.message };
     }
-}
+           }
