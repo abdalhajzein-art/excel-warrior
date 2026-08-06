@@ -32,8 +32,8 @@ function validateScriptStrict(pythonCode, isNewFile) {
         errors.push("🚫 استخدام openpyxl مباشرة غير مسموح. استخدم excel-agent-tools بدلاً من ذلك.");
     }
 
-    // ✅ يجب أن يحتوي على excel-agent-tools
-    if (!pythonCode.includes("excel_agent") && !pythonCode.includes("xls-")) {
+    // ✅ التعديل هنا: السماح بـ xls_ أو xls- 
+    if (!pythonCode.includes("excel_agent") && !pythonCode.includes("xls_") && !pythonCode.includes("xls-")) {
         errors.push("الكود لا يستخدم excel-agent-tools — غير مسموح.");
     }
 
@@ -44,7 +44,7 @@ function validateScriptStrict(pythonCode, isNewFile) {
                          pythonCode.includes("xls-clone-workbook");
     
     if (isNewFile && !hasWriteTool) {
-        errors.push("الملف جديد ولكن لا يوجد أداة كتابة (xls-write-range أو xls-create-workbook).");
+        errors.push("الملف جديد ولكن لا يوجد أداة كتابة (xls_write_range أو xls_create_workbook).");
     }
 
     return errors;
@@ -371,4 +371,5 @@ export async function extractPreviewAsync(filePath) {
     } catch (error) {
         return { error: error.message };
     }
-           }
+}
+
