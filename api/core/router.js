@@ -1,5 +1,6 @@
-// api/core/router.js – Sovereign Router (Excel Warrior Harmonized Edition)
-// يربط البوابة الرئيسية مع العقل السيادي والمحرك المتكامل بانسجام تام
+/**
+ * api/core/router.js – Sovereign Router (Gemini Harmonized Edition)
+ */
 
 import globalOrchestrator from "./conversation_orchestrator.js";
 import memory from "./memory.js";
@@ -11,7 +12,6 @@ export default {
     const transactionId = executionMonitor.startTransaction("Router_Gateway");
 
     try {
-      // 1) ضمان وجود جلسة نشطة
       const session =
         memory.getSession(sessionId) || memory.createSession(sessionId);
 
@@ -19,10 +19,9 @@ export default {
 
       executionMonitor.log(
         transactionId,
-        `[Router] Incoming Request | Session: ${sessionId} | Active File: ${!!hasFiles}`
+        `[Router] Request | Session: ${sessionId} | Active File: ${!!hasFiles}`
       );
 
-      // 2) بناء السياق المتقدم للعقل السيادي
       const context = {
         ...ctx,
         message,
@@ -33,7 +32,6 @@ export default {
         memoryState: session.memoryState || "active",
       };
 
-      // 3) تسليم القيادة للعقل السيادي (Orchestrator + Kernel + Python Bridge)
       const result = await globalOrchestrator(sessionId, message, context);
 
       if (!result.ok && result.error) {
@@ -42,7 +40,6 @@ export default {
 
       executionMonitor.endTransaction(transactionId, "Success");
 
-      // 4) إرجاع النتيجة الموحدة والجاهزة للواجهة الأمامية
       return {
         ok: true,
         output: result.reply,
@@ -77,4 +74,3 @@ export default {
     }
   },
 };
-
