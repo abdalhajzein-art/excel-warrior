@@ -1,7 +1,8 @@
 /**
- * api/geminiService.js – Sovereign Gemini Service (Final Fixed Edition)
- * ⭐ SYSTEM_PROMPT يُمرّر فقط عبر رسالة system داخل history
- * ⭐ system_instruction يبقى بسيط جداً حتى لا ترفضه Google
+ * api/geminiService.js – Sovereign Gemini Service (Final Stable Edition)
+ * ⭐ SYSTEM_PROMPT داخل history فقط
+ * ⭐ system_instruction بسيط جداً
+ * ⭐ أول رسالة داخل history = user
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -55,7 +56,7 @@ async function executeWithFallback(fn, modelList = MODEL_FALLBACK_LIST) {
 }
 
 /* ============================================================
-   🧠 وضع generateContent
+   🧠 generateContent
    ============================================================ */
 export default async function geminiService(prompt, ctx = {}) {
   return executeWithFallback(async (modelName) => {
@@ -80,12 +81,12 @@ export default async function geminiService(prompt, ctx = {}) {
 }
 
 /* ============================================================
-   💬 وضع المحادثة المتعدد الأدوار (Chat Mode)
+   💬 Chat Mode
    ============================================================ */
 geminiService.chat = async function (messages, extra = {}) {
   return executeWithFallback(async (modelName) => {
 
-    /* استخراج SYSTEM_PROMPT الحقيقي */
+    /* استخراج SYSTEM_PROMPT */
     const systemMessages = messages.filter((m) => m.role === "system");
     const systemPromptText = systemMessages.map((m) => m.content).join("\n\n");
 
@@ -126,8 +127,8 @@ ${meta.text ? meta.text.slice(0, 2000) : "متاح للتحليل"}
       }
     }
 
-    /* نحقن SYSTEM_PROMPT الحقيقي داخل history فقط */
-    history.unshift({
+    /* نضيف SYSTEM_PROMPT داخل history (لكن ليس أول رسالة) */
+    history.push({
       role: "system",
       parts: [{ text: enrichedSystemPrompt }]
     });
@@ -136,7 +137,7 @@ ${meta.text ? meta.text.slice(0, 2000) : "متاح للتحليل"}
     const client = getClient();
     const model = client.getGenerativeModel({
       model: modelName,
-      systemInstruction: "أنت مساعد سيادي متخصص بإدارة ملفات الإكسل.", // بسيط جداً
+      systemInstruction: "أنت مساعد سيادي متخصص بإدارة ملفات الإكسل.",
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 32768
@@ -146,7 +147,7 @@ ${meta.text ? meta.text.slice(0, 2000) : "متاح للتحليل"}
     /* بدء جلسة الدردشة */
     const chat = model.startChat({
       history,
-      systemInstruction: "أنت مساعد سيادي متخصص بإدارة ملفات الإكسل.", // بسيط جداً
+      systemInstruction: "أنت مساعد سيادي متخصص بإدارة ملفات الإكسل.",
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 32768
