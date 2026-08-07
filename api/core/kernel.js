@@ -2,6 +2,7 @@
  * api/core/kernel.js – The Sovereign Kernel (Pure Dynamic Intent Edition)
  * ✅ سيادة كاملة، بدون كلمات مفتاحية مسبقة، الاعتماد على وعي نموذج Gemini ونية المستخدم الديناميكية.
  * ✅ دعم functionCalls من Gemini (Tool Calling)
+ * ✅ إضافة console.log لتصحيح الأخطاء
  */
 
 import fs from "fs";
@@ -137,15 +138,21 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       systemInstruction: systemContent
     });
 
+    console.log("📝 [Kernel] rawReply من Gemini:", JSON.stringify(rawReply, null, 2));
+
     // ✅ استخراج النص والأدوات من الرد
     const replyText = rawReply?.text || "";
     const functionCalls = rawReply?.functionCalls || null;
+
+    console.log("📝 [Kernel] replyText:", replyText);
+    console.log("📝 [Kernel] functionCalls:", JSON.stringify(functionCalls, null, 2));
 
     // ✅ تحديد الرد النهائي
     if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
       const pyCall = functionCalls.find(fc => fc.name === 'execute_python' || fc.args?.code);
       if (pyCall && pyCall.args && pyCall.args.code) {
         finalReplyText = "```python\n" + pyCall.args.code + "\n```";
+        console.log("📝 [Kernel] تم استخراج كود من functionCalls:", pyCall.args.code.substring(0, 200) + "...");
       } else {
         finalReplyText = replyText || "تم تنفيذ الأداة بنجاح.";
       }
@@ -153,11 +160,15 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       finalReplyText = replyText || String(rawReply || "تم يا شريكي.");
     }
 
+    console.log("📝 [Kernel] finalReplyText بعد المعالجة:", finalReplyText.substring(0, 300) + "...");
+
     // الكشف الديناميكي عن وجود نية تنفيذ برمجية
     let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```([\s\S]*?)```/);
+
+    console.log("📝 [Kernel] pythonMatch:", pythonMatch ? "تم العثور على كود" : "لم يتم العثور على كود");
 
     // إذا لم يكتب النموذج كود بايثون، فهو مجرد رد دردشة - نعيده فوراً
     if (!pythonMatch || !filePath) {
@@ -173,6 +184,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     // إذا وُجد كود بايثون، ننفذه
     let pythonCode = pythonMatch[1].trim();
+    console.log("📝 [Kernel] pythonCode المستخرج:", pythonCode.substring(0, 300) + "...");
 
     finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
     if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
@@ -189,6 +201,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (محاولة ${currentAttempt})...`);
 
       executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest, sessionId);
+
+      console.log("📝 [Kernel] executionResult:", JSON.stringify(executionResult, null, 2));
 
       if (executionResult && executionResult.success && fs.existsSync(filePath)) {
         isSuccess = true;
@@ -260,6 +274,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         }
       } else {
         const actualError = executionResult?.error || executionResult?.output || "خطأ في التنفيذ";
+        console.log(`❌ [Kernel] فشل التنفيذ (محاولة ${currentAttempt}):`, actualError);
 
         if (currentAttempt < maxRetries) {
           const errorFeedbackPrompt =
@@ -278,6 +293,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             systemInstruction: systemContent
           });
 
+          console.log("📝 [Kernel] fixReply:", JSON.stringify(fixReply, null, 2));
+
           // ✅ استخراج النص المصحح من الرد
           const fixText = fixReply?.text || "";
           const fixFunctionCalls = fixReply?.functionCalls || null;
@@ -290,12 +307,15 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             fixedText = fixText || String(fixReply || "");
           }
 
+          console.log("📝 [Kernel] fixedText:", fixedText.substring(0, 300) + "...");
+
           let newMatch = fixedText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
           if (!newMatch) newMatch = fixedText.match(/```python\s*([\s\S]*?)\s*```/);
           if (!newMatch) newMatch = fixedText.match(/```\s*([\s\S]*?)```/);
 
           if (newMatch) {
             pythonCode = newMatch[1].trim();
+            console.log("📝 [Kernel] pythonCode المصحح:", pythonCode.substring(0, 300) + "...");
           } else {
             break;
           }
@@ -318,4 +338,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     operations: [],
     execution: executionResult
   };
-      }
+}
