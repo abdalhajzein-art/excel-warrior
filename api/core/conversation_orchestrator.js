@@ -61,7 +61,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
     const session = memory.getSession(sessionId) || memory.createSession(sessionId);
     const lowerMsg = (message || "").toLowerCase();
     
-    // إبقاء أمر "مسح الملف" فقط كأمر صريح للإدارة
+    // إبقاء أمر "مسح الملف" للإدارة اليدوية
     const isResetFile = /(انسى|اغلق|احذف|سكر|تجاهل) (الملف|البيانات)|ملف (جديد|اخر)/.test(lowerMsg);
     if (isResetFile && session.activeFile) {
       console.log(`🗑️ [Orchestrator] تم مسح الملف النشط بطلب المستخدم.`);
@@ -70,23 +70,21 @@ export default async function conversationOrchestrator(sessionId, message, extra
     }
 
     let resolved = null;
-    if (extraCtx.fileData && extraCtx.fileName) {
-      if (extraCtx.filePath && fs.existsSync(extraCtx.filePath)) {
+    
+    // 🛡️ الثقة المطلقة في المسار المُمرر من chat.js
+    if (extraCtx.filePath && fs.existsSync(extraCtx.filePath)) {
         resolved = { storedPath: extraCtx.filePath, fileName: extraCtx.fileName };
-      } else if (extraCtx.fileId) {
-        resolved = await resolveFileReference({ fileId: extraCtx.fileId, fileName: extraCtx.fileName });
-      }
-    }
-    if (!resolved && (extraCtx.fileId || extraCtx.filePath || extraCtx.fileName)) {
-      resolved = await resolveFileReference({
-        fileId: extraCtx.fileId,
-        filePath: extraCtx.filePath,
-        fileName: extraCtx.fileName
-      });
+    } 
+    else if (extraCtx.fileId || extraCtx.fileName) {
+        resolved = await resolveFileReference({
+            fileId: extraCtx.fileId,
+            filePath: extraCtx.filePath,
+            fileName: extraCtx.fileName
+        });
     }
 
     if (resolved) {
-      console.log(`📂 [Orchestrator] استقبال/حل مرجع ملف: storedPath=${resolved.storedPath}`);
+      console.log(`📂 [Orchestrator] تأكيد المرجع النشط: storedPath=${resolved.storedPath}`);
       session.activeFile = {
         fileName: resolved.fileName || "file.xlsx",
         filePath: resolved.storedPath,
@@ -101,6 +99,7 @@ export default async function conversationOrchestrator(sessionId, message, extra
       }
       fusionMemory.storeCurrentFile(sessionId, session.activeFile.filePath);
     } else {
+      // الاعتماد على الذاكرة كخيار أخير
       if (!session.activeFile && session.sovereign && session.sovereign.lastFile) {
         const last = session.sovereign.lastFile;
         if (last.filePath && fs.existsSync(last.filePath)) {
@@ -117,9 +116,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
     }
 
     memory.appendChatHistory(sessionId, { role: "user", content: message });
-    
-    // تم إزالة كل شروط الـ Regex والـ Session Modes من هنا.
-    // القرار الآن بالكامل بيد الـ Kernel الذي سيعتمد على استدعاءات الـ Functions.
 
     const fusedMemory = fusionMemory.apply(sessionId);
 
@@ -139,12 +135,11 @@ export default async function conversationOrchestrator(sessionId, message, extra
       metadata: session.activeFile?.metadata || null
     };
 
-    console.log(`🧠 [Orchestrator] تسليم القيادة للـ Kernel (Agentic Mode)...`);
+    console.log(`🧠 [Orchestrator] تسليم القيادة للـ Kernel...`);
 
-    // تسليم المهمة للـ Kernel، والذي سيتعامل مع الـ Function Calls
     let kernelOutput = await kernel(sessionId, message, kernelContext);
 
-    // إذا استدعى النموذج تنفيذ كود وفشل، نقوم بحلقة تصحيح واحدة تلقائية
+    // حلقة تصحيح واحدة تلقائية
     if (kernelOutput.execution && !kernelOutput.execution.success && session.activeFile) {
         console.log(`⚠️ [Self-Correction] خطأ برمجي. إعادة المحاولة...`);
         const correctionMessage = `حدث خطأ برمجي أثناء التنفيذ:\n${kernelOutput.execution.error}\nالرجاء تصحيح الكود بالكامل وإعادة المحاولة لتنفيذ ما طلبه المستخدم.`;
