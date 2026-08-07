@@ -19,7 +19,8 @@ function getClient() {
 const MODEL_FALLBACK_LIST = [
     'gemini-3.6-flash',
     'gemini-3.5-flash-lite',
-    'gemini-3.1-pro-preview'
+    'gemini-3.1-pro-preview',
+    'gemini-3-flash-preview'
 ];
 
 function isQuotaError(error) {
