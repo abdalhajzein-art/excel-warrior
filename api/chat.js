@@ -1,7 +1,6 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
- * ✅ دعم وضع الاستشارة
- * ✅ تحسين عرض الردود
+ * ✅ خفيف، نظيف، يمرر الردود كما هي
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -88,12 +87,13 @@ export default async function handler(req, res) {
         let extractedContent = null;
         let finalFileName = fileName || null;
 
-        const isExcelRequest = userContent.match(/إكسل|Excel|ملف\s*إكسل|جدول|spreadsheet/i);
-        const isNewFileRequest = userContent.match(/أنشئ|اعمل|عمل لي|generate|create|new\s*file|من الصفر/i);
+        // ✅ كشف بسيط لطلب إنشاء ملف جديد
+        const isNewFileRequest = /أنشئ|اعمل|عمل لي|generate|create|new\s*file|من الصفر/i.test(userContent) && 
+                                  /إكسل|Excel|ملف\s*إكسل|جدول|spreadsheet|ملف/i.test(userContent);
 
-        // Handle explicit "create new excel" requests
-        if (isExcelRequest && isNewFileRequest && !fileData && !fileId && !clientFilePath) {
-            console.log("📊 [الأثير] تم اكتشاف طلب إنشاء ملف Excel جديد");
+        // ✅ إنشاء ملف جديد (بدون ملف مرفق)
+        if (isNewFileRequest && !fileData && !fileId && !clientFilePath) {
+            console.log("📊 [الأثير] تم اكتشاف طلب إنشاء ملف جديد");
             const orchestratorInput = {
                 fileData: null,
                 fileName: null,
@@ -114,7 +114,7 @@ export default async function handler(req, res) {
                     fs.mkdirSync(GENERATED_DIR, { recursive: true });
                 }
 
-                const newFileName = `excel_${Date.now()}.xlsx`;
+                const newFileName = `file_${Date.now()}.xlsx`;
                 const newFilePath = path.join(GENERATED_DIR, newFileName);
 
                 console.log(`🔧 [الأثير] تنفيذ كود Python لإنشاء ملف: ${newFilePath}`);
@@ -133,11 +133,11 @@ export default async function handler(req, res) {
                             memory.saveFile(sessionKey, { filePath: newFilePath, fileName: newFileName });
                         }
                     } catch (e) {
-                        console.warn("⚠️ [chat.js] فشل تخزين البصمة للملف المُنشأ:", e.message);
+                        console.warn("⚠️ [chat.js] فشل تخزين البصمة:", e.message);
                     }
 
                     return res.status(200).json({
-                        reply: `✅ **تم إنشاء ملف Excel بنجاح يا هندسة!**\n\n📥 [اضغط هنا لتحميل الملف](${downloadUrl})\n\n📁 اسم الملف: ${newFileName}`,
+                        reply: `✅ **تم إنشاء الملف بنجاح يا هندسة!**\n\n📥 [اضغط هنا لتحميل الملف](${downloadUrl})\n\n📁 اسم الملف: ${newFileName}`,
                         fileBase64: fileBase64,
                         fileName: newFileName,
                         downloadUrl: downloadUrl,
@@ -152,24 +152,24 @@ export default async function handler(req, res) {
             }
         }
 
-        // Resolve file reference
+        // ✅ حل مرجع الملف (إذا كان مرسلاً)
         if ((fileId || clientFilePath) && !fileData) {
             const resolved = await resolveFileReference({ fileId, filePath: clientFilePath, fileName });
             if (resolved) {
                 sovereignFilePath = resolved.storedPath;
                 finalFileName = resolved.fileName || finalFileName;
-                console.log(`🔄 [chat.js] resolved file reference -> ${sovereignFilePath}`);
+                console.log(`🔄 [chat.js] تم حل مرجع الملف -> ${sovereignFilePath}`);
                 try {
                     memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
                 } catch (e) {
                     console.warn("⚠️ memory.saveFile failed:", e.message);
                 }
             } else {
-                console.warn("⚠️ [chat.js] لم يتم العثور على مرجع الملف عبر fileId/filePath.");
+                console.warn("⚠️ [chat.js] لم يتم العثور على مرجع الملف.");
             }
         }
 
-        // Handle fileData upload
+        // ✅ حفظ الملف المرفوع (Base64)
         if (fileData && fileName) {
             await ensureIndexReady();
             let buffer = null;
@@ -204,7 +204,7 @@ export default async function handler(req, res) {
 
                 sovereignFilePath = storedPath;
                 finalFileName = safeStoredName;
-                console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
+                console.log(`🛡️ [الأثير Intake] تم حفظ الملف: ${sovereignFilePath}`);
 
                 try {
                     memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
@@ -225,7 +225,7 @@ export default async function handler(req, res) {
                             }
                         };
                         fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
-                        console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف بنجاح.`);
+                        console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف.`);
                     } else {
                         console.warn(`⚠️ [الأثير Preview] فشلت المعاينة: ${previewData.error}`);
                     }
@@ -235,7 +235,7 @@ export default async function handler(req, res) {
             }
         }
 
-        // Try to recover from memory
+        // ✅ استرجاع الملف من الذاكرة
         if (!sovereignFilePath) {
             try {
                 const session = memory.getSession(sessionKey);
@@ -250,7 +250,7 @@ export default async function handler(req, res) {
                         if (resolved) {
                             sovereignFilePath = resolved.storedPath;
                             finalFileName = finalFileName || resolved.fileName;
-                            console.log(`🔄 [chat.js] استرجاع الملف من الذاكرة عبر fileId: ${sovereignFilePath}`);
+                            console.log(`🔄 [chat.js] استرجاع الملف عبر fileId: ${sovereignFilePath}`);
                         }
                     }
                 }
@@ -259,7 +259,7 @@ export default async function handler(req, res) {
             }
         }
 
-        // Build orchestrator input
+        // ✅ إرسال إلى orchestrator
         const orchestratorInput = {
             fileData: fileData || null,
             fileName: finalFileName || fileName || null,
@@ -277,17 +277,7 @@ export default async function handler(req, res) {
         let fileBase64 = output?.fileBase64 || null;
         let returnedFileName = output?.fileName || finalFileName || fileName || "modified_file.xlsx";
 
-        // ✅ إذا كان الرد استشارة، أعرضه بدون تنفيذ إضافي
-        if (output?.isConsultation) {
-            return res.status(200).json({
-                reply,
-                fileName: returnedFileName,
-                metadata: extractedContent?.metadata || null,
-                isConsultation: true
-            });
-        }
-
-        // Handle file modification
+        // ✅ معالجة الملف المعدل
         if (orchestratorInput.filePath && fs.existsSync(orchestratorInput.filePath) && !fileBase64 && output?.execution?.success) {
             try {
                 const fileBuffer = fs.readFileSync(orchestratorInput.filePath);
@@ -308,6 +298,7 @@ export default async function handler(req, res) {
             }
         }
 
+        // ✅ رابط التحميل
         if (fileBase64 && returnedFileName) {
             const baseName = path.basename(returnedFileName);
             const realFileUrl = encodeURI(`/persistent_uploads/${baseName}`);
@@ -320,12 +311,11 @@ export default async function handler(req, res) {
             reply,
             fileBase64,
             fileName: returnedFileName,
-            metadata: extractedContent?.metadata || null,
-            isConsultation: false
+            metadata: extractedContent?.metadata || null
         });
 
     } catch (error) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-                    }
+}
