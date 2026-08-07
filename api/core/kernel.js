@@ -1,7 +1,6 @@
 /**
- * api/core/kernel.js – Sovereign Kernel (Excel-Agent-Tools Edition)
- * نسخة نهائية مُحسّنة لتوحيد مسارات الملفات مع persistent_uploads، وتحديث index.json بعد التوليد/التعديل.
- * ✅ دعم excel-agent-tools بدلاً من openpyxl الخام
+ * api/core/kernel.js – The Sovereign Kernel (Pure Python Edition)
+ * نسخة نهائية مُحسّنة لتوحيد المسارات، إدارة الفهارس، وتطبيق التصحيح الذاتي.
  */
 
 import fs from "fs";
@@ -80,16 +79,10 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   let fileName = ctx.fileName || activeFile?.fileName || null;
   let filePath = ctx.filePath || activeFile?.filePath || null;
 
-  if (filePath === null || filePath === undefined) {
-    filePath = activeFile?.filePath || null;
-  }
-  if (fileName === null || fileName === undefined) {
-    fileName = activeFile?.fileName || null;
-  }
+  if (filePath === null || filePath === undefined) filePath = activeFile?.filePath || null;
+  if (fileName === null || fileName === undefined) fileName = activeFile?.fileName || null;
 
   console.log(`🔍 [Kernel] استقبال: fileName=${fileName}, filePath=${filePath}`);
-  console.log(`🔍 [Kernel] ctx.filePath=${ctx.filePath}, ctx.fileName=${ctx.fileName}`);
-  console.log(`🔍 [Kernel] activeFile?.filePath=${activeFile?.filePath}, activeFile?.fileName=${activeFile?.fileName}`);
 
   let fileContext = ctx.activeFileSummary || "";
   if (!fileContext && extractedContent && !extractedContent.error) {
@@ -110,28 +103,20 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const hasExistingFile = filePath && fs.existsSync(filePath);
   const hasFilePath = filePath !== null && filePath !== undefined;
 
-  console.log(`📂 [Kernel] hasExistingFile=${hasExistingFile}, hasFilePath=${hasFilePath}, filePath=${filePath}`);
-
   let isGenerationRequest = false;
 
   if (userExplicitlyWantsNew && /(أنشئ|ولد|صمم|اعمل|سوي|جدول|تقرير)/i.test(message)) {
     isGenerationRequest = true;
-    console.log("🆕 [Kernel] طلب صريح لملف جديد");
   } else if (!hasExistingFile && !hasFilePath) {
     isGenerationRequest = true;
-    console.log("🆕 [Kernel] لا يوجد ملف ولا مسار، توليد جديد");
   } else if (!hasExistingFile && hasFilePath) {
     isGenerationRequest = true;
-    console.log("🆕 [Kernel] يوجد مسار ولكن الملف غير موجود، توليد جديد");
   } else if (isModifyRequest && hasExistingFile) {
     isGenerationRequest = false;
-    console.log(`📂 [Kernel] تطوير الملف الموجود: ${filePath}`);
   } else if (hasExistingFile) {
     isGenerationRequest = false;
-    console.log(`📂 [Kernel] استخدام الملف الموجود: ${filePath}`);
   } else {
     isGenerationRequest = true;
-    console.log("🆕 [Kernel] افتراضي: توليد جديد");
   }
 
   let systemContent = SYSTEM_PROMPT;
@@ -142,32 +127,23 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
   }
 
-  // ✅ إضافة تعليمات excel-agent-tools المعدلة
+  // 🏛️ التعليمات السيادية الصارمة للـ Pure Python
   systemContent += `
+[🏛️ بروتوكول الأثير السيادي - Pure Python]:
+- أنت تمتلك بيئة Python متكاملة. استخدم مكتبات (pandas, openpyxl, os) فقط.
+- ⚠️ ممنوع استدعاء أي أدوات خارجية أو وهمية (xls_*).
+- **القاعدة الذهبية الصارمة:** استخدم المتغير \`target_file\` المعرّف مسبقاً في البيئة كمسار وحيد للقراءة والكتابة (مثلاً: \`wb.save(target_file)\` أو \`df.to_excel(target_file, index=False)\`).
+- لا تقم بتعريف متغير \`target_file\`، ولا تستخدم \`sys.argv\` أبداً.`;
 
-[🚨 تنبيه صارم - استخدام excel-agent-tools فقط]:
-- **ممنوع** استخدام openpyxl مباشرة.
-- **ممنوع** كتابة wb = load_workbook() أو wb.save().
-- الدوال متاحة وجاهزة للاستدعاء الفوري (لا تقم بكتابة def لها): xls_create_workbook, xls_write_range, xls_add_sheet, xls_add_chart, xls_format_range, xls_set_formula, xls_read_range, xls_validate_workbook.
-- استخدم (underscore _) في استدعاء الدوال وليس (hyphen -).
-- sys.argv[1] يحتوي على مسار الملف المستهدف.
-- الأدوات ترجع JSON، لا حاجة لعمل print إلا للنتائج النهائية.`;
-
-  // تحديد مسار الملف النهائي
-  if (isGenerationRequest) {
+  // تحديد مسار الملف النهائي وتوجيه النموذج
+  if (isGenerationRequest || !hasExistingFile) {
     const id = generateFileId();
     const safeName = `${id}-${sanitizeName(fileName || `Alatheer_Report`)}.xlsx`.replace(/\.xlsx\.xlsx$/, ".xlsx");
     fileName = safeName;
     filePath = path.join(PERSISTENT_DIR, safeName);
-    systemContent += `\n\n[تعليمات النظام للتوليد]: استخدم xls_create_workbook(sys.argv[1]) لإنشاء الملف الجديد.`;
-  } else if (!isGenerationRequest && hasExistingFile) {
-    systemContent += `\n\n[تعليمات النظام للتعديل]: استخدم xls_write_range و xls_add_sheet وغيرها لتعديل الملف الموجود.`;
-  } else if (!isGenerationRequest && !hasExistingFile) {
-    const id = generateFileId();
-    const safeName = `${id}-${sanitizeName(fileName || `Alatheer_Report`)}.xlsx`.replace(/\.xlsx\.xlsx$/, ".xlsx");
-    fileName = safeName;
-    filePath = path.join(PERSISTENT_DIR, safeName);
-    systemContent += `\n\n[تعليمات النظام]: لا يوجد ملف سابق، سيتم إنشاء ملف جديد باستخدام xls_create_workbook(sys.argv[1]).`;
+    systemContent += `\n\n[تعليمات النظام للتوليد]: أنشئ ملفاً جديداً واحفظه مباشرة باستخدام \`target_file\`.`;
+  } else {
+    systemContent += `\n\n[تعليمات النظام للتعديل]: قم بقراءة الملف الحالي عبر \`target_file\` (مثلاً \`pd.read_excel(target_file)\` أو \`load_workbook(target_file)\`)، عدل البيانات، ثم احفظ التعديلات في \`target_file\` نفسه.`;
   }
 
   const conversationMessages = [
@@ -181,7 +157,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   let executionResult = null;
 
   try {
-    console.log("🧠 [Kernel] استدعاء النموذج للتحليل الأولي (Dual-Mode)...");
+    console.log("🧠 [Kernel] استدعاء النموذج للتحليل الأولي...");
 
     const rawReply = await geminiService.chat(conversationMessages, {
       fileName,
@@ -216,27 +192,17 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       }
       if (!finalReplyText) finalReplyText = "جاري تجهيز الملف يا شريكي...";
 
-      // ✅ تحقق من استخدام الأدوات الصحيحة
-      const hasValidTools = pythonCode.includes("xls_") || pythonCode.includes("xls-");
-      if (!hasValidTools && isExcelAction) {
-        console.warn("⚠️ [Kernel] الكود لا يستخدم excel-agent-tools، قد يفشل التنفيذ.");
-      }
-
       const maxRetries = 2;
       let currentAttempt = 0;
       let isSuccess = false;
 
       while (currentAttempt < maxRetries && !isSuccess) {
         currentAttempt++;
-        console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (${isGenerationRequest ? 'توليد جديد' : 'تعديل'}) - محاولة ${currentAttempt}...`);
-        console.log(`📁 [Kernel] المسار المستهدف: ${filePath}`);
+        console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (محاولة ${currentAttempt})...`);
 
-        executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest);
+        executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest, sessionId);
 
-        const outputStr = (executionResult?.output || "").toLowerCase();
-        const hasLogicalError = outputStr.includes("error:") || outputStr.includes("valueerror") || outputStr.includes("exception");
-
-        if (executionResult && executionResult.success && !hasLogicalError && fs.existsSync(filePath)) {
+        if (executionResult && executionResult.success && fs.existsSync(filePath)) {
           isSuccess = true;
           finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح والتحقق من صحته. جاهز للتحميل يا هندسة!`;
           try {
@@ -276,7 +242,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
                 uploadedAt: new Date().toISOString()
               };
               await writeIndex(idx);
-              foundId = newId;
             } else {
               idx[foundId].fileName = path.basename(filePath);
               idx[foundId].storedPath = filePath;
@@ -287,15 +252,11 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
             try {
               memory.saveFile(sessionId, {
-                fileId: foundId,
                 filePath,
                 fileName: path.basename(filePath),
-                size: fs.existsSync(filePath) ? fs.statSync(filePath).size : null,
                 metadata: ctx.metadata || {}
               });
-            } catch (e) {
-              console.warn("⚠️ [Kernel] memory.saveFile failed:", e.message);
-            }
+            } catch (e) {}
 
             try {
               await fs.promises.chmod(filePath, 0o600);
@@ -304,13 +265,13 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             console.warn("⚠️ [Kernel] index update failed:", e.message);
           }
         } else {
-          const actualError = executionResult?.error || executionResult?.output || "خطأ منطقي في التنفيذ";
+          const actualError = executionResult?.error || executionResult?.output || "خطأ غير معروف في التنفيذ";
           console.warn(`⚠️ فشل التنفيذ في المحاولة ${currentAttempt}:`, actualError);
 
           if (currentAttempt < maxRetries) {
             const errorFeedbackPrompt =
-              `الكود واجه مشكلة:\n\`\`\`text\n${actualError}\n\`\`\`\n` +
-              `قم بتصحيح كود البايثون وتأكد من استخدام أدوات excel-agent-tools (xls_*) وحفظ الملف في sys.argv[1].`;
+              `الكود واجه المشكلة التقنية التالية أثناء التنفيذ:\n\`\`\`text\n${actualError}\n\`\`\`\n` +
+              `قم بتصحيح كود Python، واستخدم المتجر 'target_file' لحفظ النتيجة بشكل صحيح دون أخطاء.`;
 
             const correctionMessages = [
               ...conversationMessages,
@@ -334,7 +295,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
               break;
             }
           } else {
-            finalReplyText += `\n\n❌ عذراً يا شريكي، واجهتني مشكلة أثناء بناء الملف:\n\`\`\`text\n${String(actualError).substring(0, 400)}\n\`\`\``;
+            finalReplyText += `\n\n❌ عذراً يا شريكي، واجهتني مشكلة تقنية ولم تنجح محاولات التصحيح الذاتي:\n\`\`\`text\n${String(actualError).substring(0, 400)}\n\`\`\``;
           }
         }
       }
