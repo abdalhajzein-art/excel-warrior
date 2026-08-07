@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية (مصحّحة بالكامل)
+ * js/chatEngine.js – النسخة السيادية النهائية (مصحّحة ومحسنة الأداء)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -241,7 +241,7 @@ export async function handleSendMessage(renderCallbacks) {
         assistantMsgDiv.className = 'message ai';
         chatArea.appendChild(assistantMsgDiv);
 
-        await streamTextEffect(assistantMsgDiv, cleanedReply, 25, getIsGenerating);
+        await streamTextEffect(assistantMsgDiv, cleanedReply, 15, getIsGenerating);
 
         addCopyButtonToMessage(assistantMsgDiv, cleanedReply);
 
@@ -310,10 +310,21 @@ export async function handleSendMessage(renderCallbacks) {
 
             const errorDiv = document.createElement('div');
             errorDiv.className = 'message ai';
-            errorDiv.innerHTML = `
-                ⚠️ تعذر الاتصال بالسيرفر.
-                <button onclick="location.reload()" style="display: block; margin-top: 8px; background: #d4af37; color: #000; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-weight: bold;">🔄 إعادة المحاولة</button>
-            `;
+            
+            const errContent = document.createElement('div');
+            errContent.innerHTML = '⚠️ تعذر الاتصال بالسيرفر.';
+            errorDiv.appendChild(errContent);
+
+            const retryBtn = document.createElement('button');
+            retryBtn.style.cssText = 'display: block; margin-top: 8px; background: #d4af37; color: #000; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-weight: bold;';
+            retryBtn.innerHTML = '🔄 إعادة المحاولة';
+            retryBtn.onclick = () => {
+                errorDiv.remove();
+                userInput.value = displayMessage;
+                handleSendMessage(renderCallbacks);
+            };
+            errorDiv.appendChild(retryBtn);
+
             chatArea.appendChild(errorDiv);
             if (!window._isUserScrolledUp) chatArea.scrollTop = chatArea.scrollHeight;
         }
