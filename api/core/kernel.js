@@ -1,6 +1,7 @@
 /**
  * api/core/kernel.js – The Sovereign Kernel (Pure Python Edition)
- * نسخة نهائية مُحسّنة لتوحيد المسارات، إدارة الفهارس، وتطبيق التصحيح الذاتي.
+ * ✅ دعم وضع الاستشارة قبل التنفيذ
+ * ✅ تحسين التعامل مع السياق الحواري
  */
 
 import fs from "fs";
@@ -16,12 +17,11 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// مجلدات موحّدة داخل المشروع
+// مجلدات موحّدة
 const PERSISTENT_DIR = path.join(process.cwd(), "persistent_uploads");
 const GENERATED_DIR = path.join(process.cwd(), "generated");
 const INDEX_FILE = path.join(PERSISTENT_DIR, "index.json");
 
-// تأكد من وجود المجلدات وملف الفهرس
 function ensureDirs() {
   try {
     if (!fs.existsSync(PERSISTENT_DIR)) fs.mkdirSync(PERSISTENT_DIR, { recursive: true });
@@ -94,6 +94,13 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const fingerprintText = fusionMemory.getFingerprintText(sessionId);
   const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
 
+  // ✅ كشف النية: استشارة أم تنفيذ؟
+  const isConsultationRequest = /(اقتراح|شو رأيك|كيف أطور|ممكن تحسن|نصيحة|إيش رأيك|اقترح|شو الحل|كيف أحسن|تطوير|تحسين)/i.test(message);
+  const isExecutionRequest = /(نفذ|طبق|اعمل|سوي|عدل|نفّذ|طبّق|نفذلي|اعملي|أضف|احذف|غير|حط|ضبط|لون|رتب|تحديث|تعديل|إضافة|حذف|أنشئ|ولد|صمم|اطبع|جدد|طوّر|نفذها|طبقه|اعمله)/i.test(message);
+
+  // إذا كان طلب استشارة بدون طلب تنفيذ صريح
+  const isConsultationOnly = isConsultationRequest && !isExecutionRequest;
+
   const excelActionRegex = /(ضيف|أضف|احذف|شيل|امسح|عدل|غيّر|حدث|نسّق|لوّن|دمج|فك دمج|معادلة|صيغة|عمود|أعمدة|صف|صفوف|خلية|خلايا|شيت|ورقة|أنشئ|ولد|صمم|اعمل|سوي|اطبع|جدول|تقرير)/i;
   const isExcelAction = excelActionRegex.test(message);
 
@@ -127,23 +134,34 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
   }
 
-  // 🏛️ التعليمات السيادية الصارمة للـ Pure Python
-  systemContent += `
-[🏛️ بروتوكول الأثير السيادي - Pure Python]:
+  // ✅ إذا كان طلب استشارة فقط، نضيف تعليمات واضحة
+  if (isConsultationOnly) {
+    systemContent += `
+\n\n[🧠 تنبيه: هذا طلب استشارة فقط]:
+- المستخدم يطلب اقتراحاتك وليس تنفيذ فوري.
+- قدّم له أفكارك واقتراحاتك بشكل منظم.
+- **لا تكتب أي كود Python**.
+- انتظر رد المستخدم لمعرفة إذا كان يريد التنفيذ.
+- اسأل عن رأيه وانتظر توجيهه.`;
+  } else {
+    // 🏛️ التعليمات السيادية للتنفيذ
+    systemContent += `
+\n\n[🏛️ بروتوكول الأثير السيادي - Pure Python]:
 - أنت تمتلك بيئة Python متكاملة. استخدم مكتبات (pandas, openpyxl, os) فقط.
-- ⚠️ ممنوع استدعاء أي أدوات خارجية أو وهمية (xls_*).
-- **القاعدة الذهبية الصارمة:** استخدم المتغير \`target_file\` المعرّف مسبقاً في البيئة كمسار وحيد للقراءة والكتابة (مثلاً: \`wb.save(target_file)\` أو \`df.to_excel(target_file, index=False)\`).
+- ⚠️ ممنوع استدعاء أي أدوات خارجية أو وهمية.
+- **القاعدة الذهبية الصارمة:** استخدم المتغير \`target_file\` المعرّف مسبقاً في البيئة كمسار وحيد للقراءة والكتابة.
 - لا تقم بتعريف متغير \`target_file\`، ولا تستخدم \`sys.argv\` أبداً.`;
+  }
 
-  // تحديد مسار الملف النهائي وتوجيه النموذج
+  // تحديد مسار الملف النهائي
   if (isGenerationRequest || !hasExistingFile) {
     const id = generateFileId();
     const safeName = `${id}-${sanitizeName(fileName || `Alatheer_Report`)}.xlsx`.replace(/\.xlsx\.xlsx$/, ".xlsx");
     fileName = safeName;
     filePath = path.join(PERSISTENT_DIR, safeName);
     systemContent += `\n\n[تعليمات النظام للتوليد]: أنشئ ملفاً جديداً واحفظه مباشرة باستخدام \`target_file\`.`;
-  } else {
-    systemContent += `\n\n[تعليمات النظام للتعديل]: قم بقراءة الملف الحالي عبر \`target_file\` (مثلاً \`pd.read_excel(target_file)\` أو \`load_workbook(target_file)\`)، عدل البيانات، ثم احفظ التعديلات في \`target_file\` نفسه.`;
+  } else if (hasExistingFile) {
+    systemContent += `\n\n[تعليمات النظام للتعديل]: قم بقراءة الملف الحالي عبر \`target_file\`، عدل البيانات، ثم احفظ التعديلات في \`target_file\` نفسه.`;
   }
 
   const conversationMessages = [
@@ -166,6 +184,19 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     });
 
     finalReplyText = rawReply || "تم يا شريكي.";
+
+    // ✅ إذا كان طلب استشارة فقط، نعيد الرد بدون تنفيذ
+    if (isConsultationOnly) {
+      memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
+      return {
+        reply: finalReplyText,
+        fileName,
+        fileBase64: null,
+        operations: [],
+        execution: null,
+        isConsultation: true
+      };
+    }
 
     if (!isExcelAction || !filePath) {
       memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
@@ -211,7 +242,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             console.warn("⚠️ [Kernel] failed to read file for base64:", e.message);
           }
 
-          // تحديث البصمة والفهرس
           try {
             const previewData = await extractPreviewAsync(filePath);
             if (previewData && !previewData.error) {
@@ -271,7 +301,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
           if (currentAttempt < maxRetries) {
             const errorFeedbackPrompt =
               `الكود واجه المشكلة التقنية التالية أثناء التنفيذ:\n\`\`\`text\n${actualError}\n\`\`\`\n` +
-              `قم بتصحيح كود Python، واستخدم المتجر 'target_file' لحفظ النتيجة بشكل صحيح دون أخطاء.`;
+              `قم بتصحيح كود Python، واستخدم المتغير 'target_file' لحفظ النتيجة بشكل صحيح دون أخطاء.`;
 
             const correctionMessages = [
               ...conversationMessages,
@@ -315,7 +345,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     fileName,
     fileBase64,
     operations: [],
-    execution: executionResult
+    execution: executionResult,
+    isConsultation: false
   };
-}
-
+  }
