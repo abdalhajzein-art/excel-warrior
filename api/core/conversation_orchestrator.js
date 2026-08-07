@@ -15,8 +15,13 @@ const INDEX_FILE = path.join(PERSISTENT_DIR, "index.json");
 
 function formatFileContextForKernel(activeFile) {
   if (!activeFile) return null;
-  const { fileName, metadata, extractedContent } = activeFile;
+  const { fileName, filePath, metadata, extractedContent } = activeFile;
+  
+  // 🛡️ التعديل الجوهري: إجبار البايثون على الكتابة فوق الملف الأصلي باستخدام المسار المطلق
   let summary = `📄 **الملف النشط:** ${fileName}\n`;
+  summary += `🔑 **المسار المطلق للملف (مهم جداً للبايثون):** \`${filePath}\`\n`;
+  summary += `⚠️ **تعليمات التعديل:** عند كتابة كود بايثون لتعديل هذا الملف، يجب استخدام المسار المطلق أعلاه في القراءة \`pd.read_excel('${filePath}')\` وفي الحفظ \`df.to_excel('${filePath}', index=False)\` لضمان حفظ التعديلات فوق الملف الأصلي حصراً. لا تقم أبداً بالحفظ باسم جديد إلا إذا طُلب منك ذلك صراحةً.\n`;
+  
   if (metadata)
     summary += `📊 **الأبعاد:** ${metadata.sheets || 1} شيت | ${metadata.rows || 0} صف | ${metadata.columns || 0} عمود\n`;
   if (extractedContent?.text)
@@ -61,7 +66,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
     const session = memory.getSession(sessionId) || memory.createSession(sessionId);
     const lowerMsg = (message || "").toLowerCase();
     
-    // إبقاء أمر "مسح الملف" للإدارة اليدوية
     const isResetFile = /(انسى|اغلق|احذف|سكر|تجاهل) (الملف|البيانات)|ملف (جديد|اخر)/.test(lowerMsg);
     if (isResetFile && session.activeFile) {
       console.log(`🗑️ [Orchestrator] تم مسح الملف النشط بطلب المستخدم.`);
@@ -71,7 +75,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
     let resolved = null;
     
-    // 🛡️ الثقة المطلقة في المسار المُمرر من chat.js
     if (extraCtx.filePath && fs.existsSync(extraCtx.filePath)) {
         resolved = { storedPath: extraCtx.filePath, fileName: extraCtx.fileName };
     } 
@@ -99,7 +102,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
       }
       fusionMemory.storeCurrentFile(sessionId, session.activeFile.filePath);
     } else {
-      // الاعتماد على الذاكرة كخيار أخير
       if (!session.activeFile && session.sovereign && session.sovereign.lastFile) {
         const last = session.sovereign.lastFile;
         if (last.filePath && fs.existsSync(last.filePath)) {
@@ -116,7 +118,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
     }
 
     memory.appendChatHistory(sessionId, { role: "user", content: message });
-
     const fusedMemory = fusionMemory.apply(sessionId);
 
     let history = memory.getChatHistory(sessionId, 50).map(msg => ({
@@ -139,10 +140,9 @@ export default async function conversationOrchestrator(sessionId, message, extra
 
     let kernelOutput = await kernel(sessionId, message, kernelContext);
 
-    // حلقة تصحيح واحدة تلقائية
     if (kernelOutput.execution && !kernelOutput.execution.success && session.activeFile) {
         console.log(`⚠️ [Self-Correction] خطأ برمجي. إعادة المحاولة...`);
-        const correctionMessage = `حدث خطأ برمجي أثناء التنفيذ:\n${kernelOutput.execution.error}\nالرجاء تصحيح الكود بالكامل وإعادة المحاولة لتنفيذ ما طلبه المستخدم.`;
+        const correctionMessage = `حدث خطأ برمجي أثناء التنفيذ:\n${kernelOutput.execution.error}\nالرجاء تصحيح الكود بالكامل مع التأكد من حفظ التعديلات فوق الملف بالمسار \`${session.activeFile.filePath}\`.`;
         kernelOutput = await kernel(sessionId, correctionMessage, kernelContext);
     }
 
@@ -171,3 +171,4 @@ export default async function conversationOrchestrator(sessionId, message, extra
     };
   }
 }
+
