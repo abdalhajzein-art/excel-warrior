@@ -197,10 +197,13 @@ export async function handleSendMessage(renderCallbacks) {
 
         let finalMessageForAI = displayMessage || "ممكن تعطيني ملخص عن محتوى الملف؟";
 
+        // 🛡️ التعديل السيادي: تمرير المرجع الحقيقي للملف (fileId و filePath) للسيرفر
         const requestPayload = { 
             message: finalMessageForAI,
             history: formattedHistoryForBackend,
             sessionId: sessionId,
+            fileId: processedFileResult?.fileId || processedFileResult?.id || null, 
+            filePath: processedFileResult?.storedPath || processedFileResult?.filePath || null,
             fileData: fileBase64,
             fileName: fileDisplayName || null
         };
