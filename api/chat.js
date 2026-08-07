@@ -1,7 +1,7 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
- * مصحّح ليدعم استرجاع الملفات عبر fileId/filePath من upload.index.json
- * ويحافظ على سلوك حفظ البصمات وتحديث الذاكرة كما كان.
+ * ✅ دعم وضع الاستشارة
+ * ✅ تحسين عرض الردود
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -51,28 +51,18 @@ async function writeIndex(idx) {
     }
 }
 
-/**
- * Resolve a fileId or storedName to an absolute storedPath and metadata using index.json
- * Returns null if not found.
- */
 async function resolveFileReference({ fileId, filePath, fileName }) {
-    // If caller already provided an absolute filePath that exists, prefer it
     if (filePath && fs.existsSync(filePath)) {
         return { storedPath: filePath, fileName: fileName || path.basename(filePath) };
     }
 
-    // If fileId provided, look up in index.json
     if (fileId) {
         const idx = await readIndex();
-        if (idx[fileId]) {
-            const entry = idx[fileId];
-            if (entry.storedPath && fs.existsSync(entry.storedPath)) {
-                return { storedPath: entry.storedPath, fileName: entry.fileName || entry.storedName };
-            }
+        if (idx[fileId] && idx[fileId].storedPath && fs.existsSync(idx[fileId].storedPath)) {
+            return { storedPath: idx[fileId].storedPath, fileName: idx[fileId].fileName || idx[fileId].storedName };
         }
     }
 
-    // If fileName matches a stored file in persistent dir, try that (fallback)
     if (fileName) {
         const candidate = path.join(PERSISTENT_DIR, fileName);
         if (fs.existsSync(candidate)) {
@@ -98,11 +88,10 @@ export default async function handler(req, res) {
         let extractedContent = null;
         let finalFileName = fileName || null;
 
-        // Detect new Excel creation intent
         const isExcelRequest = userContent.match(/إكسل|Excel|ملف\s*إكسل|جدول|spreadsheet/i);
         const isNewFileRequest = userContent.match(/أنشئ|اعمل|عمل لي|generate|create|new\s*file|من الصفر/i);
 
-        // Handle explicit "create new excel" requests (no file)
+        // Handle explicit "create new excel" requests
         if (isExcelRequest && isNewFileRequest && !fileData && !fileId && !clientFilePath) {
             console.log("📊 [الأثير] تم اكتشاف طلب إنشاء ملف Excel جديد");
             const orchestratorInput = {
@@ -137,7 +126,6 @@ export default async function handler(req, res) {
                     const fileBase64 = fileBuffer.toString('base64');
                     const downloadUrl = `/generated/${newFileName}`;
 
-                    // store fingerprint and memory reference
                     try {
                         const previewData = await extractPreviewAsync(newFilePath);
                         if (previewData && !previewData.error) {
@@ -164,14 +152,13 @@ export default async function handler(req, res) {
             }
         }
 
-        // If client provided a fileId or clientFilePath (from upload endpoint), resolve it first
+        // Resolve file reference
         if ((fileId || clientFilePath) && !fileData) {
             const resolved = await resolveFileReference({ fileId, filePath: clientFilePath, fileName });
             if (resolved) {
                 sovereignFilePath = resolved.storedPath;
                 finalFileName = resolved.fileName || finalFileName;
                 console.log(`🔄 [chat.js] resolved file reference -> ${sovereignFilePath}`);
-                // ensure memory also knows about it
                 try {
                     memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
                 } catch (e) {
@@ -182,10 +169,9 @@ export default async function handler(req, res) {
             }
         }
 
-        // If raw base64 fileData is provided in the request body, persist it to persistent_uploads
+        // Handle fileData upload
         if (fileData && fileName) {
             await ensureIndexReady();
-            // normalize base64
             let buffer = null;
             if (typeof fileData === 'string') {
                 let cleanBase64 = fileData.includes('base64,') ? fileData.split('base64,')[1] : fileData;
@@ -196,7 +182,6 @@ export default async function handler(req, res) {
             }
 
             if (buffer && buffer.length > 0) {
-                // create persistent dir if needed
                 if (!fs.existsSync(PERSISTENT_DIR)) fs.mkdirSync(PERSISTENT_DIR, { recursive: true });
 
                 const safeStoredName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9_.-]/g, "_")}`;
@@ -205,7 +190,6 @@ export default async function handler(req, res) {
                 fs.writeFileSync(storedPath, buffer);
                 try { await fs.promises.chmod(storedPath, 0o600); } catch (e) { /* ignore */ }
 
-                // update index.json
                 const idx = await readIndex();
                 const fileIdGenerated = safeStoredName.split("-")[0];
                 idx[fileIdGenerated] = {
@@ -222,14 +206,12 @@ export default async function handler(req, res) {
                 finalFileName = safeStoredName;
                 console.log(`🛡️ [الأثير Intake] تم حفظ الملف بنجاح: ${sovereignFilePath}`);
 
-                // store in memory for session
                 try {
                     memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
                 } catch (e) {
                     console.warn("⚠️ memory.saveFile failed:", e.message);
                 }
 
-                // extract preview
                 try {
                     const previewData = await extractPreviewAsync(sovereignFilePath);
                     if (!previewData.error) {
@@ -253,7 +235,7 @@ export default async function handler(req, res) {
             }
         }
 
-        // If still no sovereignFilePath, try to recover from memory (older sessions)
+        // Try to recover from memory
         if (!sovereignFilePath) {
             try {
                 const session = memory.getSession(sessionKey);
@@ -264,7 +246,6 @@ export default async function handler(req, res) {
                         finalFileName = finalFileName || last.fileName;
                         console.log(`🔄 [chat.js] استرجاع الملف من الذاكرة: ${sovereignFilePath}`);
                     } else if (last.fileId) {
-                        // try resolve via index.json
                         const resolved = await resolveFileReference({ fileId: last.fileId });
                         if (resolved) {
                             sovereignFilePath = resolved.storedPath;
@@ -296,14 +277,23 @@ export default async function handler(req, res) {
         let fileBase64 = output?.fileBase64 || null;
         let returnedFileName = output?.fileName || finalFileName || fileName || "modified_file.xlsx";
 
-        // If orchestrator executed and modified the sovereignFilePath file, read it and return base64
+        // ✅ إذا كان الرد استشارة، أعرضه بدون تنفيذ إضافي
+        if (output?.isConsultation) {
+            return res.status(200).json({
+                reply,
+                fileName: returnedFileName,
+                metadata: extractedContent?.metadata || null,
+                isConsultation: true
+            });
+        }
+
+        // Handle file modification
         if (orchestratorInput.filePath && fs.existsSync(orchestratorInput.filePath) && !fileBase64 && output?.execution?.success) {
             try {
                 const fileBuffer = fs.readFileSync(orchestratorInput.filePath);
                 fileBase64 = fileBuffer.toString('base64');
                 returnedFileName = `modified_${Date.now()}-${path.basename(orchestratorInput.filePath)}`;
 
-                // update fingerprint and memory
                 try {
                     const previewData = await extractPreviewAsync(orchestratorInput.filePath);
                     if (previewData && !previewData.error) {
@@ -318,7 +308,6 @@ export default async function handler(req, res) {
             }
         }
 
-        // If we have a fileBase64 to return, ensure reply contains a download link to persistent path
         if (fileBase64 && returnedFileName) {
             const baseName = path.basename(returnedFileName);
             const realFileUrl = encodeURI(`/persistent_uploads/${baseName}`);
@@ -331,11 +320,12 @@ export default async function handler(req, res) {
             reply,
             fileBase64,
             fileName: returnedFileName,
-            metadata: extractedContent?.metadata || null
+            metadata: extractedContent?.metadata || null,
+            isConsultation: false
         });
 
     } catch (error) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-}
+                    }
