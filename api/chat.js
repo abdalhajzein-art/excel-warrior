@@ -1,6 +1,6 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
- * ✅ خفيف، نظيف، يمرر الردود كما هي
+ * ✅ خفيف، نظيف، يمرر الردود كما هي مع حماية صارمة لعقد البيانات
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -87,11 +87,9 @@ export default async function handler(req, res) {
         let extractedContent = null;
         let finalFileName = fileName || null;
 
-        // ✅ كشف بسيط لطلب إنشاء ملف جديد
         const isNewFileRequest = /أنشئ|اعمل|عمل لي|generate|create|new\s*file|من الصفر/i.test(userContent) && 
                                   /إكسل|Excel|ملف\s*إكسل|جدول|spreadsheet|ملف/i.test(userContent);
 
-        // ✅ إنشاء ملف جديد (بدون ملف مرفق)
         if (isNewFileRequest && !fileData && !fileId && !clientFilePath) {
             console.log("📊 [الأثير] تم اكتشاف طلب إنشاء ملف جديد");
             const orchestratorInput = {
@@ -145,31 +143,26 @@ export default async function handler(req, res) {
                     });
                 } else {
                     return res.status(200).json({
-                        reply: `❌ **فشل إنشاء الملف**: ${result.error || "خطأ غير معروف"}\n\n${output?.reply || ""}`,
+                        reply: `❌ **فشل إنشاء الملف**: ${result.error || "خطأ غير معروف"}`,
                         isFileGenerated: false
                     });
                 }
             }
         }
 
-        // ✅ حل مرجع الملف (إذا كان مرسلاً)
         if ((fileId || clientFilePath) && !fileData) {
             const resolved = await resolveFileReference({ fileId, filePath: clientFilePath, fileName });
             if (resolved) {
                 sovereignFilePath = resolved.storedPath;
                 finalFileName = resolved.fileName || finalFileName;
-                console.log(`🔄 [chat.js] تم حل مرجع الملف -> ${sovereignFilePath}`);
                 try {
                     memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
                 } catch (e) {
                     console.warn("⚠️ memory.saveFile failed:", e.message);
                 }
-            } else {
-                console.warn("⚠️ [chat.js] لم يتم العثور على مرجع الملف.");
             }
         }
 
-        // ✅ حفظ الملف المرفوع (Base64)
         if (fileData && fileName) {
             await ensureIndexReady();
             let buffer = null;
@@ -204,7 +197,6 @@ export default async function handler(req, res) {
 
                 sovereignFilePath = storedPath;
                 finalFileName = safeStoredName;
-                console.log(`🛡️ [الأثير Intake] تم حفظ الملف: ${sovereignFilePath}`);
 
                 try {
                     memory.saveFile(sessionKey, { filePath: sovereignFilePath, fileName: finalFileName });
@@ -225,9 +217,6 @@ export default async function handler(req, res) {
                             }
                         };
                         fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
-                        console.log(`📊 [الأثير Preview] تم استخراج معاينة الملف.`);
-                    } else {
-                        console.warn(`⚠️ [الأثير Preview] فشلت المعاينة: ${previewData.error}`);
                     }
                 } catch (e) {
                     console.warn("⚠️ extractPreviewAsync failed:", e.message);
@@ -235,7 +224,6 @@ export default async function handler(req, res) {
             }
         }
 
-        // ✅ استرجاع الملف من الذاكرة
         if (!sovereignFilePath) {
             try {
                 const session = memory.getSession(sessionKey);
@@ -244,13 +232,11 @@ export default async function handler(req, res) {
                     if (last.filePath && fs.existsSync(last.filePath)) {
                         sovereignFilePath = last.filePath;
                         finalFileName = finalFileName || last.fileName;
-                        console.log(`🔄 [chat.js] استرجاع الملف من الذاكرة: ${sovereignFilePath}`);
                     } else if (last.fileId) {
                         const resolved = await resolveFileReference({ fileId: last.fileId });
                         if (resolved) {
                             sovereignFilePath = resolved.storedPath;
                             finalFileName = finalFileName || resolved.fileName;
-                            console.log(`🔄 [chat.js] استرجاع الملف عبر fileId: ${sovereignFilePath}`);
                         }
                     }
                 }
@@ -259,7 +245,6 @@ export default async function handler(req, res) {
             }
         }
 
-        // ✅ إرسال إلى orchestrator
         const orchestratorInput = {
             fileData: fileData || null,
             fileName: finalFileName || fileName || null,
@@ -269,15 +254,18 @@ export default async function handler(req, res) {
             extractedContent
         };
 
-        console.log(`📤 [chat.js] إرسال إلى orchestrator: fileName=${orchestratorInput.fileName}, filePath=${orchestratorInput.filePath}`);
-
         const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
 
         let reply = output?.reply || output?.message || "تكرم عينك يا شريكي، أنجزت لك المطلوب.";
+        
+        // 🛡️ حماية صارمة لعقد البيانات (Data Contract Guard) لمنع أخطاء الـ .replace()
+        if (typeof reply !== 'string') {
+            reply = reply?.reply || reply?.text || reply?.message || JSON.stringify(reply, null, 2);
+        }
+
         let fileBase64 = output?.fileBase64 || null;
         let returnedFileName = output?.fileName || finalFileName || fileName || "modified_file.xlsx";
 
-        // ✅ معالجة الملف المعدل
         if (orchestratorInput.filePath && fs.existsSync(orchestratorInput.filePath) && !fileBase64 && output?.execution?.success) {
             try {
                 const fileBuffer = fs.readFileSync(orchestratorInput.filePath);
@@ -298,7 +286,6 @@ export default async function handler(req, res) {
             }
         }
 
-        // ✅ رابط التحميل
         if (fileBase64 && returnedFileName) {
             const baseName = path.basename(returnedFileName);
             const realFileUrl = encodeURI(`/persistent_uploads/${baseName}`);
