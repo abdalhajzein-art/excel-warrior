@@ -1,6 +1,7 @@
 /**
  * api/core/kernel.js – The Sovereign Kernel (Pure Python Edition)
  * ✅ خفيف، نظيف، يثق بقدرات Gemini
+ * ✅ إضافة رابط تحميل للمستخدم بدل target_file التقني
  */
 
 import fs from "fs";
@@ -93,15 +94,13 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const fingerprintText = fusionMemory.getFingerprintText(sessionId);
   const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
 
-  // ✅ كشف بسيط جداً: هل هذا طلب ملفات أم لا؟
-  const isFileAction = /(ملف|إكسل|Excel|PDF|Word|docx|pdf|sheet|جدول|بيانات|تقرير|صيانة|عملاء|فلاتر)/i.test(message);
+  const isFileAction = /(ملف|إكسل|Excel|PDF|Word|docx|pdf|sheet|جدول|بيانات|تقرير|صيانة|عملاء|فلاتر|HR|موظفين|رواتب|موارد بشرية)/i.test(message);
 
   const hasExistingFile = filePath && fs.existsSync(filePath);
   const hasFilePath = filePath !== null && filePath !== undefined;
 
   let isGenerationRequest = false;
 
-  // ✅ تحديد التوليد فقط إذا طلب المستخدم شيئاً جديداً
   if (/أنشئ|ولد|صمم|اعمل|سوي|generate|create|new|جديد|من الصفر/i.test(message)) {
     isGenerationRequest = true;
   } else if (!hasExistingFile && !hasFilePath) {
@@ -122,14 +121,12 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     systemContent += `\n\n[بصمة الملف الحالية]:\n${fingerprintText}`;
   }
 
-  // ✅ تعليمات تنفيذية أساسية فقط
   systemContent += `
 \n\n[⚙️ تعليمات تقنية]:
 - استخدم \`target_file\` كمسار للملف (معرّف مسبقاً).
 - لا تستخدم \`sys.argv\`.
 - استخدم المكتبات المناسبة لنوع الملف.`;
 
-  // تحديد مسار الملف النهائي
   if (isGenerationRequest || !hasExistingFile) {
     const id = generateFileId();
     const safeName = `${id}-${sanitizeName(fileName || `Alatheer_Report`)}.xlsx`.replace(/\.xlsx\.xlsx$/, ".xlsx");
@@ -161,7 +158,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     finalReplyText = rawReply || "تم يا شريكي.";
 
-    // ✅ إذا لم يكن طلب ملفات، أو لا يوجد مسار، رد فقط
     if (!isFileAction || !filePath) {
       memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
       return {
@@ -173,7 +169,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       };
     }
 
-    // ✅ استخراج كود Python إن وجد
     let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
@@ -182,7 +177,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     if (pythonMatch) {
       let pythonCode = pythonMatch[1].trim();
 
-      // ✅ إخفاء الكود عن المستخدم
       finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
       if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
         finalReplyText = finalReplyText.replace(/```[\s\S]*?```/g, "").trim();
@@ -201,7 +195,15 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
         if (executionResult && executionResult.success && fs.existsSync(filePath)) {
           isSuccess = true;
-          finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح. جاهز للتحميل يا هندسة!`;
+
+          // ✅ رابط التحميل للمستخدم
+          const downloadUrl = `/persistent_uploads/${path.basename(filePath)}`;
+          const fileNameForUser = path.basename(filePath);
+
+          finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح يا هندسة!`;
+          finalReplyText += `\n\n📥 **[اضغط هنا لتحميل الملف](${downloadUrl})**`;
+          finalReplyText += `\n📁 اسم الملف: ${fileNameForUser}`;
+
           try {
             fileBase64 = fs.readFileSync(filePath).toString("base64");
           } catch (e) {
@@ -296,9 +298,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
           }
         }
       }
-    }
-    // ✅ إذا لم يحتوي الرد على كود، نمرره كما هو
-    else {
+    } else {
       console.log("💬 [Kernel] رد نصي بدون كود، تمريره للمستخدم.");
     }
   } catch (error) {
