@@ -1,5 +1,5 @@
 /**
- * js/uiController.js – Alatheer UI Controller & Formatter (Optimized Performance Edition)
+ * js/uiController.js – Alatheer UI Controller & Formatter (Non-Bubble AI Edition)
  */
 
 export function initUIController(getGeneratingStatus, onFileSelected) {
@@ -183,13 +183,11 @@ export async function streamTextEffect(messageDiv, fullText, speed = 15, getGene
             }
 
             if (index < chars.length) {
-                // تدفق بدفعات أسرع وأكثر سلاسة (5 أحرف في الدفعة)
                 let batchSize = Math.min(5, chars.length - index);
                 for (let i = 0; i < batchSize; i++) {
                     currentText += chars[index++];
                 }
 
-                // عرض النص الخام أثناء التدفق لمنع التقطيع وتقليل الحمل على المعالج
                 messageDiv.innerText = currentText;
                 
                 if (chatArea && !window._isUserScrolledUp) {
@@ -198,7 +196,6 @@ export async function streamTextEffect(messageDiv, fullText, speed = 15, getGene
                 
                 setTimeout(typeNextBatch, speed);
             } else {
-                // تطبيق محرك التنسيق والماركداون بالكامل عند الاكتمال فقط
                 messageDiv.innerHTML = formatReply(fullText);
                 if (chatArea && !window._isUserScrolledUp) {
                     chatArea.scrollTop = chatArea.scrollHeight;
@@ -218,7 +215,8 @@ export function showTypingIndicator() {
     const div = document.createElement('div');
     div.id = indicatorId;
     div.className = 'message ai typing-indicator';
-    div.style.cssText = 'display: flex; align-items: center; gap: 4px; padding: 12px 16px; margin-bottom: 12px;';
+    // [تعديل سيادي]: إزالة الحشو المربع للفقاعة لتتوافق مع التدفق المباشر
+    div.style.cssText = 'display: flex; align-items: center; gap: 6px; padding: 8px 0; margin-bottom: 12px; background: transparent;';
     div.innerHTML = `
         <span style="background: #d4af37; width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: typingBounce 1.4s infinite both; animation-delay: 0s;"></span>
         <span style="background: #d4af37; width: 8px; height: 8px; border-radius: 50%; display: inline-block; animation: typingBounce 1.4s infinite both; animation-delay: 0.2s;"></span>
@@ -260,15 +258,14 @@ export function showSearchIndicator() {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        padding: 8px 14px;
+        padding: 6px 12px;
         margin-bottom: 12px;
-        background: rgba(212, 175, 55, 0.1);
-        border: 1px solid rgba(212, 175, 55, 0.3);
+        background: rgba(212, 175, 55, 0.08);
+        border: 1px solid rgba(212, 175, 55, 0.2);
         border-radius: 20px;
         color: #d4af37;
         font-size: 13px;
         font-family: 'Cairo', sans-serif;
-        box-shadow: 0 0 15px rgba(212, 175, 55, 0.15);
     `;
     div.innerHTML = `
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 2s linear infinite;">
@@ -290,4 +287,3 @@ export function hideSearchIndicator(searchId) {
     const el = document.getElementById(searchId);
     if (el) el.remove();
 }
-
