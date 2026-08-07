@@ -1,6 +1,7 @@
 /**
  * api/core/kernel.js – The Sovereign Kernel (Pure Dynamic Intent Edition)
  * ✅ سيادة كاملة، بدون كلمات مفتاحية مسبقة، الاعتماد على وعي نموذج Gemini ونية المستخدم الديناميكية.
+ * ✅ دعم functionCalls من Gemini (Tool Calling)
  */
 
 import fs from "fs";
@@ -136,31 +137,29 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       systemInstruction: systemContent
     });
 
-    // 🛡️ Data Contract & Tool Call Enforcement: استخراج الرد حصراً كـ String صافٍ
-    if (typeof rawReply === 'string') {
-      finalReplyText = rawReply;
-    } else if (rawReply && typeof rawReply === 'object') {
-      if (rawReply.functionCalls && Array.isArray(rawReply.functionCalls)) {
-        const pyCall = rawReply.functionCalls.find(fc => fc.name === 'execute_python' || fc.args?.code);
-        if (pyCall && pyCall.args && pyCall.args.code) {
-          finalReplyText = "```python\n" + pyCall.args.code + "\n```";
-        } else {
-          finalReplyText = rawReply.reply || rawReply.message || rawReply.text || JSON.stringify(rawReply, null, 2);
-        }
+    // ✅ استخراج النص والأدوات من الرد
+    const replyText = rawReply?.text || "";
+    const functionCalls = rawReply?.functionCalls || null;
+
+    // ✅ تحديد الرد النهائي
+    if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
+      const pyCall = functionCalls.find(fc => fc.name === 'execute_python' || fc.args?.code);
+      if (pyCall && pyCall.args && pyCall.args.code) {
+        finalReplyText = "```python\n" + pyCall.args.code + "\n```";
       } else {
-        finalReplyText = rawReply.reply || rawReply.message || rawReply.text || rawReply.explanation || JSON.stringify(rawReply, null, 2);
+        finalReplyText = replyText || "تم تنفيذ الأداة بنجاح.";
       }
     } else {
-      finalReplyText = String(rawReply || "تم يا شريكي.");
+      finalReplyText = replyText || String(rawReply || "تم يا شريكي.");
     }
 
-    // الكشف الديناميكي عن وجود نية تنفيذ برمجية: هل اقترح النموذج كود بايثون لتنفيذه؟
+    // الكشف الديناميكي عن وجود نية تنفيذ برمجية
     let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```([\s\S]*?)```/);
 
-    // إذا لم يكتب النموذج كود بايثون، فهو مجرد رد دردشة أو استفسار عام - نعيده فوراً دون قيود
+    // إذا لم يكتب النموذج كود بايثون، فهو مجرد رد دردشة - نعيده فوراً
     if (!pythonMatch || !filePath) {
       memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
       return {
@@ -172,7 +171,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       };
     }
 
-    // إذا وُجد كود بايثون، فمعناه أن النية تطلبت ملفاً أو معالجة، فنقوم بتشغيله ديناميكياً
+    // إذا وُجد كود بايثون، ننفذه
     let pythonCode = pythonMatch[1].trim();
 
     finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
@@ -187,6 +186,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     while (currentAttempt < maxRetries && !isSuccess) {
       currentAttempt++;
+      console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (محاولة ${currentAttempt})...`);
+
       executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest, sessionId);
 
       if (executionResult && executionResult.success && fs.existsSync(filePath)) {
@@ -277,18 +278,16 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             systemInstruction: systemContent
           });
 
+          // ✅ استخراج النص المصحح من الرد
+          const fixText = fixReply?.text || "";
+          const fixFunctionCalls = fixReply?.functionCalls || null;
+
           let fixedText = "";
-          if (typeof fixReply === 'string') {
-            fixedText = fixReply;
-          } else if (fixReply && typeof fixReply === 'object') {
-            if (fixReply.functionCalls && Array.isArray(fixReply.functionCalls)) {
-              const pyCall = fixReply.functionCalls.find(fc => fc.name === 'execute_python' || fc.args?.code);
-              fixedText = (pyCall && pyCall.args?.code) ? "```python\n" + pyCall.args.code + "\n```" : JSON.stringify(fixReply);
-            } else {
-              fixedText = fixReply.reply || fixReply.message || fixReply.text || JSON.stringify(fixReply);
-            }
+          if (fixFunctionCalls && Array.isArray(fixFunctionCalls) && fixFunctionCalls.length > 0) {
+            const pyCall = fixFunctionCalls.find(fc => fc.name === 'execute_python' || fc.args?.code);
+            fixedText = (pyCall && pyCall.args?.code) ? "```python\n" + pyCall.args.code + "\n```" : fixText;
           } else {
-            fixedText = String(fixReply || "");
+            fixedText = fixText || String(fixReply || "");
           }
 
           let newMatch = fixedText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
@@ -319,5 +318,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     operations: [],
     execution: executionResult
   };
-}
-
+      }
