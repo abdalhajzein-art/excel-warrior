@@ -105,7 +105,6 @@ geminiService.chat = async function(messages, extra = {}) {
 
       if (msg.role === "assistant") {
         if (!isLast) {
-          // التعامل مع ردود النموذج السابقة سواء كانت نصاً أو استدعاء أداة
           history.push({ role: "model", parts: [{ text: msg.content }] });
         }
       }
@@ -115,7 +114,7 @@ geminiService.chat = async function(messages, extra = {}) {
     const model = client.getGenerativeModel({
       model: modelName,
       systemInstruction,
-      tools: alatheerTools, // 👈 تمكين الأدوات هنا
+      tools: alatheerTools, 
       generationConfig: {
         temperature: 0.25,
         maxOutputTokens: 32768,
@@ -124,21 +123,35 @@ geminiService.chat = async function(messages, extra = {}) {
 
     const chat = model.startChat({ history });
     
-    // إرسال رسالة المستخدم للنموذج وهو سيقرر بحرية: نص عادي أم استدعاء أداة؟
     const result = await chat.sendMessage(lastUserMessage || "مرحبا");
     const response = await result.response;
 
-    // استخراج النتيجة (قد تكون نص للدردشة، أو طلب تنفيذ كود)
-    const functionCalls = response.functionCalls();
-    const textReply = response.text ? response.text() : "";
+    // 🛡️ استخراج آمن للأدوات لمنع انهيار السيرفر
+    let functionCalls = null;
+    try {
+        if (typeof response.functionCalls === 'function') {
+            functionCalls = response.functionCalls();
+        }
+    } catch (e) {
+        functionCalls = null;
+    }
+
+    // 🛡️ استخراج آمن للنص (يتجنب خطأ غياب النص عندما يعيد النموذج أداة فقط)
+    let textReply = "";
+    try {
+        if (response.text && typeof response.text === 'function') {
+            textReply = response.text();
+        }
+    } catch (e) {
+        textReply = functionCalls ? "" : "";
+    }
 
     auditExecution({
-      action: functionCalls ? "llm_tool_call" : "llm_chat",
+      action: functionCalls && functionCalls.length > 0 ? "llm_tool_call" : "llm_chat",
       target: extra.fileName || "Active Chat",
       usage: response.usageMetadata || null
     });
 
-    // إرجاع النتيجة للأوركيستريتور ليتصرف
     return {
       text: textReply,
       functionCalls: functionCalls || null
@@ -147,4 +160,3 @@ geminiService.chat = async function(messages, extra = {}) {
 };
 
 export default geminiService;
-
