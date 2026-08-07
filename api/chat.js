@@ -338,4 +338,4 @@ export default async function handler(req, res) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-                          }
+}
