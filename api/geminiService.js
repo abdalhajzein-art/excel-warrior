@@ -1,5 +1,6 @@
 /**
  * api/geminiService.js – Sovereign Gemini Service (Agentic Tool-Calling Edition)
+ * ✅ ترتيب النماذج حسب القوة: الأقوى أولاً
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -16,11 +17,12 @@ function getClient() {
   return new GoogleGenerativeAI(key);
 }
 
+// ✅ ترتيب النماذج حسب القوة (الأقوى أولاً)
 const MODEL_FALLBACK_LIST = [
-    'gemini-3.6-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.1-pro-preview',
-    'gemini-3-flash-preview'
+    'gemini-3.1-pro-preview',  // الأقوى - للاستدلال المعقد وتعديل الملفات
+    'gemini-3.6-flash',        // توازن بين القوة والسرعة
+    'gemini-3-flash-preview',  // سريع، مناسب للمهام البسيطة
+    'gemini-3.5-flash-lite'    // خفيف جداً، استخدامه فقط كحل أخير
 ];
 
 function isQuotaError(error) {
@@ -39,7 +41,11 @@ async function executeWithFallback(fn, modelList = MODEL_FALLBACK_LIST) {
             return await fn(modelName);
         } catch (err) {
             lastError = err;
-            if (isQuotaError(err)) continue;
+            console.warn(`⚠️ [GeminiService] النموذج ${modelName} فشل:`, err.message);
+            if (isQuotaError(err)) {
+                console.warn(`⚠️ [GeminiService] النموذج ${modelName} تجاوز الحدود، جرب التالي...`);
+                continue;
+            }
             throw err;
         }
     }
