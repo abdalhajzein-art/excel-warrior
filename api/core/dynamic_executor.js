@@ -1,6 +1,5 @@
 /**
- * api/core/dynamic_executor.js – Sovereign Edition (Unleashed Agentic Flow)
- * 🚀 مُحسن ليعطي Gemini الصلاحية المطلقة لاستخدام pandas و openpyxl النقي
+ * api/core/dynamic_executor.js – Sovereign Edition (Metadata Preprocessor)
  */
 
 import fs from "fs";
@@ -14,27 +13,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
 
-// ✅ التوجيه الذكي لمسار بايثون: استخدام البيئة الافتراضية في وضع الإنتاج
 const PYTHON_EXEC = process.env.NODE_ENV === "production" ? "/opt/venv/bin/python" : "python3";
 
-/* ---------------------------------------------------------
-   ⚡ التنفيذ الديناميكي النقي
---------------------------------------------------------- */
 export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile = false, sessionId = null) {
     return new Promise((resolve) => {
 
-        /* 🛡️ فحص المسار */
         if (!targetFilePath)
             return resolve({ success: false, error: "مسار الملف غير صالح." });
 
         if (!pythonCode || pythonCode.trim().length < 10)
             return resolve({ success: false, error: "الكود قصير جداً وغير صالح." });
 
-        /* 🛡️ تأكد من وجود المجلد */
         const dir = path.dirname(targetFilePath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        /* 🛡️ نسخة احتياطية */
         const ext = path.extname(targetFilePath);
         const base = targetFilePath.slice(0, -ext.length);
         const backupPath = `${base}_bak_${Date.now()}${ext}`;
@@ -47,7 +39,7 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
                 fs.copyFileSync(targetFilePath, backupPath);
             }
 
-            // ✅ تبسيط الكود وحقن الاستيرادات لمعالجة (NameError)
+            // 🛠️ Metadata Preprocessor: حقن المكتبات ومتغير المسار قسرياً لمنع أخطاء NameError
             const safeCode = `
 import sys
 import os
@@ -55,17 +47,11 @@ import traceback
 import pandas as pd
 import openpyxl
 
-# حقن قسري في حال استمر النموذج في استدعاء دوال مخصصة قديمة لتجنب تعطل التنفيذ
-try:
-    from excel_agent_tools import xls_create_workbook
-except ImportError:
-    pass # في حال كنت تعتمد على openpyxl النقي ولم يعد هذا الملف موجوداً
-
-# المسار المستهدف المحقون من بيئة Node.js (كمتغير ثابت لمنع أخطاء المتغيرات)
+# المتغير السيادي الموحد للمسار
 target_file = r'''${targetFilePath}'''
 
 # ============================================
-# ⚡ بداية كود الأثير (Gemini)
+# ⚡ بداية كود الأثير المُنفذ
 # ============================================
 ${pythonCode}
 # ============================================
@@ -75,41 +61,43 @@ print("SUCCESS: تم التنفيذ بنجاح ✓")
 
             fs.writeFileSync(scriptPath, safeCode, "utf8");
 
-            /* ⚡ تنفيذ باستخدام مسار الـ venv الصحيح مع تمرير المسار لـ sys.argv */
             execFile(
                 PYTHON_EXEC,
-                [scriptPath, targetFilePath], // ✅ الحل لمشكلة (IndexError): تمرير المسار كمتغير سطر أوامر
+                [scriptPath],
                 { maxBuffer: 50 * 1024 * 1024 },
                 async (error, stdout, stderr) => {
 
                     try { fs.unlinkSync(scriptPath); } catch(e) {}
 
-                    // التقاط أخطاء بايثون الحقيقية وإعادتها للنموذج ليتعلم منها
-                    if (error || stderr) {
+                    const outputStr = (stdout || "").toLowerCase();
+                    const hasRuntimeError = error || stderr || outputStr.includes("error") || outputStr.includes("exception");
+
+                    if (hasRuntimeError) {
                         if (!isNewFile && fs.existsSync(backupPath)) {
                             fs.copyFileSync(backupPath, targetFilePath);
-                            fs.unlinkSync(backupPath);
+                        }
+                        if (fs.existsSync(backupPath)) {
+                            try { fs.unlinkSync(backupPath); } catch(e) {}
                         }
                         return resolve({
                             success: false,
-                            error: stderr || error.message,
+                            error: stderr || (error ? error.message : "خطأ غير معروف أثناء التنفيذ"),
                             output: stdout
                         });
                     }
 
                     if (!isNewFile && fs.existsSync(backupPath)) {
-                        fs.unlinkSync(backupPath);
+                        try { fs.unlinkSync(backupPath); } catch(e) {}
                     }
 
                     if (isNewFile && !fs.existsSync(targetFilePath)) {
                         return resolve({
                             success: false,
-                            error: "لم يتم إنشاء الملف المطلوب. تأكد من أن السكربت يحفظ الملف في المتغير target_file",
+                            error: "لم يتم إنشاء الملف المطلوب. تأكد من استخدام المتغير target_file في الحفظ.",
                             output: stdout
                         });
                     }
 
-                    // تحديث ذاكرة الجلسة
                     if (sessionId) {
                         fusionMemory.storeCurrentFile(sessionId, targetFilePath);
                         fusionMemory.storeOperation(sessionId, isNewFile ? "generate_file" : "modify_file");
@@ -130,9 +118,6 @@ print("SUCCESS: تم التنفيذ بنجاح ✓")
     });
 }
 
-/* ---------------------------------------------------------
-   📊 استخراج المعاينة
---------------------------------------------------------- */
 export async function extractPreviewAsync(filePath) {
     const pythonPreviewPath = path.join(__dirname, "excel_preview.py");
     try {
@@ -141,11 +126,8 @@ export async function extractPreviewAsync(filePath) {
         });
         
         if (stderr) console.warn("⚠️ [Preview Error]:", stderr);
-
         const jsonMatch = stdout.match(/\{[\s\S]*\}/);
-        const cleanStdout = jsonMatch ? jsonMatch[0] : stdout;
-
-        return JSON.parse(cleanStdout);
+        return JSON.parse(jsonMatch ? jsonMatch[0] : stdout);
     } catch (error) {
         return { error: error.message };
     }
