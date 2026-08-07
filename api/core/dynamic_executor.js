@@ -1,5 +1,5 @@
 /**
- * api/core/dynamic_executor.js – Sovereign Edition (Metadata Preprocessor)
+ * api/core/dynamic_executor.js – Sovereign Edition (Metadata Preprocessor & Quality Inspector)
  */
 
 import fs from "fs";
@@ -39,7 +39,7 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
                 fs.copyFileSync(targetFilePath, backupPath);
             }
 
-            // 🛠️ Metadata Preprocessor: حقن المكتبات ومتغير المسار قسرياً لمنع أخطاء NameError
+            // 🛠️ Metadata Preprocessor & Quality Inspector: حقن المكتبات ومفتش الجودة
             const safeCode = `
 import sys
 import os
@@ -56,7 +56,25 @@ target_file = r'''${targetFilePath}'''
 ${pythonCode}
 # ============================================
 
+# --- 🔍 المفتش البرمجي التلقائي للجودة (Self-Inspection) ---
 print("SUCCESS: تم التنفيذ بنجاح ✓")
+if target_file.endswith('.xlsx') and os.path.exists(target_file):
+    try:
+        wb_check = openpyxl.load_workbook(target_file)
+        validations_count = 0
+        cf_count = 0
+        for ws in wb_check.worksheets:
+            if ws.data_validations and ws.data_validations.dataValidation:
+                validations_count += len(ws.data_validations.dataValidation)
+            if ws.conditional_formatting:
+                for cf in ws.conditional_formatting:
+                    cf_count += len(ws.conditional_formatting[cf])
+        
+        print(f"\\n--- [Quality Report] ---")
+        print(f"Data Validations: {validations_count}")
+        print(f"Conditional Formatting Rules: {cf_count}")
+    except Exception as e:
+        print(f"\\n--- [Quality Report Error]: {e} ---")
 `;
 
             fs.writeFileSync(scriptPath, safeCode, "utf8");
