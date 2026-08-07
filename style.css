@@ -351,7 +351,7 @@ body {
   flex-direction: column;
   gap: 22px;
   scroll-behavior: smooth;
-  direction: ltr; /* تثبيت المحاور بدقة: اليسار يسار واليمين يمين */
+  direction: ltr;
 }
 
 .chat-area::-webkit-scrollbar {
@@ -369,7 +369,7 @@ body {
   font-size: 15px;
   line-height: 1.9;
   word-break: break-word;
-  direction: rtl; /* النص عربي من اليمين لليسار */
+  direction: rtl;
   animation: fadeInMsg 0.3s ease;
   transition: all 0.2s ease;
 }
@@ -381,7 +381,7 @@ body {
 
 /* 👤 1. رسالة المستخدم: مجبرة على اليمين تماماً */
 .message.user {
-  margin-left: auto !important; /* يدفع الرسالة لأقصى اليمين */
+  margin-left: auto !important;
   margin-right: 0 !important;
   max-width: 75%;
   background-color: var(--user-msg-bg);
@@ -393,25 +393,21 @@ body {
   text-align: right;
 }
 
-/* 🤖 2. رد الأثير: مجبر على اليسار تماماً */
 /* 🤖 2. رد الأثير: مجبر على اليسار تماماً باحترافية تامة */
 .message.ai {
-  margin-right: auto !important;     /* ⭐ السر: يدفع الرد بالكامل إلى أقصى اليسار */
+  margin-right: auto !important;
   margin-left: 0 !important;
-  width: fit-content !important;     /* ليتسع حسب المحتوى دون أن يفرضه المتصفح كاملاً */
-  max-width: 85% !important;         /* لضمان عدم تجاوز العرض المسموح للشاشة */
-  background: rgba(255, 255, 255, 0.015); /* خلفية خفيفة جداً ومميزة للتمييز */
+  width: fit-content !important;
+  max-width: 85% !important;
+  background: rgba(255, 255, 255, 0.015);
   border-top: 1px solid rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 16px 16px 16px 4px; /* حواف متناسقة تشبه فقابات الدردشة الذكية */
+  border-radius: 16px 16px 16px 4px;
   padding: 16px 18px;
   color: var(--text-primary);
-  text-align: right;                 /* محاذاة النص داخلياً لتناسب اللغة العربية */
+  text-align: right;
   box-sizing: border-box;
 }
-
-
-
 
 /* ============================================
    ⭐ الرؤية المعمارية العضوية لجداول الأثير
