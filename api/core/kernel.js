@@ -1,7 +1,6 @@
 /**
  * api/core/kernel.js – The Sovereign Kernel (Pure Python Edition)
- * ✅ خفيف، نظيف، يثق بقدرات Gemini
- * ✅ إضافة رابط تحميل للمستخدم بدل target_file التقني
+ * ✅ خفيف، نظيف، مع فرض عقد البيانات والتأكد من صياغة الرد كـ String حصراً
  */
 
 import fs from "fs";
@@ -17,7 +16,6 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// مجلدات موحّدة
 const PERSISTENT_DIR = path.join(process.cwd(), "persistent_uploads");
 const GENERATED_DIR = path.join(process.cwd(), "generated");
 const INDEX_FILE = path.join(PERSISTENT_DIR, "index.json");
@@ -81,8 +79,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
   if (filePath === null || filePath === undefined) filePath = activeFile?.filePath || null;
   if (fileName === null || fileName === undefined) fileName = activeFile?.fileName || null;
-
-  console.log(`🔍 [Kernel] استقبال: fileName=${fileName}, filePath=${filePath}`);
 
   let fileContext = ctx.activeFileSummary || "";
   if (!fileContext && extractedContent && !extractedContent.error) {
@@ -148,15 +144,20 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   let executionResult = null;
 
   try {
-    console.log("🧠 [Kernel] استدعاء النموذج...");
-
     const rawReply = await geminiService.chat(conversationMessages, {
       fileName,
       extractedContent,
       systemInstruction: systemContent
     });
 
-    finalReplyText = rawReply || "تم يا شريكي.";
+    // 🛡️ Data Contract Enforcement: ضمان تحويل استجابة Structured JSON إلى نص صافٍ حصراً
+    if (typeof rawReply === 'string') {
+      finalReplyText = rawReply;
+    } else if (rawReply && typeof rawReply === 'object') {
+      finalReplyText = rawReply.reply || rawReply.message || rawReply.text || rawReply.explanation || JSON.stringify(rawReply, null, 2);
+    } else {
+      finalReplyText = String(rawReply || "تم يا شريكي.");
+    }
 
     if (!isFileAction || !filePath) {
       memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
@@ -189,14 +190,11 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
       while (currentAttempt < maxRetries && !isSuccess) {
         currentAttempt++;
-        console.log(`⚡ [Kernel] تنفيذ سكربت بايثون (محاولة ${currentAttempt})...`);
-
         executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest, sessionId);
 
         if (executionResult && executionResult.success && fs.existsSync(filePath)) {
           isSuccess = true;
 
-          // ✅ رابط التحميل للمستخدم
           const downloadUrl = `/persistent_uploads/${path.basename(filePath)}`;
           const fileNameForUser = path.basename(filePath);
 
@@ -210,7 +208,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             console.warn("⚠️ [Kernel] failed to read file for base64:", e.message);
           }
 
-          // تحديث البصمة والفهرس
           try {
             const previewData = await extractPreviewAsync(filePath);
             if (previewData && !previewData.error) {
@@ -265,7 +262,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
           }
         } else {
           const actualError = executionResult?.error || executionResult?.output || "خطأ في التنفيذ";
-          console.warn(`⚠️ فشل التنفيذ في المحاولة ${currentAttempt}:`, actualError);
 
           if (currentAttempt < maxRetries) {
             const errorFeedbackPrompt =
@@ -284,9 +280,19 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
               systemInstruction: systemContent
             });
 
-            let newMatch = fixReply.match(/```python\s*\n([\s\S]*?)\n\s*```/);
-            if (!newMatch) newMatch = fixReply.match(/```python\s*([\s\S]*?)\s*```/);
-            if (!newMatch) newMatch = fixReply.match(/```\s*([\s\S]*?)```/);
+            // تطهير رد التصحيح أيضاً ليكون String صريح
+            let fixedText = "";
+            if (typeof fixReply === 'string') {
+              fixedText = fixReply;
+            } else if (fixReply && typeof fixReply === 'object') {
+              fixedText = fixReply.reply || fixReply.message || fixReply.text || JSON.stringify(fixReply);
+            } else {
+              fixedText = String(fixReply || "");
+            }
+
+            let newMatch = fixedText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
+            if (!newMatch) newMatch = fixedText.match(/```python\s*([\s\S]*?)\s*```/);
+            if (!newMatch) newMatch = fixedText.match(/```\s*([\s\S]*?)```/);
 
             if (newMatch) {
               pythonCode = newMatch[1].trim();
@@ -298,8 +304,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
           }
         }
       }
-    } else {
-      console.log("💬 [Kernel] رد نصي بدون كود، تمريره للمستخدم.");
     }
   } catch (error) {
     console.error("❌ [Kernel Exception]:", error);
@@ -315,4 +319,5 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     operations: [],
     execution: executionResult
   };
-    }
+}
+
