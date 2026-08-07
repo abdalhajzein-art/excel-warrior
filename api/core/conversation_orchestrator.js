@@ -1,5 +1,5 @@
 /**
- * api/core/conversation_orchestrator.js – Sovereign Clean Orchestrator (Agentic Loop Edition)
+ * api/core/conversation_orchestrator.js – Sovereign Clean Orchestrator (Agentic Tool-Calling Edition)
  */
 import fs from "fs";
 import path from "path";
@@ -61,14 +61,12 @@ export default async function conversationOrchestrator(sessionId, message, extra
     const session = memory.getSession(sessionId) || memory.createSession(sessionId);
     const lowerMsg = (message || "").toLowerCase();
     
+    // إبقاء أمر "مسح الملف" فقط كأمر صريح للإدارة
     const isResetFile = /(انسى|اغلق|احذف|سكر|تجاهل) (الملف|البيانات)|ملف (جديد|اخر)/.test(lowerMsg);
     if (isResetFile && session.activeFile) {
       console.log(`🗑️ [Orchestrator] تم مسح الملف النشط بطلب المستخدم.`);
       session.activeFile = null;
-      delete session.intentCache;
       fusionMemory.storeCurrentFile(sessionId, null);
-      fusionMemory.storeOperation(sessionId, null);
-      fusionMemory.storeSessionMode(sessionId, "idle");
     }
 
     let resolved = null;
@@ -102,7 +100,6 @@ export default async function conversationOrchestrator(sessionId, message, extra
         console.warn("⚠️ [Orchestrator] memory.saveFile failed:", e.message);
       }
       fusionMemory.storeCurrentFile(sessionId, session.activeFile.filePath);
-      fusionMemory.storeSessionMode(sessionId, "file_active");
     } else {
       if (!session.activeFile && session.sovereign && session.sovereign.lastFile) {
         const last = session.sovereign.lastFile;
@@ -115,45 +112,16 @@ export default async function conversationOrchestrator(sessionId, message, extra
             timestamp: Date.now()
           };
           fusionMemory.storeCurrentFile(sessionId, session.activeFile.filePath);
-          fusionMemory.storeSessionMode(sessionId, "file_active");
         }
       }
     }
 
     memory.appendChatHistory(sessionId, { role: "user", content: message });
+    
+    // تم إزالة كل شروط الـ Regex والـ Session Modes من هنا.
+    // القرار الآن بالكامل بيد الـ Kernel الذي سيعتمد على استدعاءات الـ Functions.
+
     const fusedMemory = fusionMemory.apply(sessionId);
-
-    if (session.activeFile) {
-      const msg = (message || "").trim();
-      const editKeywords = /(عدل|غير|أضف|احذف|حط|ضبط|لون|رتب|تحديث|تعديل|إضافة|حذف|سوي|اعمل)/i;
-      const questionKeywords = /(كيف|ليش|لماذا|ما هو|ما هي|كم|هل|رأيك|اشرح|وضح|وين|مين|\?|؟)/i;
-      if (editKeywords.test(msg) && !questionKeywords.test(msg)) {
-        fusionMemory.storeOperation(sessionId, "modify_file");
-        fusionMemory.storeSessionMode(sessionId, "file_edit");
-        console.log("🧠 [Orchestrator] Intent: نية تعديل مستندي صريحة.");
-      }
-    }
-
-    if (session.activeFile) {
-      if (lowerMsg.includes("طوّر") || lowerMsg.includes("طور") || lowerMsg.includes("حسّن")) {
-        fusionMemory.storeOperation(sessionId, "improve_file");
-        fusionMemory.storeSessionMode(sessionId, "file_edit");
-      } else if (lowerMsg.includes("أضف ورقة") || lowerMsg.includes("ورقة جديدة") || lowerMsg.includes("sheet")) {
-        fusionMemory.storeOperation(sessionId, "add_sheet");
-        fusionMemory.storeSessionMode(sessionId, "file_edit");
-      } else if (lowerMsg.includes("تعديل") || lowerMsg.includes("عدّل")) {
-        fusionMemory.storeOperation(sessionId, "modify_file");
-        fusionMemory.storeSessionMode(sessionId, "file_edit");
-      } else if (lowerMsg.includes("توليد") || lowerMsg.includes("أنشئ ملف")) {
-        fusionMemory.storeOperation(sessionId, "generate_file");
-        fusionMemory.storeSessionMode(sessionId, "file_generate");
-      } else {
-        fusionMemory.storeSessionMode(sessionId, "file_context");
-      }
-    } else {
-      fusionMemory.storeSessionMode(sessionId, "idle");
-      fusionMemory.storeOperation(sessionId, null);
-    }
 
     let history = memory.getChatHistory(sessionId, 50).map(msg => ({
       ...msg,
@@ -171,49 +139,21 @@ export default async function conversationOrchestrator(sessionId, message, extra
       metadata: session.activeFile?.metadata || null
     };
 
-    console.log(`🧠 [Orchestrator] تسليم القيادة للـ Kernel مع تفعيل حلقة التصحيح الذاتي...`);
+    console.log(`🧠 [Orchestrator] تسليم القيادة للـ Kernel (Agentic Mode)...`);
 
-    // 🔄 حلقة التصحيح الذاتي (Self-Correction Loop)
-    let maxRetries = 2; 
-    let attempt = 0;
-    let kernelOutput = null;
-    let internalMessage = message; 
+    // تسليم المهمة للـ Kernel، والذي سيتعامل مع الـ Function Calls
+    let kernelOutput = await kernel(sessionId, message, kernelContext);
 
-    while (attempt <= maxRetries) {
-      kernelOutput = await kernel(sessionId, internalMessage, kernelContext);
-
-      if (kernelOutput.execution && session.activeFile) {
-        const execResult = kernelOutput.execution;
-        
-        // 1. فحص أخطاء البايثون الفادحة
-        if (!execResult.success) {
-          console.log(`⚠️ [Self-Correction] خطأ برمجي. محاولة (${attempt + 1}/${maxRetries})...`);
-          internalMessage = `حدث خطأ برمجي أثناء التنفيذ:\n${execResult.error}\nالرجاء تصحيح الكود بالكامل وإعادة المحاولة. لا تعتذر ولا تشرح، فقط صحح الكود وأعد بناء الملف.`;
-          attempt++;
-          continue;
-        }
-
-        // 2. فحص الجودة (الاستسهال)
-        const outputStr = execResult.output || "";
-        if (outputStr.includes("[Quality Report]")) {
-           const askedForAdvanced = /(متقدم|احترافي|قوائم|منسدلة|validation|تنسيق|شرطي|ألوان|formatting)/i.test(message);
-           const noValidations = outputStr.includes("Data Validations: 0");
-           const noCF = outputStr.includes("Conditional Formatting Rules: 0");
-
-           if (askedForAdvanced && (noValidations || noCF)) {
-              console.log(`⚠️ [Self-Correction] اكتشاف ملف استسهالي (بدون قوائم/تنسيق). محاولة (${attempt + 1}/${maxRetries})...`);
-              internalMessage = `الكود تنفذ، لكن الفحص التلقائي أثبت أنك لم تضف القوائم المنسدلة أو التنسيق الشرطي. أنت تتجاهل التعليمات وتستسهل العمل! أعد كتابة الكود كاملاً واستخدم openpyxl.worksheet.datavalidation و openpyxl.formatting.rule بصرامة. لا تعتذر، فقط نفذ بشكل صحيح.`;
-              attempt++;
-              continue;
-           }
-        }
-      }
-      break; 
+    // إذا استدعى النموذج تنفيذ كود وفشل، نقوم بحلقة تصحيح واحدة تلقائية
+    if (kernelOutput.execution && !kernelOutput.execution.success && session.activeFile) {
+        console.log(`⚠️ [Self-Correction] خطأ برمجي. إعادة المحاولة...`);
+        const correctionMessage = `حدث خطأ برمجي أثناء التنفيذ:\n${kernelOutput.execution.error}\nالرجاء تصحيح الكود بالكامل وإعادة المحاولة لتنفيذ ما طلبه المستخدم.`;
+        kernelOutput = await kernel(sessionId, correctionMessage, kernelContext);
     }
 
     memory.appendChatHistory(sessionId, {
       role: "assistant",
-      content: kernelOutput.reply || "تم إنجاز المطلوب يا هندسة."
+      content: kernelOutput.reply || "تم."
     });
 
     return {
@@ -236,4 +176,3 @@ export default async function conversationOrchestrator(sessionId, message, extra
     };
   }
 }
-
