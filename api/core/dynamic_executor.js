@@ -47,14 +47,21 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
                 fs.copyFileSync(targetFilePath, backupPath);
             }
 
-            // ✅ تبسيط الكود: تمرير مسار الملف للنموذج كمتغير ثابت والسماح له بالكتابة الحرة
+            // ✅ تبسيط الكود وحقن الاستيرادات لمعالجة (NameError)
             const safeCode = `
 import sys
+import os
 import traceback
 import pandas as pd
 import openpyxl
 
-# المسار المستهدف المحقون من بيئة Node.js
+# حقن قسري في حال استمر النموذج في استدعاء دوال مخصصة قديمة لتجنب تعطل التنفيذ
+try:
+    from excel_agent_tools import xls_create_workbook
+except ImportError:
+    pass # في حال كنت تعتمد على openpyxl النقي ولم يعد هذا الملف موجوداً
+
+# المسار المستهدف المحقون من بيئة Node.js (كمتغير ثابت لمنع أخطاء المتغيرات)
 target_file = r'''${targetFilePath}'''
 
 # ============================================
@@ -68,10 +75,10 @@ print("SUCCESS: تم التنفيذ بنجاح ✓")
 
             fs.writeFileSync(scriptPath, safeCode, "utf8");
 
-            /* ⚡ تنفيذ باستخدام مسار الـ venv الصحيح */
+            /* ⚡ تنفيذ باستخدام مسار الـ venv الصحيح مع تمرير المسار لـ sys.argv */
             execFile(
                 PYTHON_EXEC,
-                [scriptPath],
+                [scriptPath, targetFilePath], // ✅ الحل لمشكلة (IndexError): تمرير المسار كمتغير سطر أوامر
                 { maxBuffer: 50 * 1024 * 1024 },
                 async (error, stdout, stderr) => {
 
