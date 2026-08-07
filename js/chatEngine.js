@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية (مصحّحة ومحسنة الأداء مع التقاط أخطاء السيرفر بدقة)
+ * js/chatEngine.js – النسخة السيادية (مصحّحة الإرسال وتفريغ صندوق المرفقات)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -151,6 +151,11 @@ export async function handleSendMessage(renderCallbacks) {
         fileData: processedFileResult
     });
 
+    // 🧹 التعديل هنا: تفريغ الملف من الواجهة فوراً بعد اعتماده وإضافته للشاشة
+    if (currentFileToProcess) {
+        resetFile();
+    }
+
     let sessions = getStoredSessions();
     if (sessions[sessionId] && sessions[sessionId].title === 'جلسة جديدة') {
         sessions[sessionId].title = displayMessage.length > 20
@@ -197,7 +202,6 @@ export async function handleSendMessage(renderCallbacks) {
 
         let finalMessageForAI = displayMessage || "ممكن تعطيني ملخص عن محتوى الملف؟";
 
-        // 🛡️ التعديل السيادي: تمرير المرجع الحقيقي للملف (fileId و filePath) للسيرفر
         const requestPayload = { 
             message: finalMessageForAI,
             history: formattedHistoryForBackend,
@@ -215,39 +219,19 @@ export async function handleSendMessage(renderCallbacks) {
             signal: currentAbortController.signal
         });
 
-        // 🛡️ التحقق من سلامة استجابة السيرفر والتقاط أخطاء الـ Backend بدقة
         if (!response.ok) {
             let errorMsg = `خطأ في السيرفر (كود: ${response.status})`;
             try {
                 const errData = await response.json();
                 errorMsg = errData.error || errData.message || errorMsg;
-            } catch (e) {
-                // إذا لم يكن الرد بصيغة JSON
-            }
+            } catch (e) {}
             throw new Error(errorMsg);
         }
 
         const data = await response.json();
 
-        try {
-            if (currentFileToProcess) {
-                const uploadFailed = processedFileResult && processedFileResult.error;
-                const hasPersistentPath = processedFileResult && processedFileResult.filePath;
-
-                if (uploadFailed || !hasPersistentPath) {
-                    resetFile();
-                }
-            }
-        } catch (e) {
-            console.warn("⚠️ خطأ أثناء تحديد مصير الملف:", e);
-            resetFile();
-        }
-
-        if (isSearchQuery) {
-            hideSearchIndicator(indicatorId);
-        } else {
-            hideTypingIndicator(indicatorId);
-        }
+        if (isSearchQuery) hideSearchIndicator(indicatorId);
+        else hideTypingIndicator(indicatorId);
 
         const replyText = data.reply || "تم إنجاز طلبك بنجاح!";
         const cleanedReply = cleanArtifacts(replyText);
@@ -257,49 +241,27 @@ export async function handleSendMessage(renderCallbacks) {
         chatArea.appendChild(assistantMsgDiv);
 
         await streamTextEffect(assistantMsgDiv, cleanedReply, 15, getIsGenerating);
-
         addCopyButtonToMessage(assistantMsgDiv, cleanedReply);
 
         let savedFileData = null;
 
         if (data.isFileGenerated && data.downloadUrl) {
             const safeFileName = data.fileName || 'generated_file.xlsx';
-            const downloadUrl = data.downloadUrl;
-            
-            savedFileData = {
-                downloadUrl: downloadUrl,
-                name: safeFileName,
-                isGenerated: true
-            };
+            savedFileData = { downloadUrl: data.downloadUrl, name: safeFileName, isGenerated: true };
 
             const downloadBtn = document.createElement('a');
-            downloadBtn.href = downloadUrl;
+            downloadBtn.href = data.downloadUrl;
             downloadBtn.download = safeFileName;
             downloadBtn.className = 'alatheer-download-btn generated-file';
             downloadBtn.innerHTML = `📥 تحميل الملف المُنشأ (${safeFileName})`;
             assistantMsgDiv.appendChild(downloadBtn);
-
-            const successMsg = document.createElement('div');
-            successMsg.style.cssText = `
-                margin-top: 8px;
-                color: #4CAF50;
-                font-size: 14px;
-                font-weight: bold;
-            `;
-            successMsg.innerHTML = '✅ تم إنشاء الملف بنجاح!';
-            assistantMsgDiv.appendChild(successMsg);
         }
 
         if (data.fileBase64 && !data.isFileGenerated) {
             const safeFileName = data.fileName || 'modified_file.xlsx';
             const fileDownloadUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${data.fileBase64}`;
             
-            savedFileData = {
-                downloadUrl: fileDownloadUrl,
-                base64: data.fileBase64,
-                name: safeFileName,
-                isGenerated: false
-            };
+            savedFileData = { downloadUrl: fileDownloadUrl, base64: data.fileBase64, name: safeFileName, isGenerated: false };
 
             const downloadBtn = document.createElement('a');
             downloadBtn.href = fileDownloadUrl;
@@ -325,22 +287,7 @@ export async function handleSendMessage(renderCallbacks) {
 
             const errorDiv = document.createElement('div');
             errorDiv.className = 'message ai';
-            
-            const errContent = document.createElement('div');
-            // عرض السبب الحقيقي للخطأ القادم من السيرفر بوضوح
-            errContent.innerHTML = `⚠️ ${error.message || 'تعذر الاتصال بالسيرفر.'}`;
-            errorDiv.appendChild(errContent);
-
-            const retryBtn = document.createElement('button');
-            retryBtn.style.cssText = 'display: block; margin-top: 8px; background: #d4af37; color: #000; border: none; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-weight: bold;';
-            retryBtn.innerHTML = '🔄 إعادة المحاولة';
-            retryBtn.onclick = () => {
-                errorDiv.remove();
-                userInput.value = displayMessage;
-                handleSendMessage(renderCallbacks);
-            };
-            errorDiv.appendChild(retryBtn);
-
+            errorDiv.innerHTML = `<div>⚠️ ${error.message || 'تعذر الاتصال بالسيرفر.'}</div>`;
             chatArea.appendChild(errorDiv);
             if (!window._isUserScrolledUp) chatArea.scrollTop = chatArea.scrollHeight;
         }
@@ -358,55 +305,27 @@ function addCopyButtonToMessage(messageDiv, textToCopy) {
     const copyBtn = document.createElement('button');
     copyBtn.className = 'copy-msg-btn';
     copyBtn.title = 'نسخ النص';
-    copyBtn.style.cssText = `
-        position: absolute;
-        top: 10px;
-        left: 12px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 5px;
-        background: rgba(255, 255, 255, 0.05);
-        color: var(--text-secondary);
-        border: 1px solid var(--border-glass);
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 11px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        z-index: 5;
-    `;
+    copyBtn.style.cssText = `position: absolute; top: 10px; left: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; background: rgba(255, 255, 255, 0.05); color: var(--text-secondary); border: 1px solid var(--border-glass); padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; z-index: 5;`;
     
-    copyBtn.innerHTML = `
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-        <span>نسخ</span>
-    `;
+    copyBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span>نسخ</span>`;
 
     copyBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(textToCopy).then(() => {
             copyBtn.innerHTML = `<span>تم النسخ ✓</span>`;
             copyBtn.style.color = 'var(--accent-gold)';
-            copyBtn.style.borderColor = 'var(--accent-gold)';
             setTimeout(() => {
-                copyBtn.innerHTML = `
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                    <span>نسخ</span>
-                `;
+                copyBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span>نسخ</span>`;
                 copyBtn.style.color = 'var(--text-secondary)';
-                copyBtn.style.borderColor = 'var(--border-glass)';
             }, 2000);
         });
     });
-
     messageDiv.appendChild(copyBtn);
 }
 
 export function saveMessageToCurrentSession(sender, text, fileData = null) {
     const sessionId = getCurrentSessionId();
     let sessions = getStoredSessions();
-    if (!sessions[sessionId]) {
-        sessions[sessionId] = { title: 'جلسة جديدة', messages: [], pinned: false, lastFile: null };
-    }
+    if (!sessions[sessionId]) sessions[sessionId] = { title: 'جلسة جديدة', messages: [], pinned: false, lastFile: null };
     sessions[sessionId].messages.push({ sender, text, fileData });
     saveSessions(sessions);
 }
@@ -418,39 +337,16 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     messageDiv.className = `message ${sender === 'user' ? 'user' : 'ai'}`;
     messageDiv.innerHTML = formatReply(text);
     chatArea.appendChild(messageDiv);
-
-    if (sender === 'assistant') {
-        addCopyButtonToMessage(messageDiv, text);
-    }
+    if (sender === 'assistant') addCopyButtonToMessage(messageDiv, text);
 
     if (fileData?.downloadUrl) {
         const downloadBtn = document.createElement('a');
         downloadBtn.href = fileData.downloadUrl;
         downloadBtn.download = fileData.name || 'file.xlsx';
         downloadBtn.className = 'alatheer-download-btn';
-        
-        if (fileData.isGenerated) {
-            downloadBtn.innerHTML = `📥 تحميل الملف المُنشأ (${fileData.name || 'file.xlsx'})`;
-            downloadBtn.style.cssText = `
-                display: inline-block;
-                margin-top: 12px;
-                background: linear-gradient(135deg, #d4af37, #f5d76e);
-                color: #1a1a2e;
-                padding: 10px 20px;
-                border-radius: 8px;
-                font-weight: bold;
-                text-decoration: none;
-                border: none;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                box-shadow: 0 2px 10px rgba(212, 175, 55, 0.3);
-            `;
-        } else {
-            downloadBtn.innerHTML = `📥 اضغط هنا لتحميل الملف الناتج (${fileData.name || 'file.xlsx'})`;
-        }
+        downloadBtn.innerHTML = `📥 اضغط هنا لتحميل الملف (${fileData.name || 'file.xlsx'})`;
         messageDiv.appendChild(downloadBtn);
     }
-
     chatArea.scrollTop = chatArea.scrollHeight;
 }
 
