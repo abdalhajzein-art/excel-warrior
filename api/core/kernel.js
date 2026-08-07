@@ -1,6 +1,6 @@
 /**
- * api/core/kernel.js – The Sovereign Kernel (Pure Python Edition)
- * ✅ خفيف، نظيف، مع فرض عقد البيانات والتأكد من صياغة الرد كـ String حصراً
+ * api/core/kernel.js – The Sovereign Kernel (Pure Dynamic Intent Edition)
+ * ✅ سيادة كاملة، بدون كلمات مفتاحية مسبقة، الاعتماد على وعي نموذج Gemini ونية المستخدم الديناميكية.
  */
 
 import fs from "fs";
@@ -90,24 +90,10 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const fingerprintText = fusionMemory.getFingerprintText(sessionId);
   const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
 
-  const isFileAction = /(ملف|إكسل|Excel|PDF|Word|docx|pdf|sheet|جدول|بيانات|تقرير|صيانة|عملاء|فلاتر|HR|موظفين|رواتب|موارد بشرية)/i.test(message);
-
   const hasExistingFile = filePath && fs.existsSync(filePath);
-  const hasFilePath = filePath !== null && filePath !== undefined;
-
-  let isGenerationRequest = false;
-
-  if (/أنشئ|ولد|صمم|اعمل|سوي|generate|create|new|جديد|من الصفر/i.test(message)) {
-    isGenerationRequest = true;
-  } else if (!hasExistingFile && !hasFilePath) {
-    isGenerationRequest = true;
-  } else if (!hasExistingFile && hasFilePath) {
-    isGenerationRequest = true;
-  } else if (hasExistingFile) {
-    isGenerationRequest = false;
-  } else {
-    isGenerationRequest = true;
-  }
+  
+  // تحديد ما إذا كان الطلب إنشاء ملف جديد من الصفر أو تعديل ملف قائم بناءً على وجوده الفعلي
+  const isGenerationRequest = !hasExistingFile;
 
   let systemContent = SYSTEM_PROMPT;
   if (fileContext) {
@@ -118,19 +104,19 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   }
 
   systemContent += `
-\n\n[⚙️ تعليمات تقنية]:
-- استخدم \`target_file\` كمسار للملف (معرّف مسبقاً).
+\n\n[⚙️ تعليمات تقنية للنموذج]:
+- استخدم \`target_file\` كمسار حصري للملف (معرّف مسبقاً).
 - لا تستخدم \`sys.argv\`.
-- استخدم المكتبات المناسبة لنوع الملف.`;
+- استخدم المكتبات المناسبة وتولى كتابة الكود البرمجي التنفيذي فقط إذا تطلب الأمر تعديل أو إنشاء ملفات بيانات، وإلا أجب نصياً مباشرة.`;
 
-  if (isGenerationRequest || !hasExistingFile) {
+  if (isGenerationRequest) {
     const id = generateFileId();
     const safeName = `${id}-${sanitizeName(fileName || `Alatheer_Report`)}.xlsx`.replace(/\.xlsx\.xlsx$/, ".xlsx");
     fileName = safeName;
     filePath = path.join(PERSISTENT_DIR, safeName);
-    systemContent += `\n\n[تعليمات]: أنشئ ملفاً جديداً واحفظه في \`target_file\`.`;
-  } else if (hasExistingFile) {
-    systemContent += `\n\n[تعليمات]: اقرأ الملف من \`target_file\`، عدّل، ثم احفظ في \`target_file\` نفسه.`;
+    systemContent += `\n\n[تعليمات الحالة]: أنشئ ملفاً جديداً واحفظه في \`target_file\`.`;
+  } else {
+    systemContent += `\n\n[تعليمات الحالة]: اقرأ الملف من \`target_file\`، عدّل عليه بناءً على طلب المستخدم، ثم احفظ في \`target_file\` نفسه.`;
   }
 
   const conversationMessages = [
@@ -150,16 +136,32 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       systemInstruction: systemContent
     });
 
-    // 🛡️ Data Contract Enforcement: ضمان تحويل استجابة Structured JSON إلى نص صافٍ حصراً
+    // 🛡️ Data Contract & Tool Call Enforcement: استخراج الرد حصراً كـ String صافٍ
     if (typeof rawReply === 'string') {
       finalReplyText = rawReply;
     } else if (rawReply && typeof rawReply === 'object') {
-      finalReplyText = rawReply.reply || rawReply.message || rawReply.text || rawReply.explanation || JSON.stringify(rawReply, null, 2);
+      if (rawReply.functionCalls && Array.isArray(rawReply.functionCalls)) {
+        const pyCall = rawReply.functionCalls.find(fc => fc.name === 'execute_python' || fc.args?.code);
+        if (pyCall && pyCall.args && pyCall.args.code) {
+          finalReplyText = "```python\n" + pyCall.args.code + "\n```";
+        } else {
+          finalReplyText = rawReply.reply || rawReply.message || rawReply.text || JSON.stringify(rawReply, null, 2);
+        }
+      } else {
+        finalReplyText = rawReply.reply || rawReply.message || rawReply.text || rawReply.explanation || JSON.stringify(rawReply, null, 2);
+      }
     } else {
       finalReplyText = String(rawReply || "تم يا شريكي.");
     }
 
-    if (!isFileAction || !filePath) {
+    // الكشف الديناميكي عن وجود نية تنفيذ برمجية: هل اقترح النموذج كود بايثون لتنفيذه؟
+    let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
+    if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
+    if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
+    if (!pythonMatch) pythonMatch = finalReplyText.match(/```([\s\S]*?)```/);
+
+    // إذا لم يكتب النموذج كود بايثون، فهو مجرد رد دردشة أو استفسار عام - نعيده فوراً دون قيود
+    if (!pythonMatch || !filePath) {
       memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
       return {
         reply: finalReplyText,
@@ -170,138 +172,136 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       };
     }
 
-    let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
-    if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
-    if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
-    if (!pythonMatch) pythonMatch = finalReplyText.match(/```([\s\S]*?)```/);
+    // إذا وُجد كود بايثون، فمعناه أن النية تطلبت ملفاً أو معالجة، فنقوم بتشغيله ديناميكياً
+    let pythonCode = pythonMatch[1].trim();
 
-    if (pythonMatch) {
-      let pythonCode = pythonMatch[1].trim();
+    finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
+    if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
+      finalReplyText = finalReplyText.replace(/```[\s\S]*?```/g, "").trim();
+    }
+    if (!finalReplyText) finalReplyText = "جاري تنفيذ المعالجة يا شريكي...";
 
-      finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
-      if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
-        finalReplyText = finalReplyText.replace(/```[\s\S]*?```/g, "").trim();
-      }
-      if (!finalReplyText) finalReplyText = "جاري تجهيز الملف يا شريكي...";
+    const maxRetries = 2;
+    let currentAttempt = 0;
+    let isSuccess = false;
 
-      const maxRetries = 2;
-      let currentAttempt = 0;
-      let isSuccess = false;
+    while (currentAttempt < maxRetries && !isSuccess) {
+      currentAttempt++;
+      executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest, sessionId);
 
-      while (currentAttempt < maxRetries && !isSuccess) {
-        currentAttempt++;
-        executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest, sessionId);
+      if (executionResult && executionResult.success && fs.existsSync(filePath)) {
+        isSuccess = true;
 
-        if (executionResult && executionResult.success && fs.existsSync(filePath)) {
-          isSuccess = true;
+        const downloadUrl = `/persistent_uploads/${path.basename(filePath)}`;
+        const fileNameForUser = path.basename(filePath);
 
-          const downloadUrl = `/persistent_uploads/${path.basename(filePath)}`;
-          const fileNameForUser = path.basename(filePath);
+        finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح يا هندسة!`;
+        finalReplyText += `\n\n📥 **[اضغط هنا لتحميل الملف](${downloadUrl})**`;
+        finalReplyText += `\n📁 اسم الملف: ${fileNameForUser}`;
 
-          finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح يا هندسة!`;
-          finalReplyText += `\n\n📥 **[اضغط هنا لتحميل الملف](${downloadUrl})**`;
-          finalReplyText += `\n📁 اسم الملف: ${fileNameForUser}`;
+        try {
+          fileBase64 = fs.readFileSync(filePath).toString("base64");
+        } catch (e) {
+          console.warn("⚠️ [Kernel] failed to read file for base64:", e.message);
+        }
 
-          try {
-            fileBase64 = fs.readFileSync(filePath).toString("base64");
-          } catch (e) {
-            console.warn("⚠️ [Kernel] failed to read file for base64:", e.message);
+        try {
+          const previewData = await extractPreviewAsync(filePath);
+          if (previewData && !previewData.error) {
+            fusionMemory.storeFileFingerprint(sessionId, filePath, previewData);
           }
+        } catch (e) {
+          console.warn("⚠️ [Kernel] فشل تخزين البصمة:", e.message);
+        }
 
-          try {
-            const previewData = await extractPreviewAsync(filePath);
-            if (previewData && !previewData.error) {
-              fusionMemory.storeFileFingerprint(sessionId, filePath, previewData);
-            }
-          } catch (e) {
-            console.warn("⚠️ [Kernel] فشل تخزين البصمة:", e.message);
-          }
-
-          try {
-            const idx = await readIndexSafe();
-            let foundId = null;
-            for (const k of Object.keys(idx)) {
-              if (idx[k].storedPath === filePath) {
-                foundId = k;
-                break;
-              }
-            }
-            if (!foundId) {
-              const newId = generateFileId();
-              const storedName = path.basename(filePath);
-              idx[newId] = {
-                fileId: newId,
-                fileName: storedName,
-                storedName,
-                storedPath: filePath,
-                size: fs.existsSync(filePath) ? fs.statSync(filePath).size : null,
-                uploadedAt: new Date().toISOString()
-              };
-              await writeIndex(idx);
-            } else {
-              idx[foundId].fileName = path.basename(filePath);
-              idx[foundId].storedPath = filePath;
-              idx[foundId].size = fs.existsSync(filePath) ? fs.statSync(filePath).size : idx[foundId].size;
-              idx[foundId].uploadedAt = new Date().toISOString();
-              await writeIndex(idx);
-            }
-
-            try {
-              memory.saveFile(sessionId, {
-                filePath,
-                fileName: path.basename(filePath),
-                metadata: ctx.metadata || {}
-              });
-            } catch (e) {}
-
-            try {
-              await fs.promises.chmod(filePath, 0o600);
-            } catch (e) {}
-          } catch (e) {
-            console.warn("⚠️ [Kernel] index update failed:", e.message);
-          }
-        } else {
-          const actualError = executionResult?.error || executionResult?.output || "خطأ في التنفيذ";
-
-          if (currentAttempt < maxRetries) {
-            const errorFeedbackPrompt =
-              `الكود واجه مشكلة:\n\`\`\`text\n${actualError}\n\`\`\`\n` +
-              `صحح الكود واستخدم \`target_file\` لحفظ الملف.`;
-
-            const correctionMessages = [
-              ...conversationMessages,
-              { role: "assistant", content: pythonMatch[0] },
-              { role: "user", content: errorFeedbackPrompt }
-            ];
-
-            const fixReply = await geminiService.chat(correctionMessages, {
-              fileName,
-              extractedContent,
-              systemInstruction: systemContent
-            });
-
-            // تطهير رد التصحيح أيضاً ليكون String صريح
-            let fixedText = "";
-            if (typeof fixReply === 'string') {
-              fixedText = fixReply;
-            } else if (fixReply && typeof fixReply === 'object') {
-              fixedText = fixReply.reply || fixReply.message || fixReply.text || JSON.stringify(fixReply);
-            } else {
-              fixedText = String(fixReply || "");
-            }
-
-            let newMatch = fixedText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
-            if (!newMatch) newMatch = fixedText.match(/```python\s*([\s\S]*?)\s*```/);
-            if (!newMatch) newMatch = fixedText.match(/```\s*([\s\S]*?)```/);
-
-            if (newMatch) {
-              pythonCode = newMatch[1].trim();
-            } else {
+        try {
+          const idx = await readIndexSafe();
+          let foundId = null;
+          for (const k of Object.keys(idx)) {
+            if (idx[k].storedPath === filePath) {
+              foundId = k;
               break;
             }
-          } else {
-            finalReplyText += `\n\n❌ عذراً، واجهت مشكلة في التنفيذ:\n\`\`\`text\n${String(actualError).substring(0, 400)}\n\`\`\``;
           }
+          if (!foundId) {
+            const newId = generateFileId();
+            const storedName = path.basename(filePath);
+            idx[newId] = {
+              fileId: newId,
+              fileName: storedName,
+              storedName,
+              storedPath: filePath,
+              size: fs.existsSync(filePath) ? fs.statSync(filePath).size : null,
+              uploadedAt: new Date().toISOString()
+            };
+            await writeIndex(idx);
+          } else {
+            idx[foundId].fileName = path.basename(filePath);
+            idx[foundId].storedPath = filePath;
+            idx[foundId].size = fs.existsSync(filePath) ? fs.statSync(filePath).size : idx[foundId].size;
+            idx[foundId].uploadedAt = new Date().toISOString();
+            await writeIndex(idx);
+          }
+
+          try {
+            memory.saveFile(sessionId, {
+              filePath,
+              fileName: path.basename(filePath),
+              metadata: ctx.metadata || {}
+            });
+          } catch (e) {}
+
+          try {
+            await fs.promises.chmod(filePath, 0o600);
+          } catch (e) {}
+        } catch (e) {
+          console.warn("⚠️ [Kernel] index update failed:", e.message);
+        }
+      } else {
+        const actualError = executionResult?.error || executionResult?.output || "خطأ في التنفيذ";
+
+        if (currentAttempt < maxRetries) {
+          const errorFeedbackPrompt =
+            `الكود واجه مشكلة:\n\`\`\`text\n${actualError}\n\`\`\`\n` +
+            `صحح الكود واستخدم \`target_file\` لحفظ الملف.`;
+
+          const correctionMessages = [
+            ...conversationMessages,
+            { role: "assistant", content: pythonMatch[0] },
+            { role: "user", content: errorFeedbackPrompt }
+          ];
+
+          const fixReply = await geminiService.chat(correctionMessages, {
+            fileName,
+            extractedContent,
+            systemInstruction: systemContent
+          });
+
+          let fixedText = "";
+          if (typeof fixReply === 'string') {
+            fixedText = fixReply;
+          } else if (fixReply && typeof fixReply === 'object') {
+            if (fixReply.functionCalls && Array.isArray(fixReply.functionCalls)) {
+              const pyCall = fixReply.functionCalls.find(fc => fc.name === 'execute_python' || fc.args?.code);
+              fixedText = (pyCall && pyCall.args?.code) ? "```python\n" + pyCall.args.code + "\n```" : JSON.stringify(fixReply);
+            } else {
+              fixedText = fixReply.reply || fixReply.message || fixReply.text || JSON.stringify(fixReply);
+            }
+          } else {
+            fixedText = String(fixReply || "");
+          }
+
+          let newMatch = fixedText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
+          if (!newMatch) newMatch = fixedText.match(/```python\s*([\s\S]*?)\s*```/);
+          if (!newMatch) newMatch = fixedText.match(/```\s*([\s\S]*?)```/);
+
+          if (newMatch) {
+            pythonCode = newMatch[1].trim();
+          } else {
+            break;
+          }
+        } else {
+          finalReplyText += `\n\n❌ عذراً، واجهت مشكلة في التنفيذ:\n\`\`\`text\n${String(actualError).substring(0, 400)}\n\`\`\``;
         }
       }
     }
