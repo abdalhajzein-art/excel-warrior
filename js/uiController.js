@@ -1,5 +1,5 @@
 /**
- * js/uiController.js – Alatheer UI Controller & Formatter (Final Edition)
+ * js/uiController.js – Alatheer UI Controller & Formatter (Optimized Performance Edition)
  */
 
 export function initUIController(getGeneratingStatus, onFileSelected) {
@@ -164,35 +164,41 @@ export function formatReply(text) {
     return tempDiv.innerHTML;
 }
 
-export async function streamTextEffect(messageDiv, fullText, speed = 25, getGeneratingStatus) {
+/**
+ * دالة التدفق المحسنة هندسياً: تعرض النص بسلاسة فائقة ثم تطبق التنسيق الشامل عند الاكتمال
+ */
+export async function streamTextEffect(messageDiv, fullText, speed = 15, getGeneratingStatus) {
     const chatArea = document.getElementById('chatArea');
-
-    const words = fullText.split(/(\s+)/);
+    const chars = Array.from(fullText);
     let currentText = "";
 
     return new Promise((resolve) => {
         let index = 0;
 
-        function typeNextWord() {
+        function typeNextBatch() {
             if (!getGeneratingStatus()) {
+                messageDiv.innerHTML = formatReply(currentText);
                 resolve(false); 
                 return;
             }
 
-            if (index < words.length) {
-                let batchCount = Math.min(2, words.length - index); 
-                for (let i = 0; i < batchCount; i++) {
-                    currentText += words[index++];
+            if (index < chars.length) {
+                // تدفق بدفعات أسرع وأكثر سلاسة (5 أحرف في الدفعة)
+                let batchSize = Math.min(5, chars.length - index);
+                for (let i = 0; i < batchSize; i++) {
+                    currentText += chars[index++];
                 }
 
-                messageDiv.innerHTML = formatReply(currentText);
+                // عرض النص الخام أثناء التدفق لمنع التقطيع وتقليل الحمل على المعالج
+                messageDiv.innerText = currentText;
                 
                 if (chatArea && !window._isUserScrolledUp) {
                     chatArea.scrollTop = chatArea.scrollHeight;
                 }
                 
-                setTimeout(typeNextWord, speed);
+                setTimeout(typeNextBatch, speed);
             } else {
+                // تطبيق محرك التنسيق والماركداون بالكامل عند الاكتمال فقط
                 messageDiv.innerHTML = formatReply(fullText);
                 if (chatArea && !window._isUserScrolledUp) {
                     chatArea.scrollTop = chatArea.scrollHeight;
@@ -201,7 +207,7 @@ export async function streamTextEffect(messageDiv, fullText, speed = 25, getGene
             }
         }
         
-        typeNextWord();
+        typeNextBatch();
     });
 }
 
