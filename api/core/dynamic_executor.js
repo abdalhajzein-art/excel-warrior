@@ -1,5 +1,6 @@
 /**
  * api/core/dynamic_executor.js – Sovereign Edition (Metadata Preprocessor & Quality Inspector)
+ * 🛡️ نسخة محسنة: تحقق صارم عبر علامة النجاح المؤكدة وفحص الملفات الفعلية.
  */
 
 import fs from "fs";
@@ -29,9 +30,9 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
 
         const ext = path.extname(targetFilePath);
         const base = targetFilePath.slice(0, -ext.length);
-        const backupPath = `${base}_bak_${Date.now()}${ext}`;
+        const backupPath = `${base}_bak_${Date.now()}_${Math.floor(Math.random() * 10000)}${ext}`;
 
-        const scriptName = `temp_script_${Date.now()}_${Math.floor(Math.random() * 1000)}.py`;
+        const scriptName = `temp_script_${Date.now()}_${Math.floor(Math.random() * 10000)}.py`;
         const scriptPath = path.join(process.cwd(), scriptName);
 
         try {
@@ -47,7 +48,7 @@ import traceback
 import pandas as pd
 import openpyxl
 
-# المتغير السيادي الموحد للمسار
+# المتغير السيادي الموحد للمسار مع العزل الكامل
 target_file = r'''${targetFilePath}'''
 
 # ============================================
@@ -57,7 +58,6 @@ ${pythonCode}
 # ============================================
 
 # --- 🔍 المفتش البرمجي التلقائي للجودة (Self-Inspection) ---
-print("SUCCESS: تم التنفيذ بنجاح ✓")
 if target_file.endswith('.xlsx') and os.path.exists(target_file):
     try:
         wb_check = openpyxl.load_workbook(target_file)
@@ -75,6 +75,9 @@ if target_file.endswith('.xlsx') and os.path.exists(target_file):
         print(f"Conditional Formatting Rules: {cf_count}")
     except Exception as e:
         print(f"\\n--- [Quality Report Error]: {e} ---")
+
+# علامة النجاح السيادية الصارمة
+print("SUCCESS: تم التنفيذ بنجاح ✓")
 `;
 
             fs.writeFileSync(scriptPath, safeCode, "utf8");
@@ -87,33 +90,32 @@ if target_file.endswith('.xlsx') and os.path.exists(target_file):
 
                     try { fs.unlinkSync(scriptPath); } catch(e) {}
 
-                    const outputStr = (stdout || "").toLowerCase();
-                    const hasRuntimeError = error || stderr || outputStr.includes("error") || outputStr.includes("exception");
+                    const outputStr = (stdout || "");
+                    const hasSuccessMark = outputStr.includes("SUCCESS: تم التنفيذ بنجاح ✓");
+                    const fileExistsAndValid = fs.existsSync(targetFilePath) && fs.statSync(targetFilePath).size > 0;
+
+                    // 🛡️ التحقق السيادي الدقيق: يجب أن يظهر ماركر النجاح وأن يكون الملف موجوداً وبحجم صالح
+                    const hasRuntimeError = error || !hasSuccessMark || !fileExistsAndValid;
 
                     if (hasRuntimeError) {
                         if (!isNewFile && fs.existsSync(backupPath)) {
-                            fs.copyFileSync(backupPath, targetFilePath);
+                            try { fs.copyFileSync(backupPath, targetFilePath); } catch(e) {}
                         }
                         if (fs.existsSync(backupPath)) {
                             try { fs.unlinkSync(backupPath); } catch(e) {}
                         }
+
+                        const failureReason = stderr || (error ? error.message : null) || (!hasSuccessMark ? "فشل السكربت في الوصول لعلامة النجاح النهائية" : "الملف النتج مفقود أو فارغ");
+
                         return resolve({
                             success: false,
-                            error: stderr || (error ? error.message : "خطأ غير معروف أثناء التنفيذ"),
+                            error: failureReason,
                             output: stdout
                         });
                     }
 
                     if (!isNewFile && fs.existsSync(backupPath)) {
                         try { fs.unlinkSync(backupPath); } catch(e) {}
-                    }
-
-                    if (isNewFile && !fs.existsSync(targetFilePath)) {
-                        return resolve({
-                            success: false,
-                            error: "لم يتم إنشاء الملف المطلوب. تأكد من استخدام المتغير target_file في الحفظ.",
-                            output: stdout
-                        });
                     }
 
                     if (sessionId) {
@@ -131,6 +133,9 @@ if target_file.endswith('.xlsx') and os.path.exists(target_file):
             );
 
         } catch (err) {
+            if (fs.existsSync(backupPath)) {
+                try { fs.copyFileSync(backupPath, targetFilePath); fs.unlinkSync(backupPath); } catch(e) {}
+            }
             return resolve({ success: false, error: err.message });
         }
     });
