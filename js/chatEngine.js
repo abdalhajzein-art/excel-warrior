@@ -169,7 +169,6 @@ export async function handleSendMessage(renderCallbacks) {
 
     userInput.value = '';
     userInput.style.height = 'auto';
-    // ❌ لا نمسح الملف هنا
     updateSendButtonState();
 
     const isSearchQuery = /(ابحث|ابحثلي|بحث|النت|جوجل|شبكة|عن وصفة|أخبار|مصادر|رابط|روابط|طقس|الجو)/i.test(displayMessage);
@@ -215,7 +214,6 @@ export async function handleSendMessage(renderCallbacks) {
 
         const data = await response.json();
 
-        // ⭐ بعد الرد: نقرر إن كنا نمسح الملف أم لا
         try {
             if (currentFileToProcess) {
                 const uploadFailed = processedFileResult && processedFileResult.error;
@@ -427,4 +425,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     }
 
     chatArea.scrollTop = chatArea.scrollHeight;
-        }
+}
