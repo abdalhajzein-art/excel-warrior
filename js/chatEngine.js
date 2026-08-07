@@ -1,5 +1,5 @@
 /**
- * js/chatEngine.js – النسخة السيادية النهائية (مصحّحة ومحسنة الأداء)
+ * js/chatEngine.js – النسخة السيادية النهائية (مصحّحة ومحسنة الأداء مع التقاط أخطاء السيرفر بدقة)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
@@ -212,6 +212,18 @@ export async function handleSendMessage(renderCallbacks) {
             signal: currentAbortController.signal
         });
 
+        // 🛡️ التحقق من سلامة استجابة السيرفر والتقاط أخطاء الـ Backend بدقة
+        if (!response.ok) {
+            let errorMsg = `خطأ في السيرفر (كود: ${response.status})`;
+            try {
+                const errData = await response.json();
+                errorMsg = errData.error || errData.message || errorMsg;
+            } catch (e) {
+                // إذا لم يكن الرد بصيغة JSON
+            }
+            throw new Error(errorMsg);
+        }
+
         const data = await response.json();
 
         try {
@@ -312,7 +324,8 @@ export async function handleSendMessage(renderCallbacks) {
             errorDiv.className = 'message ai';
             
             const errContent = document.createElement('div');
-            errContent.innerHTML = '⚠️ تعذر الاتصال بالسيرفر.';
+            // عرض السبب الحقيقي للخطأ القادم من السيرفر بوضوح
+            errContent.innerHTML = `⚠️ ${error.message || 'تعذر الاتصال بالسيرفر.'}`;
             errorDiv.appendChild(errContent);
 
             const retryBtn = document.createElement('button');
