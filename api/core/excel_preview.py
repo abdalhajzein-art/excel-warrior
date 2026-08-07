@@ -1,6 +1,7 @@
 """
 api/core/excel_preview.py – Sovereign Excel Engine (Strict Tabular Edition)
 ⚡ محرك إكسل سيادي بمعمارية قياسية صارمة: ترويسة من الصف الأول، دعم RTL، تحليل مخطط دقيق، وتوليد نظيف.
+✅ تمت إضافة metadata متوافقة مع file_fingerprint.js
 """
 
 import sys
@@ -218,17 +219,46 @@ def main():
             print(json.dumps({"error": str(e)}, ensure_ascii=False))
         return
 
-    # 🔍 الحالة الثانية: معاينة الملف واستخراج المخطط
+    # 🔍 الحالة الثانية: معاينة الملف واستخراج المخطط (مع دعم metadata)
     file_path = arg1
     wb = None
     try:
         wb = openpyxl.load_workbook(file_path, data_only=False)
+        
+        sheets = wb.sheetnames
+        previews = [extract_sheet_preview(wb, sheet) for sheet in sheets]
+        
+        # ✅ بناء metadata متوافق مع file_fingerprint.js
+        metadata = {
+            "sheets": sheets,
+            "rowCounts": {},
+            "columnCounts": {}
+        }
+        
+        for p in previews:
+            sheet_name = p["sheet"]
+            metadata["rowCounts"][sheet_name] = p.get("rows_count", 0)
+            metadata["columnCounts"][sheet_name] = p.get("columns_count", 0)
+        
+        # ✅ بناء النص الموجز للمعاينة
+        preview_text_parts = []
+        for p in previews[:2]:
+            sheet_name = p["sheet"]
+            rows = p.get("preview_rows", [])[:3]
+            if rows:
+                preview_text_parts.append(f"[{sheet_name}]: {str(rows)[:200]}")
+        
         output = {
             "file": file_path,
-            "sheets_count": len(wb.sheetnames),
-            "sheets": wb.sheetnames,
-            "previews": [extract_sheet_preview(wb, sheet) for sheet in wb.sheetnames]
+            "sheets_count": len(sheets),
+            "sheets": sheets,
+            "previews": previews,
+            "metadata": metadata,
+            "rows": sum(metadata["rowCounts"].values()),
+            "columns": max(metadata["columnCounts"].values()) if metadata["columnCounts"] else 0,
+            "text": "\n".join(preview_text_parts) if preview_text_parts else "تم استخراج معاينة الملف"
         }
+        
         print(json.dumps(output, ensure_ascii=False))
     except Exception as e:
         print(json.dumps({"error": str(e)}, ensure_ascii=False))
@@ -241,4 +271,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
