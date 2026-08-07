@@ -1,6 +1,6 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
- * ✅ خفيف، نظيف، يمرر الردود كما هي مع حماية صارمة لعقد البيانات
+ * ✅ النسخة المصححة: حماية المرجع (File ID) ومنع التكرار
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -117,7 +117,7 @@ export default async function handler(req, res) {
 
                 console.log(`🔧 [الأثير] تنفيذ كود Python لإنشاء ملف: ${newFilePath}`);
 
-                const result = await executeDynamicPython(pythonCode, newFilePath, true);
+                const result = await executeDynamicPython(pythonCode, newFilePath, true, sessionKey);
 
                 if (result.success && fs.existsSync(newFilePath)) {
                     const fileBuffer = fs.readFileSync(newFilePath);
@@ -150,7 +150,10 @@ export default async function handler(req, res) {
             }
         }
 
-        if ((fileId || clientFilePath) && !fileData) {
+        // --- 🛡️ السيادة على المرجع: الأولوية القصوى للملف المرفوع مسبقاً ---
+        
+        // 1. محاولة حل المرجع بناءً على fileId أو clientFilePath أولاً
+        if (fileId || clientFilePath) {
             const resolved = await resolveFileReference({ fileId, filePath: clientFilePath, fileName });
             if (resolved) {
                 sovereignFilePath = resolved.storedPath;
@@ -163,7 +166,8 @@ export default async function handler(req, res) {
             }
         }
 
-        if (fileData && fileName) {
+        // 2. إذا لم نعثر على مرجع صلب، وفقط إذا كان هناك fileData جديد، نقوم بحفظه
+        if (!sovereignFilePath && fileData && fileName) {
             await ensureIndexReady();
             let buffer = null;
             if (typeof fileData === 'string') {
@@ -203,27 +207,31 @@ export default async function handler(req, res) {
                 } catch (e) {
                     console.warn("⚠️ memory.saveFile failed:", e.message);
                 }
-
-                try {
-                    const previewData = await extractPreviewAsync(sovereignFilePath);
-                    if (!previewData.error) {
-                        extractedContent = {
-                            text: previewData.text,
-                            metadata: {
-                                fileName: finalFileName,
-                                rows: previewData.rows,
-                                columns: previewData.columns,
-                                sheets: previewData.sheets || 1
-                            }
-                        };
-                        fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
-                    }
-                } catch (e) {
-                    console.warn("⚠️ extractPreviewAsync failed:", e.message);
-                }
             }
         }
 
+        // 3. استخراج البصمة إذا كان الملف موجوداً
+        if (sovereignFilePath) {
+             try {
+                const previewData = await extractPreviewAsync(sovereignFilePath);
+                if (previewData && !previewData.error) {
+                    extractedContent = {
+                        text: previewData.text,
+                        metadata: {
+                            fileName: finalFileName,
+                            rows: previewData.rows,
+                            columns: previewData.columns,
+                            sheets: previewData.sheets || 1
+                        }
+                    };
+                    fusionMemory.storeFileFingerprint(sessionKey, sovereignFilePath, previewData);
+                }
+            } catch (e) {
+                console.warn("⚠️ extractPreviewAsync failed:", e.message);
+            }
+        }
+
+        // 4. استرجاع آخر ملف من الجلسة إذا لم يتم إرسال ملف جديد
         if (!sovereignFilePath) {
             try {
                 const session = memory.getSession(sessionKey);
@@ -246,7 +254,7 @@ export default async function handler(req, res) {
         }
 
         const orchestratorInput = {
-            fileData: fileData || null,
+            fileData: fileData || null, // لم يعد مهماً طالما لدينا filePath
             fileName: finalFileName || fileName || null,
             filePath: sovereignFilePath || null,
             history,
@@ -258,18 +266,18 @@ export default async function handler(req, res) {
 
         let reply = output?.reply || output?.message || "تكرم عينك يا شريكي، أنجزت لك المطلوب.";
         
-        // 🛡️ حماية صارمة لعقد البيانات (Data Contract Guard) لمنع أخطاء الـ .replace()
+        // 🛡️ حماية صارمة لعقد البيانات
         if (typeof reply !== 'string') {
             reply = reply?.reply || reply?.text || reply?.message || JSON.stringify(reply, null, 2);
         }
 
-        let fileBase64 = output?.fileBase64 || null;
+        let fileBase64Out = output?.fileBase64 || null;
         let returnedFileName = output?.fileName || finalFileName || fileName || "modified_file.xlsx";
 
-        if (orchestratorInput.filePath && fs.existsSync(orchestratorInput.filePath) && !fileBase64 && output?.execution?.success) {
+        if (orchestratorInput.filePath && fs.existsSync(orchestratorInput.filePath) && !fileBase64Out && output?.execution?.success) {
             try {
                 const fileBuffer = fs.readFileSync(orchestratorInput.filePath);
-                fileBase64 = fileBuffer.toString('base64');
+                fileBase64Out = fileBuffer.toString('base64');
                 returnedFileName = `modified_${Date.now()}-${path.basename(orchestratorInput.filePath)}`;
 
                 try {
@@ -286,7 +294,7 @@ export default async function handler(req, res) {
             }
         }
 
-        if (fileBase64 && returnedFileName) {
+        if (fileBase64Out && returnedFileName) {
             const baseName = path.basename(returnedFileName);
             const realFileUrl = encodeURI(`/persistent_uploads/${baseName}`);
             if (!reply.includes("تحميل")) {
@@ -296,7 +304,7 @@ export default async function handler(req, res) {
 
         return res.status(200).json({
             reply,
-            fileBase64,
+            fileBase64: fileBase64Out,
             fileName: returnedFileName,
             metadata: extractedContent?.metadata || null
         });
@@ -306,3 +314,4 @@ export default async function handler(req, res) {
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
 }
+
