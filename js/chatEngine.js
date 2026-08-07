@@ -437,3 +437,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
 
     chatArea.scrollTop = chatArea.scrollHeight;
 }
+
