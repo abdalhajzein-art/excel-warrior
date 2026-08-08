@@ -1,6 +1,6 @@
 /**
  * api/chat.js – Sovereign Chat Layer (Dynamic Execution Edition)
- * ✅ النسخة المصححة: حماية المرجع (File ID) ومنع التكرار
+ * ✅ النسخة المصححة: كل شيء يمر عبر Kernel، لا تجاوز
  */
 
 import conversationOrchestrator from "./core/conversation_orchestrator.js";
@@ -87,68 +87,7 @@ export default async function handler(req, res) {
         let extractedContent = null;
         let finalFileName = fileName || null;
 
-        const isNewFileRequest = /أنشئ|اعمل|عمل لي|generate|create|new\s*file|من الصفر/i.test(userContent) && 
-                                  /إكسل|Excel|ملف\s*إكسل|جدول|spreadsheet|ملف/i.test(userContent);
-
-        if (isNewFileRequest && !fileData && !fileId && !clientFilePath) {
-            console.log("📊 [الأثير] تم اكتشاف طلب إنشاء ملف جديد");
-            const orchestratorInput = {
-                fileData: null,
-                fileName: null,
-                filePath: null,
-                history,
-                metadata,
-                extractedContent: null,
-                isNewExcelRequest: true
-            };
-
-            const output = await conversationOrchestrator(sessionKey, userContent, orchestratorInput);
-
-            const pythonCodeMatch = output?.reply?.match(/```python\n([\s\S]*?)```/);
-            if (pythonCodeMatch) {
-                const pythonCode = pythonCodeMatch[1];
-
-                if (!fs.existsSync(GENERATED_DIR)) {
-                    fs.mkdirSync(GENERATED_DIR, { recursive: true });
-                }
-
-                const newFileName = `file_${Date.now()}.xlsx`;
-                const newFilePath = path.join(GENERATED_DIR, newFileName);
-
-                console.log(`🔧 [الأثير] تنفيذ كود Python لإنشاء ملف: ${newFilePath}`);
-
-                const result = await executeDynamicPython(pythonCode, newFilePath, true, sessionKey);
-
-                if (result.success && fs.existsSync(newFilePath)) {
-                    const fileBuffer = fs.readFileSync(newFilePath);
-                    const fileBase64 = fileBuffer.toString('base64');
-                    const downloadUrl = `/generated/${newFileName}`;
-
-                    try {
-                        const previewData = await extractPreviewAsync(newFilePath);
-                        if (previewData && !previewData.error) {
-                            fusionMemory.storeFileFingerprint(sessionKey, newFilePath, previewData);
-                            memory.saveFile(sessionKey, { filePath: newFilePath, fileName: newFileName });
-                        }
-                    } catch (e) {
-                        console.warn("⚠️ [chat.js] فشل تخزين البصمة:", e.message);
-                    }
-
-                    return res.status(200).json({
-                        reply: `✅ **تم إنشاء الملف بنجاح يا هندسة!**\n\n📥 [اضغط هنا لتحميل الملف](${downloadUrl})\n\n📁 اسم الملف: ${newFileName}`,
-                        fileBase64: fileBase64,
-                        fileName: newFileName,
-                        downloadUrl: downloadUrl,
-                        isFileGenerated: true
-                    });
-                } else {
-                    return res.status(200).json({
-                        reply: `❌ **فشل إنشاء الملف**: ${result.error || "خطأ غير معروف"}`,
-                        isFileGenerated: false
-                    });
-                }
-            }
-        }
+        // ✅ تم إزالة التجاوز - كل شيء يمر عبر Kernel
 
         // --- 🛡️ السيادة على المرجع: الأولوية القصوى للملف المرفوع مسبقاً ---
         
@@ -313,4 +252,4 @@ export default async function handler(req, res) {
         console.error("❌ [Chat Layer Error]:", error);
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
-}
+            }
