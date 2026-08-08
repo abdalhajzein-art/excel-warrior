@@ -30,12 +30,7 @@ const MODEL_CONFIG = {
         priority: 2,
         description: 'أفضل توازن بين القوة والحصة'
     },
-    'gemini-3-flash-preview': {
-        daily: 20,
-        minute: 5,
-        priority: 2,
-        description: 'نسخة تجريبية سريعة'
-    },
+    
     
     // ❌ نماذج مدفوعة (لا تستخدمها إلا كحل أخير)
     'gemini-3.1-pro-preview': {
