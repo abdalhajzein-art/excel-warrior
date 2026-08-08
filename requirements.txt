@@ -19,3 +19,6 @@ matplotlib==3.8.3
 # أدوات فحص الملفات والأمان
 defusedxml>=0.7.1
 oletools>=0.60.2
+
+# ✅ Aspose.Cells FOSS - معالج Excel احترافي
+aspose-cells-foss==24.6.0
