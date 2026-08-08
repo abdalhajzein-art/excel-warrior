@@ -311,10 +311,13 @@ geminiService.chat = async function(messages, extra = {}) {
             }
         }
 
+        // ✅ استخدام الأدوات المدمجة
+        const toolsToUse = extra.tools || alatheerTools;
+
         const model = client.getGenerativeModel({
             model: modelName,
             systemInstruction,
-            tools: alatheerTools,
+            tools: toolsToUse,
             generationConfig: {
                 temperature: 0.25,
                 maxOutputTokens: 32768,
