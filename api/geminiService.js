@@ -1,6 +1,6 @@
 /**
  * api/geminiService.js – Sovereign Gemini Service (Agentic Tool-Calling Edition)
- * ✅ ترتيب النماذج حسب القوة: الأقوى أولاً
+ * ✅ ترتيب النماذج حسب القوة مع تدوير المفاتيح (Key Rotation)
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -9,11 +9,15 @@ import { auditExecution } from "./core/execution_monitor.js";
 const rawKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";
 const API_KEYS = rawKeys.split(",").map(k => k.trim()).filter(Boolean);
 
+if (API_KEYS.length === 0) {
+    console.error("❌ [GeminiService] لم يتم العثور على أي مفاتيح API في المتغيرات البيئية.");
+}
+
 let currentKeyIndex = 0;
 
 function getClient() {
   const key = API_KEYS[currentKeyIndex % API_KEYS.length];
-  currentKeyIndex++;
+  currentKeyIndex++; // Increment for the next call to cycle through keys
   return new GoogleGenerativeAI(key);
 }
 
@@ -34,26 +38,35 @@ function isQuotaError(error) {
 
 async function executeWithFallback(fn, modelList = MODEL_FALLBACK_LIST) {
     let lastError = null;
-    for (let i = 0; i < modelList.length; i++) {
-        const modelName = modelList[i];
-        try {
-            console.log(`🔄 [GeminiService] محاولة النموذج: ${modelName}`);
-            return await fn(modelName);
-        } catch (err) {
-            lastError = err;
-            console.warn(`⚠️ [GeminiService] النموذج ${modelName} فشل:`, err.message);
-            if (isQuotaError(err)) {
-                console.warn(`⚠️ [GeminiService] النموذج ${modelName} تجاوز الحدود، جرب التالي...`);
-                continue;
-            }
-            throw err;
+    
+    for (let modelIndex = 0; modelIndex < modelList.length; modelIndex++) {
+        const modelName = modelList[modelIndex];
+        
+        // المحاولة بكل المفاتيح المتاحة لهذا النموذج
+        for (let keyAttempt = 0; keyAttempt < API_KEYS.length; keyAttempt++) {
+             try {
+                 console.log(`🔄 [GeminiService] محاولة النموذج: ${modelName} | المفتاح النشط: #${(currentKeyIndex % API_KEYS.length) + 1}`);
+                 return await fn(modelName); 
+             } catch (err) {
+                 lastError = err;
+                 console.warn(`⚠️ [GeminiService] فشل (النموذج ${modelName}):`, err.message);
+                 
+                 if (isQuotaError(err)) {
+                     console.warn(`⚠️ [GeminiService] تم استنفاد حِصّة المفتاح الحالي (429). الانتقال للمفتاح التالي...`);
+                     continue; // جرب المفتاح التالي مع نفس النموذج
+                 }
+                 
+                 // إذا كان خطأ غير متعلق بالقيود، اخرج من حلقة المفاتيح وانتقل للنموذج التالي
+                 console.warn(`⚠️ خطأ غير متعلق بالقيود، الانتقال للنموذج البديل.`);
+                 break;
+             }
         }
     }
-    throw new Error(`❌ جميع النماذج فشلت: ${lastError?.message || 'خطأ غير معروف'}`);
+    throw new Error(`❌ فشلت جميع المحاولات (النماذج والمفاتيح): ${lastError?.message || 'خطأ غير معروف'}`);
 }
 
 /* ============================================================
-   🛠️ تعريف الأدوات (Tools) - هنا يكمن سر الذكاء الحقيقي
+   🛠️ تعريف الأدوات (Tools)
    ============================================================ */
 const alatheerTools = [{
   functionDeclarations: [
@@ -132,7 +145,7 @@ geminiService.chat = async function(messages, extra = {}) {
     const result = await chat.sendMessage(lastUserMessage || "مرحبا");
     const response = await result.response;
 
-    // 🛡️ استخراج آمن للأدوات لمنع انهيار السيرفر
+    // 🛡️ استخراج آمن للأدوات
     let functionCalls = null;
     try {
         if (typeof response.functionCalls === 'function') {
@@ -142,7 +155,7 @@ geminiService.chat = async function(messages, extra = {}) {
         functionCalls = null;
     }
 
-    // 🛡️ استخراج آمن للنص (يتجنب خطأ غياب النص عندما يعيد النموذج أداة فقط)
+    // 🛡️ استخراج آمن للنص
     let textReply = "";
     try {
         if (response.text && typeof response.text === 'function') {
