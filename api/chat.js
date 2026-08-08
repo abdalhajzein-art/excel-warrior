@@ -254,7 +254,7 @@ export default async function handler(req, res) {
         }
 
         const orchestratorInput = {
-            fileData: fileData || null, // لم يعد مهماً طالما لدينا filePath
+            fileData: fileData || null,
             fileName: finalFileName || fileName || null,
             filePath: sovereignFilePath || null,
             history,
@@ -314,4 +314,3 @@ export default async function handler(req, res) {
         return res.status(500).json({ reply: `⚠️ معليش يا شريكي، صار خطأ تقني: ${error.message}` });
     }
 }
-
