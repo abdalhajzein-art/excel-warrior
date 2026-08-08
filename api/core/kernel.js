@@ -1,6 +1,7 @@
 /**
  * api/core/kernel.js – Trusting Gemini's Intelligence & Structured Tools
  * 🧠 العقل السيادي للأثير: الاعتماد الحصري على الأدوات المهيكلة (Structured Tools)
+ * - مدمج مع حارس المسارات (Path Guardian) لمنع أخطاء ENOENT وضمان تدفق العمل.
  */
 
 import fs from "fs";
@@ -52,6 +53,44 @@ async function writeIndex(idx) {
 
 function generateFileId() {
   return `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
+}
+
+/**
+ * 🛡️ حارس المسارات (Path Guardian): يلتقط أي ملف تم إنشاؤه حديثاً وينقله للمسار المطلوب
+ */
+function rescueGeneratedFile(expectedPath) {
+  if (fs.existsSync(expectedPath)) return expectedPath;
+
+  try {
+    const dirsToSearch = [GENERATED_DIR, process.cwd()];
+    let allFiles = [];
+
+    for (const dir of dirsToSearch) {
+      if (fs.existsSync(dir)) {
+        const items = fs.readdirSync(dir);
+        for (const item of items) {
+          if (item.endsWith('.xlsx') || item.endsWith('.docx')) {
+            const fullPath = path.join(dir, item);
+            const stat = fs.statSync(fullPath);
+            allFiles.push({ path: fullPath, mtime: stat.mtime.getTime() });
+          }
+        }
+      }
+    }
+
+    // ترتيب الملفات حسب الأحدث تاريخاً
+    allFiles.sort((a, b) => b.mtime - a.mtime);
+
+    if (allFiles.length > 0) {
+      const rescuedFile = allFiles[0].path;
+      console.log(`🛡️ [Kernel Guard] تم إنقاذ الملف ونقله من ${rescuedFile} إلى ${expectedPath}`);
+      fs.copyFileSync(rescuedFile, expectedPath);
+      return expectedPath;
+    }
+  } catch (e) {
+    console.warn("⚠️ [Kernel Guard] فشل الإنقاذ:", e.message);
+  }
+  return null;
 }
 
 // ================= Kernel Principal =================
@@ -196,10 +235,18 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         }
 
         try {
-          const fileBuffer = await fs.promises.readFile(targetFilePath);
-          fileBase64 = fileBuffer.toString("base64");
+          // استخدام حارس المسارات لضمان إيجاد الملف حتى لو حفظه بايثون في جذر المشروع
+          const finalPath = rescueGeneratedFile(targetFilePath);
+          if (finalPath && fs.existsSync(finalPath)) {
+            const fileBuffer = await fs.promises.readFile(finalPath);
+            fileBase64 = fileBuffer.toString("base64");
+            ctx.filePath = finalPath;
+          } else {
+            throw new Error("لم يتم العثور على ملف الإخراج النهائي.");
+          }
         } catch (e) {
           console.warn("⚠️ [Kernel] خطأ في قراءة الملف النهائي:", e.message);
+          toolMessages.push(`❌ خطأ في العثور على الملف: ${e.message}`);
         }
 
         finalReplyText = toolMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/persistent_uploads/${path.basename(targetFilePath)})`;
@@ -238,4 +285,3 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     context: ctx
   };
 }
-
