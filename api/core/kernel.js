@@ -55,7 +55,7 @@ function generateFileId() {
 }
 
 function sanitizeName(name) {
-  return (name || "file").replace(/[^a-zA-Z0-9_.-]/g, "_");
+  return (name || "file").replace(/[^a-zA-Z0-9_.-]/g, "_").replace(/\.xlsx\.xlsx$/, ".xlsx");
 }
 
 // ================= The Sovereign Kernel =================
@@ -82,20 +82,26 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   if (fileName === null || fileName === undefined) fileName = activeFile?.fileName || null;
 
   const hasExistingFile = !!(filePath && fs.existsSync(filePath));
-  // كشف بسيط إذا كان المستخدم يطلب الإنشاء من الصفر
-  const isGenerationRequest = !hasExistingFile && message.match(/(أنشئ|اعمل|ولد|قم بإنشاء|توليد) (ملف|شيت|جدول|تقرير)/i);
+  // كشف ذكي لنية الإنشاء من الصفر
+  const isGenerationRequest = !hasExistingFile && message.match(/(أنشئ|اعمل|ولد|قم بإنشاء|توليد|ابنِ) (ملف|شيت|جدول|تقرير|اكسل)/i);
 
   let envState = "";
   if (isGenerationRequest) {
     const id = generateFileId();
-    const safeName = `${id}-${sanitizeName(fileName || `Alatheer_Generated`)}.xlsx`.replace(/\.xlsx\.xlsx$/, ".xlsx");
-    fileName = safeName;
-    filePath = path.join(PERSISTENT_DIR, safeName);
-    envState = `[حالة البيئة]: لا يوجد ملف نشط. المستخدم يطلب إنشاء ملف جديد. سيتم إنشاء الملف وحفظه في المتغير المرجعي \`target_file\`.`;
+    fileName = `${id}-${sanitizeName(fileName || `Alatheer_Generated`)}.xlsx`;
+    // استخدام مجلد المولدات للملفات الجديدة بدلاً من مجلد المرفوعات
+    filePath = path.join(GENERATED_DIR, fileName);
+    envState = `[حالة البيئة]: لا يوجد ملف نشط حالياً. المستخدم يطلب إنشاء ملف جديد من الصفر.
+- يجب عليك توليد كود Python يقوم بإنشاء الملف.
+- مسار الملف المطلق محفوظ مسبقاً في المتغير \`target_file\`. استخدمه مباشرة ولا تقم بتعريفه.`;
   } else if (hasExistingFile) {
-    envState = `[حالة البيئة]: يوجد ملف نشط حالياً (الاسم: ${fileName}). طلب المستخدم قد يكون متعلقاً بهذا الملف للتحليل أو التعديل، أو قد يكون مجرد حوار. المتغير \`target_file\` يشير إلى هذا الملف.`;
+    envState = `[حالة البيئة]: يوجد ملف نشط حالياً (الاسم: ${fileName}).
+- الطلب قد يكون لتحليل أو تعديل هذا الملف.
+- مسار الملف المطلق محفوظ مسبقاً في المتغير \`target_file\`. استخدمه مباشرة للقراءة (مثل pandas.read_excel) وللحفظ (مثل df.to_excel).`;
   } else {
-    envState = `[حالة البيئة]: وضع الحوار العام (Chat Mode). لا يوجد ملف نشط حالياً. تعامل كمحاور ومهندس مستشار، ولا تكتب كود برمجي إلا إذا طُلب منك صراحة إنشاء شيء.`;
+    envState = `[حالة البيئة]: وضع الحوار العام والاستشارة (Chat Mode). لا يوجد ملف نشط.
+- تعامل كمهندس معماري ومحاور ذكي.
+- لا تكتب كود برمجي Python إلا إذا طلب المستخدم صراحة إجراء عملية برمجية أو تحليل بيانات.`;
   }
 
   // 2. بناء الـ System Prompt الديناميكي
@@ -105,17 +111,17 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   if (!fileContext && extractedContent && !extractedContent.error) {
     const schema = extractedContent.columns_schema || {};
     const headerRow = extractedContent.detected_header_row || 1;
-    fileContext = `[تفاصيل الملف النشط]:\nمؤشر صف العناوين: ${headerRow}\nالأعمدة المتوفرة: ${JSON.stringify(schema)}`;
+    fileContext = `[الهيكل البياني للملف النشط]:\nمؤشر صف العناوين: ${headerRow}\nالأعمدة المتوفرة: ${JSON.stringify(schema)}`;
     systemContent += `\n\n${fileContext}`;
   }
 
   const fingerprintText = fusionMemory.getFingerprintText(sessionId);
   if (fingerprintText) {
-    systemContent += `\n\n[بصمة الملف الحالية لمعرفة محتواه الفعلي]:\n${fingerprintText}`;
+    systemContent += `\n\n[بصمة محتوى الملف الفعلي (أحدث نسخة)]: \n${fingerprintText}`;
   }
 
-  // 3. تجهيز تاريخ المحادثة
-  const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
+  // 3. تجهيز تاريخ المحادثة مع تقليص السياق للحفاظ على الـ Tokens
+  const history = Array.isArray(ctx.history) ? ctx.history.slice(-15) : [];
   const conversationMessages = [
     { role: "system", content: systemContent },
     ...history.map((h) => ({ role: h.role, content: h.content })),
@@ -127,7 +133,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   let executionResult = null;
 
   try {
-    // 4. إرسال الطلب لـ Gemini
+    // 4. استدعاء العقل المدبر (Gemini)
     console.log("🧠 [Kernel] استدعاء عقل الأثير (Gemini)...");
     const rawReply = await geminiService.chat(conversationMessages, {
       fileName,
@@ -139,37 +145,36 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     const functionCalls = rawReply?.functionCalls || null;
     finalReplyText = replyText;
 
-    // استخراج الكود البرمجي (إن وجد إما كـ Function Call أو Text Markdown)
+    // استخراج الكود البرمجي بمرونة عالية
     let pythonCode = null;
     
     if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
       const pyCall = functionCalls.find(fc => fc.name === "execute_python" || fc.args?.code);
       if (pyCall && pyCall.args?.code) {
         pythonCode = pyCall.args.code;
-        finalReplyText = replyText || "جاري تنفيذ العملية المطلوبة يا شريكي...";
+        finalReplyText = replyText || "تكرم عينك يا هندسة، ثواني وبنفذ العملية...";
       }
     }
 
     if (!pythonCode) {
-      let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/i) 
-                     || finalReplyText.match(/```python\s*([\s\S]*?)\s*```/i)
-                     || finalReplyText.match(/```\s*([\s\S]*?)```/); // Fallback عام
+      // البحث المعمق في الـ Markdown لحماية الكود من أخطاء التنسيق
+      const pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/i)
+                       || finalReplyText.match(/```\s*([\s\S]*?)```/);
       if (pythonMatch) {
         pythonCode = pythonMatch[1].trim();
-        // إزالة الكود من النص الذي سيعرض للمستخدم
-        finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/gi, "").trim();
-        if (!finalReplyText) finalReplyText = "تكرم عينك، ثواني بنفذ العملية...";
+        finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/gi, "").replace(/```[\s\S]*?```/gi, "").trim();
+        if (!finalReplyText) finalReplyText = "جاري هندسة العملية المطلوبة برمجياً يا شريكي...";
       }
     }
 
-    // 5. اتخاذ القرار: هل هناك تنفيذ أم مجرد دردشة؟
+    // 5. مسار المحادثة فقط (بدون كود)
     if (!pythonCode || !filePath) {
       console.log("💬 [Kernel] وضع الدردشة/الاستشارة (لا يوجد كود للتنفيذ).");
       memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
       return { reply: finalReplyText, fileName, fileBase64: null, operations: [], execution: null };
     }
 
-    // 6. حلقة التنفيذ والتصحيح الذاتي (Self-Healing Execution Loop)
+    // 6. حلقة التنفيذ والتصحيح الذاتي المستقلة (Self-Healing Agentic Loop)
     const maxRetries = 2;
     let currentAttempt = 0;
     let isSuccess = false;
@@ -178,20 +183,29 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       currentAttempt++;
       console.log(`⚡ [Kernel] تنفيذ الكود (محاولة ${currentAttempt}/${maxRetries})...`);
 
+      // تنفيذ برمجيات البايثون في بيئة معزولة
       executionResult = await executeDynamicPython(pythonCode, filePath, isGenerationRequest, sessionId);
 
       if (executionResult && executionResult.success && fs.existsSync(filePath)) {
         isSuccess = true;
-        console.log("✅ [Kernel] نجاح التنفيذ!");
+        console.log("✅ [Kernel] نجاح التنفيذ والملف جاهز!");
         
-        const downloadUrl = `/persistent_uploads/${path.basename(filePath)}`;
+        // التوجيه الصحيح بناءً على مكان حفظ الملف (مرفوع vs مولّد)
+        const downloadDir = isGenerationRequest ? 'generated' : 'persistent_uploads';
+        const downloadUrl = `/${downloadDir}/${path.basename(filePath)}`;
         const fileNameForUser = path.basename(filePath);
 
         finalReplyText += `\n\n✅ تم ${isGenerationRequest ? "الإنشاء" : "التعديل"} بنجاح يا هندسة!`;
         finalReplyText += `\n📥 **[اضغط هنا لتحميل الملف](${downloadUrl})**`;
 
-        // قراءة الملف وتحديث الفهارس
-        try { fileBase64 = fs.readFileSync(filePath).toString("base64"); } catch (e) {}
+        // العمليات غير المتزامنة (Non-blocking) لقراءة الملف والفهرسة
+        try { 
+          const fileBuffer = await fs.promises.readFile(filePath);
+          fileBase64 = fileBuffer.toString("base64"); 
+        } catch (e) {
+          console.warn("⚠️ [Kernel] خطأ في تحويل الملف إلى Base64:", e.message);
+        }
+
         try {
           const previewData = await extractPreviewAsync(filePath);
           if (previewData && !previewData.error) fusionMemory.storeFileFingerprint(sessionId, filePath, previewData);
@@ -205,7 +219,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             const newId = generateFileId();
             idx[newId] = {
               fileId: newId, fileName: fileNameForUser, storedName: fileNameForUser,
-              storedPath: filePath, size: fs.statSync(filePath).size, uploadedAt: new Date().toISOString()
+              storedPath: filePath, size: fs.statSync(filePath).size, uploadedAt: new Date().toISOString(),
+              type: isGenerationRequest ? "generated" : "uploaded"
             };
           } else {
             idx[foundId].size = fs.statSync(filePath).size;
@@ -222,8 +237,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         console.log(`❌ [Kernel] فشل التنفيذ (محاولة ${currentAttempt}):`, actualError);
 
         if (currentAttempt < maxRetries) {
-          console.log("🔄 [Kernel] إرسال الخطأ للنموذج لمحاولة تصحيحه تلقائياً...");
-          const errorFeedbackPrompt = `حدث خطأ أثناء تنفيذ كود البايثون السابق:\n\`\`\`text\n${actualError}\n\`\`\`\nالرجاء تحليل الخطأ وكتابة كود Python المصحح بالكامل. تذكر استخدام \`target_file\`.`;
+          console.log("🔄 [Kernel] إرسال الخطأ لـ Gemini لمحاولة التصحيح التلقائي...");
+          const errorFeedbackPrompt = `فشل التنفيذ في بيئة Python. الخطأ:\n\`\`\`text\n${actualError}\n\`\`\`\nقم بتحليل الخطأ وتوليد كود Python المصحح بالكامل بدون شرح. تذكر: المتغير \`target_file\` يحتوي على مسار الملف المطلق جاهزاً للاستخدام، لا تقم بتعريفه.`;
           
           const correctionMessages = [
             ...conversationMessages,
@@ -233,24 +248,24 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
           const fixReply = await geminiService.chat(correctionMessages, { systemInstruction: systemContent });
           let fixText = fixReply?.text || "";
-          let newMatch = fixText.match(/```python\s*\n([\s\S]*?)\n\s*```/i) || fixText.match(/```\s*([\s\S]*?)```/);
           
+          const newMatch = fixText.match(/```python\s*([\s\S]*?)\s*```/i) || fixText.match(/```\s*([\s\S]*?)```/);
           if (newMatch) {
             pythonCode = newMatch[1].trim();
           } else {
-            break; // لا يوجد كود مصحح، نكسر الحلقة
+            break; // كسر الحلقة إذا لم يتم إرجاع كود مصحح
           }
         } else {
-          finalReplyText += `\n\n❌ عذراً يا شريكي، واجهتني مشكلة تقنية بالتنفيذ. الخطأ:\n\`\`\`text\n${String(actualError).substring(0, 300)}\n\`\`\``;
+          finalReplyText += `\n\n❌ عذراً يا شريكي، واجهتني عقبة تقنية في بيئة التنفيذ ولم أتمكن من تخطيها. تفاصيل الخطأ:\n\`\`\`text\n${String(actualError).substring(0, 300)}\n\`\`\``;
         }
       }
     }
   } catch (error) {
     console.error("❌ [Kernel Exception]:", error);
-    finalReplyText = `صار خطأ تقني يا شريكي: ${error.message}`;
+    finalReplyText = `صار خطأ تقني غير متوقع يا شريكي: ${error.message}`;
   }
 
-  // 7. حفظ السجل النهائي
+  // 7. حفظ السجل النهائي للمحادثة
   memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
 
   return {
@@ -261,4 +276,3 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     execution: executionResult
   };
 }
-
