@@ -1,6 +1,6 @@
 /**
  * api/core/dynamic_executor.js – Sovereign Edition (Metadata Preprocessor & Quality Inspector)
- * 🛡️ نسخة محسنة: تحقق صارم عبر علامة النجاح المؤكدة وفحص الملفات الفعلية.
+ * 🛡️ نسخة محسنة: تمرير المسار الديناميكي عبر sys.argv لحماية الحلقة التفاعلية (Agentic Loop).
  */
 
 import fs from "fs";
@@ -40,7 +40,8 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
                 fs.copyFileSync(targetFilePath, backupPath);
             }
 
-            // 🛠️ Metadata Preprocessor & Quality Inspector: حقن المكتبات ومفتش الجودة
+            // 🛠️ Metadata Preprocessor & Quality Inspector
+            // استلام المسار المطلق من Node.js كـ Argument لمنع أخطاء Pathing
             const safeCode = `
 import sys
 import os
@@ -48,11 +49,15 @@ import traceback
 import pandas as pd
 import openpyxl
 
-# المتغير السيادي الموحد للمسار مع العزل الكامل
-target_file = r'''${targetFilePath}'''
+# 🛡️ المتغير السيادي الموحد للمسار (مستلم من النظام بشكل آمن - Inversion of Control)
+if len(sys.argv) > 1:
+    target_file = sys.argv[1]
+else:
+    print("ERROR: لم يتم تمرير مسار الملف للسكربت.")
+    sys.exit(1)
 
 # ============================================
-# ⚡ بداية كود الأثير المُنفذ
+# ⚡ بداية كود الأثير المُنفذ (مُولد من النموذج)
 # ============================================
 ${pythonCode}
 # ============================================
@@ -82,9 +87,10 @@ print("SUCCESS: تم التنفيذ بنجاح ✓")
 
             fs.writeFileSync(scriptPath, safeCode, "utf8");
 
+            // ✅ التعديل الجوهري هنا: تمرير targetFilePath في مصفوفة الـ Arguments
             execFile(
                 PYTHON_EXEC,
-                [scriptPath],
+                [scriptPath, targetFilePath], 
                 { maxBuffer: 50 * 1024 * 1024 },
                 async (error, stdout, stderr) => {
 
