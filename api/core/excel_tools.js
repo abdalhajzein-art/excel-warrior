@@ -1,9 +1,16 @@
 /**
- * api/core/excel_tools.js - تعريف أدوات Gemini لمعالجة Excel
- * هذه الأدوات تسمح لـ Gemini باستدعاء وظائف معالجة Excel
+ * api/core/excel_tools.js - تعريف أدوات Gemini لمعالجة Excel وتنفيذ بايثون
+ * هذه الأدوات تسمح لـ Gemini باستدعاء وظائف معالجة Excel والأكواد البرمجية المرنة
  */
 
 import ExcelProcessor from './excel_processor.js';
+import { exec } from "child_process";
+import util from "util";
+import fs from "fs";
+import path from "path";
+
+const execPromise = util.promisify(exec);
+const GENERATED_DIR = path.join(process.cwd(), "generated");
 
 // ============================================================
 // 🔧 تعريف الأدوات (Function Declarations)
@@ -200,6 +207,25 @@ export const EXCEL_TOOLS = [
                     },
                     required: ["file_path", "output_path"]
                 }
+            },
+            // 🐍 التنفيذ البرمجي المرن عبر بايثون (لتجاوز أي قيود وإجراء عمليات معقدة)
+            {
+                name: "execute_python",
+                description: "تنفيذ كود بايثون مخصص باستخدام pandas و openpyxl لمعالجة ملفات Excel والبيانات وتحليلها بشكل متقدم",
+                parameters: {
+                    type: "OBJECT",
+                    properties: {
+                        code: {
+                            type: "STRING",
+                            description: "كود بايثون المراد تنفيذه لمعالجة البيانات أو إنشاء الملفات"
+                        },
+                        file_path: {
+                            type: "STRING",
+                            description: "مسار ملف Excel المستهدف (اختياري)"
+                        }
+                    },
+                    required: ["code"]
+                }
             }
         ]
     }
@@ -215,51 +241,53 @@ export async function handleExcelToolCall(functionCall, filePath) {
     console.log(`🔧 [ExcelTools] استدعاء: ${name}`, args);
 
     try {
+        const targetPath = filePath || args.file_path;
+
         switch (name) {
             // 📁 إدارة المصنفات
             case 'excel_get_info':
-                return await ExcelProcessor.getInfo(filePath || args.file_path);
+                return await ExcelProcessor.getInfo(targetPath);
 
             // 📋 إدارة الأوراق
             case 'excel_add_sheet':
-                return await ExcelProcessor.addSheet(args.file_path, args.sheet_name);
+                return await ExcelProcessor.addSheet(targetPath, args.sheet_name);
             
             case 'excel_delete_sheet':
-                return await ExcelProcessor.deleteSheet(args.file_path, args.sheet_name);
+                return await ExcelProcessor.deleteSheet(targetPath, args.sheet_name);
             
             case 'excel_rename_sheet':
-                return await ExcelProcessor.renameSheet(args.file_path, args.old_name, args.new_name);
+                return await ExcelProcessor.renameSheet(targetPath, args.old_name, args.new_name);
 
             // 📊 إدارة الأعمدة
             case 'excel_add_column':
                 return await ExcelProcessor.addColumn(
-                    args.file_path, 
+                    targetPath, 
                     args.target_column, 
                     args.new_column
                 );
             
             case 'excel_add_column_with_dropdown':
                 return await ExcelProcessor.addColumnWithDropdown(
-                    args.file_path,
+                    targetPath,
                     args.target_column,
                     args.new_column,
                     args.dropdown_values || ['مرض', 'ظرف طارئ', 'إجازة مرضية', 'أخرى']
                 );
             
             case 'excel_delete_column':
-                return await ExcelProcessor.deleteColumn(args.file_path, args.column_name);
+                return await ExcelProcessor.deleteColumn(targetPath, args.column_name);
             
             case 'excel_rename_column':
-                return await ExcelProcessor.renameColumn(args.file_path, args.old_name, args.new_name);
+                return await ExcelProcessor.renameColumn(targetPath, args.old_name, args.new_name);
 
             // 🔢 إدارة البيانات
             case 'excel_get_all_data':
-                return await ExcelProcessor.getAllData(args.file_path, args.sheet_name || null);
+                return await ExcelProcessor.getAllData(targetPath, args.sheet_name || null);
 
             // 📊 الرسوم البيانية
             case 'excel_add_chart':
                 return await ExcelProcessor.addChart(
-                    args.file_path,
+                    targetPath,
                     args.chart_type,
                     args.data_range,
                     args.position || { row: 0, col: 10, width: 400, height: 300 }
@@ -268,17 +296,52 @@ export async function handleExcelToolCall(functionCall, filePath) {
             // 🔍 التصفية والفرز
             case 'excel_sort_data':
                 return await ExcelProcessor.sortData(
-                    args.file_path,
+                    targetPath,
                     args.sort_column,
                     args.ascending !== undefined ? args.ascending : true
                 );
 
             // 📤 التصدير
             case 'excel_export_csv':
-                return await ExcelProcessor.exportToCSV(args.file_path, args.output_path);
+                return await ExcelProcessor.exportToCSV(targetPath, args.output_path);
             
             case 'excel_export_json':
-                return await ExcelProcessor.exportToJSON(args.file_path, args.output_path);
+                return await ExcelProcessor.exportToJSON(targetPath, args.output_path);
+
+            // 🐍 تنفيذ بايثون البرمجي المباشر
+            case 'execute_python': {
+                const code = args.code;
+                if (!code) {
+                    return { success: false, error: "الكود البرمجي فارغ." };
+                }
+
+                if (!fs.existsSync(GENERATED_DIR)) {
+                    fs.mkdirSync(GENERATED_DIR, { recursive: true });
+                }
+
+                const tempPyPath = path.join(GENERATED_DIR, `script_${Date.now()}.py`);
+                fs.writeFileSync(tempPyPath, code, "utf8");
+
+                console.log(`🐍 [Python Executor] تنفيذ السكربت: ${tempPyPath}`);
+                const { stdout, stderr } = await execPromise(`python3 "${tempPyPath}"`, { timeout: 25000 });
+
+                if (stderr && stderr.trim().length > 0 && !stderr.includes("DeprecationWarning")) {
+                    console.warn("⚠️ [Python Stderr]:", stderr);
+                }
+
+                // تنظيف الملف المؤقت
+                try {
+                    if (fs.existsSync(tempPyPath)) fs.unlinkSync(tempPyPath);
+                } catch (e) {
+                    console.warn("⚠️ لم يتم حذف الملف المؤقت:", e.message);
+                }
+
+                return {
+                    success: true,
+                    message: `تم تنفيذ كود بايثون بنجاح.\nالنتائج: ${stdout.trim() || 'تم بنجاح'}`,
+                    filePath: targetPath
+                };
+            }
 
             default:
                 return { success: false, error: `أداة غير معروفة: ${name}` };
@@ -297,3 +360,4 @@ export default {
     EXCEL_TOOLS,
     handleExcelToolCall
 };
+
