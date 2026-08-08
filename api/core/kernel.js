@@ -59,6 +59,62 @@ function sanitizeName(name) {
   return (name || "file").replace(/[^a-zA-Z0-9_.-]/g, "_");
 }
 
+/**
+ * ⭐ طبقة النية السيادية القوية – بدون كلمات مفتاحية صريحة
+ * تعتمد على:
+ * - طول الرسالة
+ * - وجود ملف نشط
+ * - وجود سياق سابق
+ * - شكل الرسالة (سؤال، وصف، أمر)
+ */
+function classifyIntent(message, ctx) {
+  const trimmed = message.trim();
+  const hasFile = !!ctx.activeFile;
+  const len = trimmed.length;
+
+  // دردشة عامة: قصيرة، بدون ملف، بدون علامات تنفيذ
+  if (!hasFile && len <= 25 && !/[?=]/.test(trimmed)) {
+    return "chat";
+  }
+
+  // سؤال تحليلي أو استفسار
+  if (trimmed.endsWith("?")) {
+    // إذا في ملف → تحليل ملف
+    if (hasFile) return "analysis_file";
+    return "analysis";
+  }
+
+  // وصف طويل بدون معادلات → اقتراحات/تفكير
+  if (len > 60 && !trimmed.includes("=")) {
+    if (hasFile) return "suggest_file";
+    return "suggest";
+  }
+
+  // وجود مصطلحات تشير لتعديل ملف (بدون كلمات أمر صريحة)
+  if (hasFile && trimmed.match(/(عمود|أعمدة|صف|صفوف|خلية|خلايا|معادلة|تنسيق|sheet|row|column|table|جدول)/i)) {
+    return "modify";
+  }
+
+  // طلب تحسين/تنظيم
+  if (trimmed.match(/(حسّن|طور|رتّب|نظّم|نظف|رتب)/i)) {
+    if (hasFile) return "suggest_file";
+    return "suggest";
+  }
+
+  // إذا في ملف والرسالة قصيرة نسبياً → تعديل بسيط
+  if (hasFile && len <= 40) {
+    return "modify";
+  }
+
+  // مهمة كاملة أو وصف عمل كبير
+  if (len > 80) {
+    return "task";
+  }
+
+  // افتراضي: دردشة مع وعي سياقي
+  return hasFile ? "chat_file" : "chat";
+}
+
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const message = (rawMessage || "").trim();
   if (!message) {
@@ -70,6 +126,79 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       execution: null
     };
   }
+
+  // ⭐ تحديد النية السيادية للرسالة قبل أي تنفيذ أو أدوات
+  const intent = classifyIntent(message, ctx);
+  console.log("🧠 [Kernel] classified intent:", intent);
+
+  // وضع الدردشة العامة
+  if (intent === "chat") {
+    return {
+      reply: "هلا يا شريكي… خبرني أكتر، شو الفكرة اللي براسك؟",
+      fileBase64: null,
+      fileName: null,
+      operations: [],
+      execution: null
+    };
+  }
+
+  // دردشة مع وجود ملف (وعي إنو في سياق ملف)
+  if (intent === "chat_file") {
+    return {
+      reply: "تمام يا هندسة… الملف جاهز معنا، احكيلي شو حابب نعمل فيه أو نفكر فيه.",
+      fileBase64: null,
+      fileName: ctx.activeFile?.fileName || null,
+      operations: [],
+      execution: null
+    };
+  }
+
+  // تحليل عام بدون ملف
+  if (intent === "analysis") {
+    return {
+      reply: "يا شريكي… خليني حلّل لك الفكرة شوي وبعدين نقرر سوا.",
+      fileBase64: null,
+      fileName: null,
+      operations: [],
+      execution: null
+    };
+  }
+
+  // تحليل مع ملف
+  if (intent === "analysis_file") {
+    return {
+      reply: "تمام يا هندسة… رح فكّر بالملف وباللي سألته، وبعدين منقدر نطبّق لو حبيت.",
+      fileBase64: null,
+      fileName: ctx.activeFile?.fileName || null,
+      operations: [],
+      execution: null
+    };
+  }
+
+  // اقتراحات عامة بدون ملف
+  if (intent === "suggest") {
+    return {
+      reply: "يا شريكي… عندي كذا فكرة حلوة لهالموضوع، فيك تطلب مني أعدّد لك الاقتراحات.",
+      fileBase64: null,
+      fileName: null,
+      operations: [],
+      execution: null
+    };
+  }
+
+  // اقتراحات مرتبطة بملف
+  if (intent === "suggest_file") {
+    return {
+      reply: "تمام… خليني فكّر بالملف وبنيته، وبعدين بعطيك اقتراحات عملية نقدر نطبّقها خطوة خطوة.",
+      fileBase64: null,
+      fileName: ctx.activeFile?.fileName || null,
+      operations: [],
+      execution: null
+    };
+  }
+
+  // مهمة كبيرة (task) – نخليها تمر للـ LLM مع البرومبت السيادي
+  // modify → تنفيذ فعلي، نكمل بقية المنطق كما هو
 
   ensureDirs();
 
@@ -93,8 +222,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
 
   const hasExistingFile = filePath && fs.existsSync(filePath);
-  
-  // تحديد ما إذا كان الطلب إنشاء ملف جديد من الصفر أو تعديل ملف قائم بناءً على وجوده الفعلي
   const isGenerationRequest = !hasExistingFile;
 
   let systemContent = SYSTEM_PROMPT;
@@ -140,16 +267,14 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     console.log("📝 [Kernel] rawReply من Gemini:", JSON.stringify(rawReply, null, 2));
 
-    // ✅ استخراج النص والأدوات من الرد
     const replyText = rawReply?.text || "";
     const functionCalls = rawReply?.functionCalls || null;
 
     console.log("📝 [Kernel] replyText:", replyText);
     console.log("📝 [Kernel] functionCalls:", JSON.stringify(functionCalls, null, 2));
 
-    // ✅ تحديد الرد النهائي
     if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
-      const pyCall = functionCalls.find(fc => fc.name === 'execute_python' || fc.args?.code);
+      const pyCall = functionCalls.find(fc => fc.name === "execute_python" || fc.args?.code);
       if (pyCall && pyCall.args && pyCall.args.code) {
         finalReplyText = "```python\n" + pyCall.args.code + "\n```";
         console.log("📝 [Kernel] تم استخراج كود من functionCalls:", pyCall.args.code.substring(0, 200) + "...");
@@ -162,7 +287,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     console.log("📝 [Kernel] finalReplyText بعد المعالجة:", finalReplyText.substring(0, 300) + "...");
 
-    // الكشف الديناميكي عن وجود نية تنفيذ برمجية
     let pythonMatch = finalReplyText.match(/```python\s*\n([\s\S]*?)\n\s*```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/);
     if (!pythonMatch) pythonMatch = finalReplyText.match(/```python\n([\s\S]*?)```/);
@@ -170,7 +294,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
     console.log("📝 [Kernel] pythonMatch:", pythonMatch ? "تم العثور على كود" : "لم يتم العثور على كود");
 
-    // إذا لم يكتب النموذج كود بايثون، فهو مجرد رد دردشة - نعيده فوراً
     if (!pythonMatch || !filePath) {
       memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
       return {
@@ -182,12 +305,11 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       };
     }
 
-    // إذا وُجد كود بايثون، ننفذه
     let pythonCode = pythonMatch[1].trim();
     console.log("📝 [Kernel] pythonCode المستخرج:", pythonCode.substring(0, 300) + "...");
 
     finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/g, "").trim();
-    if (finalReplyText.includes('```') && !finalReplyText.includes('python')) {
+    if (finalReplyText.includes("```") && !finalReplyText.includes("python")) {
       finalReplyText = finalReplyText.replace(/```[\s\S]*?```/g, "").trim();
     }
     if (!finalReplyText) finalReplyText = "جاري تنفيذ المعالجة يا شريكي...";
@@ -210,7 +332,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         const downloadUrl = `/persistent_uploads/${path.basename(filePath)}`;
         const fileNameForUser = path.basename(filePath);
 
-        finalReplyText += `\n\n✅ تم ${isGenerationRequest ? 'توليد' : 'تعديل'} الملف بنجاح يا هندسة!`;
+        finalReplyText += `\n\n✅ تم ${isGenerationRequest ? "توليد" : "تعديل"} الملف بنجاح يا هندسة!`;
         finalReplyText += `\n\n📥 **[اضغط هنا لتحميل الملف](${downloadUrl})**`;
         finalReplyText += `\n📁 اسم الملف: ${fileNameForUser}`;
 
@@ -295,13 +417,12 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
           console.log("📝 [Kernel] fixReply:", JSON.stringify(fixReply, null, 2));
 
-          // ✅ استخراج النص المصحح من الرد
           const fixText = fixReply?.text || "";
           const fixFunctionCalls = fixReply?.functionCalls || null;
 
           let fixedText = "";
           if (fixFunctionCalls && Array.isArray(fixFunctionCalls) && fixFunctionCalls.length > 0) {
-            const pyCall = fixFunctionCalls.find(fc => fc.name === 'execute_python' || fc.args?.code);
+            const pyCall = fixFunctionCalls.find(fc => fc.name === "execute_python" || fc.args?.code);
             fixedText = (pyCall && pyCall.args?.code) ? "```python\n" + pyCall.args.code + "\n```" : fixText;
           } else {
             fixedText = fixText || String(fixReply || "");
@@ -338,4 +459,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     operations: [],
     execution: executionResult
   };
-}
+                                           }
