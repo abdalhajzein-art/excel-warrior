@@ -283,6 +283,7 @@ const geminiService = {};
 geminiService.chat = async function(messages, extra = {}) {
     const userMessage = messages.find(m => m.role === 'user')?.content || '';
     const fileName = extra.fileName || 'Active Chat';
+    const tools = extra.tools || alatheerTools;  // ✅ استقبال الأدوات من extra
 
     return executeWithSmartFallback(async (modelName, client) => {
         const systemMessages = messages.filter(m => m.role === "system");
@@ -311,13 +312,11 @@ geminiService.chat = async function(messages, extra = {}) {
             }
         }
 
-        // ✅ استخدام الأدوات المدمجة
-        const toolsToUse = extra.tools || alatheerTools;
-
+        // ✅ استخدام الأدوات الممررة
         const model = client.getGenerativeModel({
             model: modelName,
             systemInstruction,
-            tools: toolsToUse,
+            tools: tools,
             generationConfig: {
                 temperature: 0.25,
                 maxOutputTokens: 32768,
