@@ -1,7 +1,6 @@
 /**
- * api/core/kernel.js – Trusting Gemini's Intelligence
- * 🧠 بدلاً من التحكم الصارم، نثق بذكاء Gemini ونقدم له السياق الكامل
- * 🔥 منع تنفيذ كود Python مع ملفات Excel - إجبار على استخدام الأدوات
+ * api/core/kernel.js – Trusting Gemini's Intelligence & Structured Tools
+ * 🧠 العقل السيادي للأثير: الاعتماد الحصري على الأدوات المهيكلة (Structured Tools)
  */
 
 import fs from "fs";
@@ -55,11 +54,6 @@ function generateFileId() {
   return `${Date.now()}-${crypto.randomBytes(6).toString("hex")}`;
 }
 
-function sanitizeName(name) {
-  if (!name) return "file";
-  return name.replace(/[^a-zA-Z0-9_.-]/g, "_").replace(/\.xlsx\.xlsx$/, ".xlsx");
-}
-
 // ================= Kernel Principal =================
 export default async function kernel(sessionId, rawMessage, ctx = {}) {
   const message = (rawMessage || "").trim();
@@ -71,7 +65,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   }
 
   ensureDirs();
-  console.log(`\n🚀 [Kernel] بدء معالجة جلسة: ${sessionId} | الرسالة: "${message.substring(0, 30)}..."`);
+  console.log(`\n🚀 [Kernel] بدء معالجة جلسة: ${sessionId} \vert{} الرسالة: "${message.substring(0, 30)}..."`);
 
   // 1. بناء السياق الكامل للملف
   const activeFile = ctx.activeFile || null;
@@ -88,7 +82,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     fingerprint: null
   };
 
-  // قراءة الملف إذا كان موجوداً
   if (filePath && fs.existsSync(filePath)) {
     try {
       const preview = await extractPreviewAsync(filePath);
@@ -101,7 +94,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         history: fusionMemory.getFileHistory(sessionId) || [],
         fingerprint: fusionMemory.getFingerprint(sessionId)
       };
-      
       console.log(`📊 [Kernel] تم تحميل الملف: ${fileContext.name} (${fileContext.type})`);
     } catch (e) {
       console.warn('⚠️ [Kernel] فشل قراءة الملف:', e.message);
@@ -109,118 +101,24 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   }
 
   // 2. بناء وصف البيئة الغني
-  let environmentDescription = "";
+  const structureSummary = fileContext.structure ? {
+    sheets: fileContext.structure.sheets || [],
+    rows: fileContext.structure.metadata?.rowCounts || {},
+    columns: fileContext.structure.metadata?.columnCounts || {},
+    preview: fileContext.structure.preview || []
+  } : {};
 
-  if (!fileContext.exists) {
-    // حالة عدم وجود ملف
-    const isGenerationRequest = message.match(/(أنشئ|اعمل|ولد|قم بإنشاء|توليد|ابنِ|صمم) (ملف|شيت|جدول|تقرير|اكسل|word|pdf)/i);
-    
-    if (isGenerationRequest) {
-      const newFileName = fileName || `${generateFileId()}-${sanitizeName(message.substring(0, 20))}.xlsx`;
-      const newFilePath = path.join(GENERATED_DIR, newFileName);
-      
-      environmentDescription = `
+  const environmentDescription = `
 ## 📋 سياق الجلسة الحالية
-
-### حالة البيئة:
-- **لا يوجد ملف نشط**
-- **الطلب**: إنشاء ملف جديد من الصفر
-- **الوصف**: "${message}"
-
-### الملف المتوقع:
-- **الاسم المقترح**: ${newFileName}
-- **المسار**: ${newFilePath}
-- **النوع**: سيتم اكتشافه من الطلب
-
-### تاريخ الجلسة:
-${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${h}`).join('\n') : 'بداية جلسة جديدة'}
-
-### مهمتك:
-- فهم المطلوب من الطلب
-- تحديد نوع الملف المناسب
-- توليد كود Python ذكي لإنشاء الملف
-- بناء هيكل احترافي يتناسب مع الغرض
-- إضافة تنسيقات مناسبة
-- استخدام المتغير \`target_file\` للمسار
-
-### ملاحظات:
-- أنت حر في اختيار أفضل هيكل وتنسيق
-- استخدم معرفتك بهياكل الملفات
-- ابنِ حلاً قابلاً للتطوير مستقبلاً
-`;
-      
-      // تحديث السياق
-      ctx.filePath = newFilePath;
-      ctx.fileName = newFileName;
-      
-    } else {
-      environmentDescription = `
-## 📋 سياق الجلسة الحالية
-
-### حالة البيئة:
-- **لا يوجد ملف نشط**
-- **الطلب**: "${message}"
-
-### تاريخ الجلسة:
-${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${h}`).join('\n') : 'بداية جلسة جديدة'}
-
-### مهمتك:
-- تحليل الطلب كمحاور ذكي
-- تقديم استشارة أو تحليل
-- إذا طلب المستخدم إنشاء ملف، أخبره بذلك
-- لا تكتب كوداً برمجياً إلا إذا طلب ذلك صراحة
-`;
-    }
-    
-  } else {
-    // حالة وجود ملف نشط
-    const structureSummary = fileContext.structure ? {
-      sheets: fileContext.structure.sheets || [],
-      rows: fileContext.structure.metadata?.rowCounts || {},
-      columns: fileContext.structure.metadata?.columnCounts || {},
-      preview: fileContext.structure.preview || []
-    } : {};
-
-    environmentDescription = `
-## 📋 سياق الجلسة الحالية
-
-### حالة البيئة:
-- **ملف نشط**: ${fileContext.name}
+- **الملف النشط**: ${fileContext.exists ? fileContext.name : 'لا يوجد (إنشاء من الصفر)'}
 - **النوع**: ${fileContext.type}
-- **المسار**: ${fileContext.path}
-- **الحجم**: ${fs.existsSync(fileContext.path) ? (fs.statSync(fileContext.path).size / 1024).toFixed(1) : 0} KB
-
-### هيكل الملف:
-\`\`\`json
-${JSON.stringify(structureSummary, null, 2)}
-\`\`\`
-
-### تاريخ التعديلات في هذه الجلسة:
-${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${h}`).join('\n') : 'لا توجد تعديلات سابقة'}
-
-### الطلب الحالي:
-"${message}"
-
-### مهمتك:
-- فهم سياق الطلب والملف
-- تحديد التعديلات المطلوبة
-- توليد كود Python ذكي يحقق المطلوب
-- حافظ على التنسيقات والصيغ والبيانات الموجودة
-- إذا كانت التعديلات متتابعة، ابنِ على السابق
-- استخدم المتغير \`target_file\` للمسار
-
-### ملاحظات:
-- أنت خبير في التعامل مع هذا النوع من الملفات
-- استخدم معرفتك لكتابة أفضل حل
-- لا تقيد نفسك بقوالب جامدة
-- ثق بفهمك للسياق والبنية
+- **هيكل الملف**: \`\`\`json\n${JSON.stringify(structureSummary, null, 2)}\n\`\`\`
+- **الطلب الحالي**: "${message}"
 `;
-  }
 
-  // 3. بناء الـ System Prompt الكامل
   const systemContent = SYSTEM_PROMPT + `\n\n${environmentDescription}`;
 
-  // 4. تجهيز تاريخ المحادثة
+  // 3. تجهيز سجل المحادثة واستدعاء Gemini مع الأدوات الهيكلية
   const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
   const conversationMessages = [
     { role: "system", content: systemContent },
@@ -233,341 +131,113 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
   let executionResult = null;
 
   try {
-    // 5. استدعاء Gemini (نثق بذكائه)
-    console.log("🧠 [Kernel] استدعاء عقل الأثير (Gemini)...");
+    console.log("🧠 [Kernel] استدعاء عقل الأثير (Gemini) مع الأدوات الهيكلية...");
     const rawReply = await geminiService.chat(conversationMessages, {
       fileName: ctx.fileName || fileContext.name,
       filePath: ctx.filePath || fileContext.path,
       fileContext,
       systemInstruction: systemContent,
-      tools: EXCEL_TOOLS  // ✅ تمرير أدوات Excel
+      tools: EXCEL_TOOLS  // الاعتماد الكامل على الأدوات المهيكلة
     });
 
-    const replyText = rawReply?.text || "";
+    finalReplyText = rawReply?.text || "";
     const functionCalls = rawReply?.functionCalls || null;
-    finalReplyText = replyText;
 
-        // ============================================================
-    // 6. معالجة أدوات Excel (التنفيذ المتسلسل المتعدد - Parallel Tool Calling)
     // ============================================================
-    let excelResult = null;
-    let anyExcelSuccess = false;
-    let excelMessages = [];
-    
+    // 4. معالجة استدعاءات الأدوات (Tool Calling Handler)
+    // ============================================================
     if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
-      console.log(`[Kernel] استلام ${functionCalls.length} أداة (Tools) للتنفيذ...`);
+      console.log(`🔧 [Kernel] تم استلام ${functionCalls.length} أداة للتنفيذ...`);
       
+      let anySuccess = false;
+      let toolMessages = [];
+      const targetFilePath = ctx.filePath || fileContext.path || path.join(GENERATED_DIR, `${generateFileId()}.xlsx`);
+
       for (const call of functionCalls) {
-        // إذا كان الاستدعاء لأداة Excel
         if (call.name && call.name.startsWith('excel_')) {
-          console.log(`🔧 [Kernel] معالجة أداة Excel: ${call.name}`);
+          console.log(`⚙️ [Kernel] تنفيذ أداة Excel: ${call.name}`);
           
-          // تحديد مسار الملف
-          const targetFilePath = ctx.filePath || fileContext.path;
+          const toolResult = await handleExcelToolCall(call, targetFilePath);
           
-          if (!targetFilePath || !fs.existsSync(targetFilePath)) {
-            excelResult = { success: false, error: 'لا يوجد ملف Excel نشط. يرجى رفع ملف أولاً.' };
-            excelMessages.push(`❌ فشل الأداة ${call.name}: ${excelResult.error}`);
-            continue; // ننتقل للأداة التالية بدلاً من التوقف
-          }
-          
-          // تنفيذ الأداة
-          excelResult = await handleExcelToolCall(call, targetFilePath);
-          
-          if (excelResult && excelResult.success) {
-            anyExcelSuccess = true;
-            excelMessages.push(`✅ ${excelResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
+          if (toolResult && toolResult.success) {
+            anySuccess = true;
+            toolMessages.push(`✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
             
-            // تحديث الذاكرة والـ History لكل أداة
+            // تحديث الذاكرة والتاريخ
             fusionMemory.storeOperation(sessionId, `excel_${call.name}`);
             const historyUpdate = fusionMemory.getFileHistory(sessionId) || [];
-            const operationDesc = `تطبيق أداة: ${call.name} - التعديلات: ${JSON.stringify(call.args)}`;
-            fusionMemory.storeFileHistory(sessionId, [...historyUpdate, operationDesc]);
+            fusionMemory.storeFileHistory(sessionId, [...historyUpdate, `تطبيق أداة: ${call.name}`]);
           } else {
-             excelMessages.push(`❌ فشل الأداة ${call.name}: ${excelResult?.error || 'خطأ غير معروف'}`);
+            toolMessages.push(`❌ فشل أداة ${call.name}:${toolResult?.error || 'خطأ غير معروف'}`);
           }
         }
       }
-      
-      // إذا نجحت أداة واحدة على الأقل، نقوم بعمليات الحفظ النهائية مرة واحدة
-      if (anyExcelSuccess) {
-          const targetFilePath = ctx.filePath || fileContext.path;
-          fusionMemory.storeCurrentFile(sessionId, targetFilePath);
-          fusionMemory.storeSessionMode(sessionId, "file_edit");
-          
-          // تحديث الفهرس
-          try {
-            const idx = await readIndexSafe();
-            const newId = generateFileId();
-            idx[newId] = {
-              fileId: newId,
-              fileName: path.basename(targetFilePath),
-              storedName: path.basename(targetFilePath),
-              storedPath: targetFilePath,
-              size: fs.statSync(targetFilePath).size,
-              uploadedAt: new Date().toISOString(),
-              type: "modified",
-              sessionId
-            };
-            await writeIndex(idx);
-          } catch (e) {
-            console.warn("⚠️ [Kernel] فشل تحديث الفهرس:", e.message);
-          }
-          
-          // قراءة الملف للتحميل
-          try {
-            const fileBuffer = await fs.promises.readFile(targetFilePath);
-            fileBase64 = fileBuffer.toString("base64");
-          } catch (e) {
-            console.warn("⚠️ [Kernel] خطأ في تحويل الملف:", e.message);
-          }
-          
-          finalReplyText = excelMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/persistent_uploads/${path.basename(targetFilePath)})`;
-      } else if (excelMessages.length > 0) {
-          finalReplyText = excelMessages.join("\n");
-      }
-    }
-    
-    // ✅ إذا تمت معالجة أدوات Excel (بنجاح واحدة على الأقل)، ارجع النتيجة
-    if (anyExcelSuccess) {
-      memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
-      return {
-        reply: finalReplyText,
-        fileName: ctx.fileName || fileContext.name,
-        fileBase64,
-        operations: [],
-        execution: { success: true, messages: excelMessages },
-        context: ctx
-      };
-    }
 
-    // 7. استخراج الكود (إذا لم يتم معالجة أداة Excel)
-    // ============================================================
-    let pythonCode = null;
-    
-    if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
-      const pyCall = functionCalls.find(fc => fc.name === "execute_python" || fc.args?.code);
-      if (pyCall && pyCall.args?.code) {
-        pythonCode = pyCall.args.code;
-        if (!finalReplyText || finalReplyText === replyText) {
-          finalReplyText = replyText || "جاري تنفيذ العملية يا شريكي...";
+      if (anySuccess) {
+        fusionMemory.storeCurrentFile(sessionId, targetFilePath);
+        fusionMemory.storeSessionMode(sessionId, "file_edit");
+
+        // تحديث الفهرس
+        try {
+          const idx = await readIndexSafe();
+          const newId = generateFileId();
+          idx[newId] = {
+            fileId: newId,
+            fileName: path.basename(targetFilePath),
+            storedPath: targetFilePath,
+            size: fs.existsSync(targetFilePath) ? fs.statSync(targetFilePath).size : 0,
+            uploadedAt: new Date().toISOString(),
+            type: fileContext.exists ? "modified" : "generated",
+            sessionId
+          };
+          await writeIndex(idx);
+        } catch (e) {
+          console.warn("⚠️ [Kernel] فشل تحديث الفهرس:", e.message);
         }
-        console.log("✅ [Kernel] تم استلام كود من أداة execute_python");
-      }
-    }
 
-    // إذا لم يكن هناك كود من الأداة، ابحث في النص
-    if (!pythonCode) {
-      const pythonMatch = finalReplyText.match(/```python\s*([\s\S]*?)\s*```/i)
-                       || finalReplyText.match(/```\s*([\s\S]*?)```/);
-      if (pythonMatch) {
-        pythonCode = pythonMatch[1].trim();
-        finalReplyText = finalReplyText.replace(/```python[\s\S]*?```/gi, "").replace(/```[\s\S]*?```/gi, "").trim();
-        if (!finalReplyText) finalReplyText = "جاري تنفيذ العملية...";
-        console.log("✅ [Kernel] تم استخراج كود من النص");
-      }
-    }
-
-    // 8. إذا لم يكن هناك كود، اعرض الرد كنص
-    if (!pythonCode) {
-      console.log("💬 [Kernel] وضع الدردشة (لا يوجد كود للتنفيذ).");
-      memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
-      return { reply: finalReplyText, fileName, fileBase64: null, operations: [], execution: null };
-    }
-
-    // 9. تحديد مسار الملف
-    const targetPath = ctx.filePath || fileContext.path || path.join(GENERATED_DIR, `${generateFileId()}.xlsx`);
-
-    // ============================================================
-    // 🔥 10. منع تنفيذ كود Python مع ملفات Excel
-    // ============================================================
-    const isExcelFile = targetPath && targetPath.endsWith('.xlsx');
-    const isExcelRequest = message.match(/(اكسل|excel|جدول|ملف\s*إكسل|spreadsheet|ورقة|شيت|حضور|غياب)/i);
-    
-    // إذا كان الملف Excel والطلب يتعلق بـ Excel
-    if (isExcelFile && isExcelRequest) {
-      console.log('🚫 [Kernel] منع تنفيذ كود Python مع Excel');
-
-      // ✅ رسالة مختصرة، بدون سرد الأدوات
-      const retryPrompt = `
-🚫 تم منع تنفيذ كود Python مع ملفات Excel.
-
-لديك أدوات متخصصة لمعالجة Excel مدمجة في نظامك. استخدمها بدلاً من كتابة كود بايثون.
-
-الرجاء إعادة المحاولة باستخدام الأدوات المناسبة.
-`;
-
-      const retryMessages = [
-        ...conversationMessages,
-        { role: "assistant", content: `\`\`\`python\n${pythonCode}\n\`\`\`` },
-        { role: "user", content: retryPrompt }
-      ];
-
-      const retryReply = await geminiService.chat(retryMessages, {
-        fileName: ctx.fileName || fileContext.name,
-        filePath: ctx.filePath || fileContext.path,
-        fileContext,
-        systemInstruction: systemContent,
-        tools: EXCEL_TOOLS
-      });
-
-      const retryFunctionCalls = retryReply?.functionCalls || null;
-      
-            // إذا استخدم أدوات Excel في المحاولة الثانية
-      if (retryFunctionCalls && retryFunctionCalls.length > 0) {
-        let anyRetrySuccess = false;
-        let retryMessages = [];
-        
-        for (const call of retryFunctionCalls) {
-          if (call.name && call.name.startsWith('excel_')) {
-            console.log(`🔧 [Kernel] المحاولة الثانية - معالجة أداة Excel: ${call.name}`);
-            const targetFilePath = ctx.filePath || fileContext.path;
-            
-            if (targetFilePath && fs.existsSync(targetFilePath)) {
-              excelResult = await handleExcelToolCall(call, targetFilePath);
-              if (excelResult && excelResult.success) {
-                  anyRetrySuccess = true;
-                  retryMessages.push(`✅ ${excelResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
-                  fusionMemory.storeOperation(sessionId, `excel_${call.name}`);
-              } else {
-                  retryMessages.push(`❌ فشل ${call.name}: ${excelResult?.error}`);
-              }
-            }
-          }
+        // قراءة الملف للتحميل
+        try {
+          const fileBuffer = await fs.promises.readFile(targetFilePath);
+          fileBase64 = fileBuffer.toString("base64");
+        } catch (e) {
+          console.warn("⚠️ [Kernel] خطأ في قراءة الملف النهائي:", e.message);
         }
-        
-        if (anyRetrySuccess) {
-            const targetFilePath = ctx.filePath || fileContext.path;
-            fusionMemory.storeCurrentFile(sessionId, targetFilePath);
-            fusionMemory.storeSessionMode(sessionId, "file_edit");
-            
-            try {
-                const fileBuffer = await fs.promises.readFile(targetFilePath);
-                fileBase64 = fileBuffer.toString("base64");
-            } catch (e) {}
-            
-            finalReplyText = retryMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/persistent_uploads/${path.basename(targetFilePath)})`;
-            
-            memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
-            return {
-                reply: finalReplyText,
-                fileName: ctx.fileName || fileContext.name,
-                fileBase64,
-                operations: [],
-                execution: { success: true, messages: retryMessages },
-                context: ctx
-            };
-        }
-      }
-      
-      // إذا فشل، رسالة قصيرة بدون سرد
-      finalReplyText = `⚠️ يا شريكي، لا يمكن تنفيذ كود Python مع ملفات Excel. استخدم الأدوات المتخصصة المدمجة في نظامك.`;
-      memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
-      return { reply: finalReplyText, fileName, fileBase64: null, execution: null };
-    }
 
-    // ============================================================
-    // 11. تنفيذ الكود (فقط إذا لم يكن Excel)
-    // ============================================================
-    console.log("⚡ [Kernel] تنفيذ الكود...");
-    executionResult = await executeDynamicPython(
-      pythonCode,
-      targetPath,
-      !fileContext.exists, // isNewFile
-      sessionId,
-      fileContext
-    );
+        finalReplyText = toolMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/persistent_uploads/${path.basename(targetFilePath)})`;
+        ctx.filePath = targetFilePath;
+        ctx.fileName = path.basename(targetFilePath);
 
-    // 12. معالجة النتيجة
-    if (executionResult && executionResult.success && fs.existsSync(targetPath)) {
-      console.log("✅ [Kernel] نجاح التنفيذ!");
-      
-      // تحديث الذاكرة
-      const isNewFile = !fileContext.exists;
-      fusionMemory.storeCurrentFile(sessionId, targetPath);
-      fusionMemory.storeOperation(sessionId, isNewFile ? "generate_file" : "modify_file");
-      fusionMemory.storeSessionMode(sessionId, "file_edit");
-      
-      // حفظ تاريخ التعديل
-      const historyUpdate = fusionMemory.getFileHistory(sessionId) || [];
-      const operationDesc = isNewFile ? 
-        `أنشأ ملف: ${path.basename(targetPath)}` : 
-        `عدل ملف: ${path.basename(targetPath)} - "${message.substring(0, 30)}..."`;
-      fusionMemory.storeFileHistory(sessionId, [...historyUpdate, operationDesc]);
-
-      // تحديث الفهرس
-      try {
-        const idx = await readIndexSafe();
-        const newId = generateFileId();
-        idx[newId] = {
-          fileId: newId,
-          fileName: path.basename(targetPath),
-          storedName: path.basename(targetPath),
-          storedPath: targetPath,
-          size: fs.statSync(targetPath).size,
-          uploadedAt: new Date().toISOString(),
-          type: isNewFile ? "generated" : "modified",
-          sessionId
+        memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
+        return {
+          reply: finalReplyText,
+          fileName: ctx.fileName,
+          fileBase64,
+          operations: [],
+          execution: { success: true, messages: toolMessages },
+          context: ctx
         };
-        await writeIndex(idx);
-      } catch (e) {
-        console.warn("⚠️ [Kernel] فشل تحديث الفهرس:", e.message);
+      } else {
+        finalReplyText = toolMessages.join("\n") || "⚠️ عذراً، لم تتمكن الأدوات من إتمام العملية بنجاح.";
       }
-
-      // قراءة الملف للتحميل
-      try {
-        const fileBuffer = await fs.promises.readFile(targetPath);
-        fileBase64 = fileBuffer.toString("base64");
-      } catch (e) {
-        console.warn("⚠️ [Kernel] خطأ في تحويل الملف:", e.message);
-      }
-
-      // تحديث الرد
-      if (!finalReplyText.includes('✅')) {
-        finalReplyText += `\n\n✅ تم ${isNewFile ? 'إنشاء' : 'تعديل'} الملف بنجاح يا هندسة!`;
-      }
-      finalReplyText += `\n📁 [تحميل الملف](/persistent_uploads/${path.basename(targetPath)})`;
-      
-      // تحديث السياق
-      ctx.filePath = targetPath;
-      ctx.fileName = path.basename(targetPath);
-
     } else {
-      // فشل التنفيذ - ثق بقدرة Gemini على التصحيح
-      const errorMsg = executionResult?.error || executionResult?.output || "خطأ غير معروف";
-      console.log(`❌ [Kernel] فشل التنفيذ:`, errorMsg);
-      
-      // إذا كانت هنالك محاولة متبقية، دع Gemini يصحح
-      const retryCount = ctx.retryCount || 0;
-      if (retryCount < 2) {
-        console.log("🔄 [Kernel] إعطاء فرصة لـ Gemini للتصحيح...");
-        ctx.retryCount = retryCount + 1;
-        
-        // إرجاع السياق مع الخطأ لـ Gemini
-        const errorContext = `\n\n❌ فشل التنفيذ.\nالخطأ:\n\`\`\`\n${errorMsg}\n\`\`\`\n\nالرجاء تحليل الخطأ وتقديم كود مصحح.`;
-        
-        // استدعاء self-healing
-        const corrected = await kernel(sessionId, rawMessage + "\n\n" + errorContext, ctx);
-        return corrected;
-      }
-      
-      finalReplyText += `\n\n❌ عذراً يا شريكي، واجهت عقبة:\n\`\`\`\n${String(errorMsg).substring(0, 300)}\n\`\`\``;
+      // 5. مسار المحادثة البحتة (لا توجد أدوات مستدعاة)
+      console.log("💬 [Kernel] وضع الدردشة العادية.");
     }
 
   } catch (error) {
     console.error("❌ [Kernel Exception]:", error);
-    finalReplyText = `❌ خطأ تقني: ${error.message}`;
+    finalReplyText = `❌ خطأ تقني في معالجة الطلب: ${error.message}`;
   }
 
-  // 13. حفظ السجل
   memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
 
   return {
     reply: finalReplyText,
     fileName: ctx.fileName || fileContext.name,
-    fileBase64,
+    fileBase64: null,
     operations: [],
     execution: executionResult,
     context: ctx
   };
-                                     }
+}
+
