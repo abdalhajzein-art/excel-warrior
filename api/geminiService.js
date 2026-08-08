@@ -4,6 +4,7 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { auditExecution } from "./core/execution_monitor.js";
+import { EXCEL_TOOLS } from "./core/excel_tools.js";
 
 // ============================================================
 // 📊 تعريف النماذج حسب التوثيق الرسمي
@@ -166,35 +167,40 @@ class QuotaManager {
 const quotaManager = new QuotaManager();
 
 // ============================================================
-// 🔧 تعريف الأدوات
+// 🔧 تعريف الأدوات (دمج أدوات Excel مع الأدوات الحالية)
 // ============================================================
 
-const alatheerTools = [{
-    functionDeclarations: [
-        {
-            name: "execute_python",
-            description: "تنفيذ كود بايثون لمعالجة البيانات أو إنشاء/تعديل الملفات",
-            parameters: {
-                type: "OBJECT",
-                properties: {
-                    code: { 
-                        type: "STRING", 
-                        description: "كود البايثون الكامل" 
-                    }
-                },
-                required: ["code"]
-            }
-        },
-        {
-            name: "read_file_fingerprint",
-            description: "قراءة معلومات الملف النشط (الأعمدة، البيانات)",
-            parameters: {
-                type: "OBJECT",
-                properties: {}
-            }
-        }
-    ]
-}];
+const alatheerTools = [
+    {
+        functionDeclarations: [
+            // الأدوات الحالية
+            {
+                name: "execute_python",
+                description: "تنفيذ كود بايثون لمعالجة البيانات أو إنشاء/تعديل الملفات",
+                parameters: {
+                    type: "OBJECT",
+                    properties: {
+                        code: { 
+                            type: "STRING", 
+                            description: "كود البايثون الكامل" 
+                        }
+                    },
+                    required: ["code"]
+                }
+            },
+            {
+                name: "read_file_fingerprint",
+                description: "قراءة معلومات الملف النشط (الأعمدة، البيانات)",
+                parameters: {
+                    type: "OBJECT",
+                    properties: {}
+                }
+            },
+            // 🆕 أدوات Excel المدمجة
+            ...EXCEL_TOOLS[0].functionDeclarations
+        ]
+    }
+];
 
 // ============================================================
 // 🚀 التنفيذ الديناميكي
