@@ -11,6 +11,7 @@ import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 import { executeDynamicPython, extractPreviewAsync } from "./dynamic_executor.js";
 import fusionMemory from "./fusion_memory.js";
+import { handleExcelToolCall } from "./excel_tools.js";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -244,14 +245,110 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     const functionCalls = rawReply?.functionCalls || null;
     finalReplyText = replyText;
 
-    // 6. استخراج الكود (إذا وجد)
+    // ============================================================
+    // 6. معالجة أدوات Excel (الأولوية القصوى)
+    // ============================================================
+    let excelResult = null;
+    if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
+      for (const call of functionCalls) {
+        // إذا كان الاستدعاء لأداة Excel
+        if (call.name && call.name.startsWith('excel_')) {
+          console.log(`🔧 [Kernel] معالجة أداة Excel: ${call.name}`);
+          
+          // تحديد مسار الملف
+          const targetFilePath = ctx.filePath || fileContext.path;
+          
+          if (!targetFilePath || !fs.existsSync(targetFilePath)) {
+            excelResult = { success: false, error: 'لا يوجد ملف Excel نشط. يرجى رفع ملف أولاً.' };
+            break;
+          }
+          
+          // تنفيذ الأداة
+          excelResult = await handleExcelToolCall(call, targetFilePath);
+          
+          if (excelResult && excelResult.success) {
+            finalReplyText = `✅ ${excelResult.message || 'تم التنفيذ بنجاح'}`;
+            
+            // تحديث الملف في الذاكرة
+            fusionMemory.storeCurrentFile(sessionId, targetFilePath);
+            fusionMemory.storeOperation(sessionId, `excel_${call.name}`);
+            fusionMemory.storeSessionMode(sessionId, "file_edit");
+            
+            // حفظ تاريخ التعديل
+            const historyUpdate = fusionMemory.getFileHistory(sessionId) || [];
+            const operationDesc = `عدل ملف Excel: ${call.name} - "${message.substring(0, 30)}..."`;
+            fusionMemory.storeFileHistory(sessionId, [...historyUpdate, operationDesc]);
+            
+            // تحديث الفهرس
+            try {
+              const idx = await readIndexSafe();
+              const newId = generateFileId();
+              idx[newId] = {
+                fileId: newId,
+                fileName: path.basename(targetFilePath),
+                storedName: path.basename(targetFilePath),
+                storedPath: targetFilePath,
+                size: fs.statSync(targetFilePath).size,
+                uploadedAt: new Date().toISOString(),
+                type: "modified",
+                sessionId
+              };
+              await writeIndex(idx);
+            } catch (e) {
+              console.warn("⚠️ [Kernel] فشل تحديث الفهرس:", e.message);
+            }
+            
+            // قراءة الملف للتحميل
+            try {
+              const fileBuffer = await fs.promises.readFile(targetFilePath);
+              fileBase64 = fileBuffer.toString("base64");
+            } catch (e) {
+              console.warn("⚠️ [Kernel] خطأ في تحويل الملف:", e.message);
+            }
+            
+            finalReplyText += `\n📁 [تحميل الملف](/persistent_uploads/${path.basename(targetFilePath)})`;
+            
+          } else {
+            finalReplyText = `❌ فشل: ${excelResult?.error || 'خطأ غير معروف'}`;
+          }
+          
+          // بعد معالجة أداة Excel، نخرج من الحلقة
+          break;
+        }
+      }
+    }
+    
+    // ✅ إذا تمت معالجة أداة Excel بنجاح، ارجع النتيجة مباشرة
+    if (excelResult && excelResult.success) {
+      memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
+      return {
+        reply: finalReplyText,
+        fileName: ctx.fileName || fileContext.name,
+        fileBase64,
+        operations: [],
+        execution: excelResult,
+        context: ctx
+      };
+    }
+    
+    // ⚠️ إذا فشلت أداة Excel، نعطي فرصة لـ Gemini يحاول بطريقة أخرى
+    if (excelResult && !excelResult.success) {
+      console.log(`⚠️ [Kernel] فشلت أداة Excel: ${excelResult.error}`);
+      // نستمر للتنفيذ العادي (ربما Gemini يكتب كود بايثون)
+    }
+
+    // ============================================================
+    // 7. استخراج الكود (إذا لم يتم معالجة أداة Excel)
+    // ============================================================
     let pythonCode = null;
     
     if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
       const pyCall = functionCalls.find(fc => fc.name === "execute_python" || fc.args?.code);
       if (pyCall && pyCall.args?.code) {
         pythonCode = pyCall.args.code;
-        finalReplyText = replyText || "جاري تنفيذ العملية يا شريكي...";
+        if (!finalReplyText || finalReplyText === replyText) {
+          finalReplyText = replyText || "جاري تنفيذ العملية يا شريكي...";
+        }
         console.log("✅ [Kernel] تم استلام كود من أداة execute_python");
       }
     }
@@ -268,17 +365,17 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
       }
     }
 
-    // 7. إذا لم يكن هناك كود، اعرض الرد كنص
+    // 8. إذا لم يكن هناك كود، اعرض الرد كنص
     if (!pythonCode) {
       console.log("💬 [Kernel] وضع الدردشة (لا يوجد كود للتنفيذ).");
       memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
       return { reply: finalReplyText, fileName, fileBase64: null, operations: [], execution: null };
     }
 
-    // 8. تحديد مسار الملف
+    // 9. تحديد مسار الملف
     const targetPath = ctx.filePath || fileContext.path || path.join(GENERATED_DIR, `${generateFileId()}.xlsx`);
 
-    // 9. تنفيذ الكود (مع ثقة في أن Gemini كتبه بشكل صحيح)
+    // 10. تنفيذ الكود (مع ثقة في أن Gemini كتبه بشكل صحيح)
     console.log("⚡ [Kernel] تنفيذ الكود...");
     executionResult = await executeDynamicPython(
       pythonCode,
@@ -288,7 +385,7 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
       fileContext
     );
 
-    // 10. معالجة النتيجة
+    // 11. معالجة النتيجة
     if (executionResult && executionResult.success && fs.existsSync(targetPath)) {
       console.log("✅ [Kernel] نجاح التنفيذ!");
       
@@ -333,7 +430,9 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
       }
 
       // تحديث الرد
-      finalReplyText += `\n\n✅ تم ${isNewFile ? 'إنشاء' : 'تعديل'} الملف بنجاح يا هندسة!`;
+      if (!finalReplyText.includes('✅')) {
+        finalReplyText += `\n\n✅ تم ${isNewFile ? 'إنشاء' : 'تعديل'} الملف بنجاح يا هندسة!`;
+      }
       finalReplyText += `\n📁 [تحميل الملف](/persistent_uploads/${path.basename(targetPath)})`;
       
       // تحديث السياق
@@ -367,7 +466,7 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     finalReplyText = `❌ خطأ تقني: ${error.message}`;
   }
 
-  // 11. حفظ السجل
+  // 12. حفظ السجل
   memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
 
   return {
@@ -378,4 +477,4 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     execution: executionResult,
     context: ctx
   };
-}
+                 }
