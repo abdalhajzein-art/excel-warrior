@@ -1,6 +1,6 @@
 /**
  * api/core/dynamic_executor.js – Sovereign Edition (Metadata Preprocessor & Quality Inspector)
- * 🛡️ نسخة محسنة: تمرير المسار الديناميكي عبر sys.argv لحماية الحلقة التفاعلية (Agentic Loop).
+ * 🛡️ نسخة محسنة: تمرير المسار الديناميكي، وإحباط الفشل الصامت.
  */
 
 import fs from "fs";
@@ -22,8 +22,11 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
         if (!targetFilePath)
             return resolve({ success: false, error: "مسار الملف غير صالح." });
 
-        if (!pythonCode || pythonCode.trim().length < 10)
-            return resolve({ success: false, error: "الكود قصير جداً وغير صالح." });
+        // 🔥 إحباط الفشل الصامت بقوة: إذا كان الكود فارغاً، توقف وبلّغ النظام!
+        if (!pythonCode || typeof pythonCode !== 'string' || pythonCode.trim().length < 10) {
+            console.error("❌ [Executor Error]: الكود المستلم فارغ أو قصير جداً. (فشل صامت محبط)");
+            return resolve({ success: false, error: "فشل استخراج كود البايثون من النموذج، أو أن الكود غير صالح للتنفيذ." });
+        }
 
         const dir = path.dirname(targetFilePath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -41,7 +44,6 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
             }
 
             // 🛠️ Metadata Preprocessor & Quality Inspector
-            // استلام المسار المطلق من Node.js كـ Argument لمنع أخطاء Pathing
             const safeCode = `
 import sys
 import os
@@ -49,7 +51,7 @@ import traceback
 import pandas as pd
 import openpyxl
 
-# 🛡️ المتغير السيادي الموحد للمسار (مستلم من النظام بشكل آمن - Inversion of Control)
+# 🛡️ المتغير السيادي الموحد للمسار
 if len(sys.argv) > 1:
     target_file = sys.argv[1]
 else:
@@ -87,7 +89,6 @@ print("SUCCESS: تم التنفيذ بنجاح ✓")
 
             fs.writeFileSync(scriptPath, safeCode, "utf8");
 
-            // ✅ التعديل الجوهري هنا: تمرير targetFilePath في مصفوفة الـ Arguments
             execFile(
                 PYTHON_EXEC,
                 [scriptPath, targetFilePath], 
@@ -100,7 +101,6 @@ print("SUCCESS: تم التنفيذ بنجاح ✓")
                     const hasSuccessMark = outputStr.includes("SUCCESS: تم التنفيذ بنجاح ✓");
                     const fileExistsAndValid = fs.existsSync(targetFilePath) && fs.statSync(targetFilePath).size > 0;
 
-                    // 🛡️ التحقق السيادي الدقيق: يجب أن يظهر ماركر النجاح وأن يكون الملف موجوداً وبحجم صالح
                     const hasRuntimeError = error || !hasSuccessMark || !fileExistsAndValid;
 
                     if (hasRuntimeError) {
@@ -111,7 +111,7 @@ print("SUCCESS: تم التنفيذ بنجاح ✓")
                             try { fs.unlinkSync(backupPath); } catch(e) {}
                         }
 
-                        const failureReason = stderr || (error ? error.message : null) || (!hasSuccessMark ? "فشل السكربت في الوصول لعلامة النجاح النهائية" : "الملف النتج مفقود أو فارغ");
+                        const failureReason = stderr || (error ? error.message : null) || (!hasSuccessMark ? "فشل السكربت في الوصول لعلامة النجاح النهائية (ممكن في مشكلة بالحفظ)" : "الملف النتج مفقود أو فارغ");
 
                         return resolve({
                             success: false,
