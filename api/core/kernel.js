@@ -9,7 +9,7 @@ import crypto from "crypto";
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
-import { executeDynamicPython, extractPreviewAsync } from "./dynamic_executor.js";
+import { extractPreviewAsync } from "./dynamic_executor.js";
 import fusionMemory from "./fusion_memory.js";
 import { EXCEL_TOOLS, handleExcelToolCall } from "./excel_tools.js";
 import { fileURLToPath } from "url";
@@ -65,7 +65,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   }
 
   ensureDirs();
-  console.log(`\n🚀 [Kernel] بدء معالجة جلسة: ${sessionId} \vert{} الرسالة: "${message.substring(0, 30)}..."`);
+  console.log(`\n🚀 [Kernel] بدء معالجة جلسة: ${sessionId} | الرسالة: "${message.substring(0, 30)}..."`);
 
   // 1. بناء السياق الكامل للملف
   const activeFile = ctx.activeFile || null;
@@ -137,14 +137,14 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       filePath: ctx.filePath || fileContext.path,
       fileContext,
       systemInstruction: systemContent,
-      tools: EXCEL_TOOLS  // الاعتماد الكامل على الأدوات المهيكلة
+      tools: EXCEL_TOOLS
     });
 
     finalReplyText = rawReply?.text || "";
     const functionCalls = rawReply?.functionCalls || null;
 
     // ============================================================
-    // 4. معالجة استدعاءات الأدوات (Tool Calling Handler)
+    // 4. معالجة استدعاءات الأدوات (Tool Calling Handler) المرنة
     // ============================================================
     if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
       console.log(`🔧 [Kernel] تم استلام ${functionCalls.length} أداة للتنفيذ...`);
@@ -154,8 +154,10 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       const targetFilePath = ctx.filePath || fileContext.path || path.join(GENERATED_DIR, `${generateFileId()}.xlsx`);
 
       for (const call of functionCalls) {
-        if (call.name && call.name.startsWith('excel_')) {
-          console.log(`⚙️ [Kernel] تنفيذ أداة Excel: ${call.name}`);
+        console.log(`🔍 [Kernel] اسم الأداة المستلمة: "${call.name}" | الوسائط:`, JSON.stringify(call.args));
+        
+        if (call.name) {
+          console.log(`⚙️ [Kernel] جاري تنفيذ الأداة: ${call.name}`);
           
           const toolResult = await handleExcelToolCall(call, targetFilePath);
           
@@ -163,12 +165,11 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
             anySuccess = true;
             toolMessages.push(`✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
             
-            // تحديث الذاكرة والتاريخ
-            fusionMemory.storeOperation(sessionId, `excel_${call.name}`);
+            fusionMemory.storeOperation(sessionId, call.name);
             const historyUpdate = fusionMemory.getFileHistory(sessionId) || [];
             fusionMemory.storeFileHistory(sessionId, [...historyUpdate, `تطبيق أداة: ${call.name}`]);
           } else {
-            toolMessages.push(`❌ فشل أداة ${call.name}:${toolResult?.error || 'خطأ غير معروف'}`);
+            toolMessages.push(`❌ فشل أداة ${call.name}: ${toolResult?.error || 'خطأ غير معروف'}`);
           }
         }
       }
@@ -177,7 +178,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         fusionMemory.storeCurrentFile(sessionId, targetFilePath);
         fusionMemory.storeSessionMode(sessionId, "file_edit");
 
-        // تحديث الفهرس
         try {
           const idx = await readIndexSafe();
           const newId = generateFileId();
@@ -195,7 +195,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
           console.warn("⚠️ [Kernel] فشل تحديث الفهرس:", e.message);
         }
 
-        // قراءة الملف للتحميل
         try {
           const fileBuffer = await fs.promises.readFile(targetFilePath);
           fileBase64 = fileBuffer.toString("base64");
@@ -220,7 +219,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         finalReplyText = toolMessages.join("\n") || "⚠️ عذراً، لم تتمكن الأدوات من إتمام العملية بنجاح.";
       }
     } else {
-      // 5. مسار المحادثة البحتة (لا توجد أدوات مستدعاة)
       console.log("💬 [Kernel] وضع الدردشة العادية.");
     }
 
@@ -240,4 +238,3 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     context: ctx
   };
 }
-
