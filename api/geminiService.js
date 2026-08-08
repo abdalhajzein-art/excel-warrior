@@ -167,7 +167,7 @@ class QuotaManager {
 const quotaManager = new QuotaManager();
 
 // ============================================================
-// 🔧 تعريف الأدوات (دمج أدوات Excel مع الأدوات الحالية)
+// 🔧 تعريف الأدوات (استخدام EXCEL_TOOLS مباشرة مع الأدوات الحالية)
 // ============================================================
 
 const alatheerTools = [
@@ -283,7 +283,6 @@ const geminiService = {};
 geminiService.chat = async function(messages, extra = {}) {
     const userMessage = messages.find(m => m.role === 'user')?.content || '';
     const fileName = extra.fileName || 'Active Chat';
-    const tools = extra.tools || alatheerTools;  // ✅ استقبال الأدوات من extra
 
     return executeWithSmartFallback(async (modelName, client) => {
         const systemMessages = messages.filter(m => m.role === "system");
@@ -312,11 +311,11 @@ geminiService.chat = async function(messages, extra = {}) {
             }
         }
 
-        // ✅ استخدام الأدوات الممررة
+        // ✅ استخدام alatheerTools مباشرة (ثابتة وشاملة)
         const model = client.getGenerativeModel({
             model: modelName,
             systemInstruction,
-            tools: tools,
+            tools: alatheerTools,
             generationConfig: {
                 temperature: 0.25,
                 maxOutputTokens: 32768,
