@@ -247,11 +247,16 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     const functionCalls = rawReply?.functionCalls || null;
     finalReplyText = replyText;
 
-    // ============================================================
-    // 6. معالجة أدوات Excel (الأولية القصوى)
+        // ============================================================
+    // 6. معالجة أدوات Excel (التنفيذ المتسلسل المتعدد - Parallel Tool Calling)
     // ============================================================
     let excelResult = null;
+    let anyExcelSuccess = false;
+    let excelMessages = [];
+    
     if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
+      console.log(`[Kernel] استلام ${functionCalls.length} أداة (Tools) للتنفيذ...`);
+      
       for (const call of functionCalls) {
         // إذا كان الاستدعاء لأداة Excel
         if (call.name && call.name.startsWith('excel_')) {
@@ -262,84 +267,80 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
           
           if (!targetFilePath || !fs.existsSync(targetFilePath)) {
             excelResult = { success: false, error: 'لا يوجد ملف Excel نشط. يرجى رفع ملف أولاً.' };
-            break;
+            excelMessages.push(`❌ فشل الأداة ${call.name}: ${excelResult.error}`);
+            continue; // ننتقل للأداة التالية بدلاً من التوقف
           }
           
           // تنفيذ الأداة
           excelResult = await handleExcelToolCall(call, targetFilePath);
           
           if (excelResult && excelResult.success) {
-            finalReplyText = `✅ ${excelResult.message || 'تم التنفيذ بنجاح'}`;
+            anyExcelSuccess = true;
+            excelMessages.push(`✅ ${excelResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
             
-            // تحديث الملف في الذاكرة
-            fusionMemory.storeCurrentFile(sessionId, targetFilePath);
+            // تحديث الذاكرة والـ History لكل أداة
             fusionMemory.storeOperation(sessionId, `excel_${call.name}`);
-            fusionMemory.storeSessionMode(sessionId, "file_edit");
-            
-            // حفظ تاريخ التعديل
             const historyUpdate = fusionMemory.getFileHistory(sessionId) || [];
-            const operationDesc = `عدل ملف Excel: ${call.name} - "${message.substring(0, 30)}..."`;
+            const operationDesc = `تطبيق أداة: ${call.name} - التعديلات: ${JSON.stringify(call.args)}`;
             fusionMemory.storeFileHistory(sessionId, [...historyUpdate, operationDesc]);
-            
-            // تحديث الفهرس
-            try {
-              const idx = await readIndexSafe();
-              const newId = generateFileId();
-              idx[newId] = {
-                fileId: newId,
-                fileName: path.basename(targetFilePath),
-                storedName: path.basename(targetFilePath),
-                storedPath: targetFilePath,
-                size: fs.statSync(targetFilePath).size,
-                uploadedAt: new Date().toISOString(),
-                type: "modified",
-                sessionId
-              };
-              await writeIndex(idx);
-            } catch (e) {
-              console.warn("⚠️ [Kernel] فشل تحديث الفهرس:", e.message);
-            }
-            
-            // قراءة الملف للتحميل
-            try {
-              const fileBuffer = await fs.promises.readFile(targetFilePath);
-              fileBase64 = fileBuffer.toString("base64");
-            } catch (e) {
-              console.warn("⚠️ [Kernel] خطأ في تحويل الملف:", e.message);
-            }
-            
-            finalReplyText += `\n📁 [تحميل الملف](/persistent_uploads/${path.basename(targetFilePath)})`;
-            
           } else {
-            finalReplyText = `❌ فشل: ${excelResult?.error || 'خطأ غير معروف'}`;
+             excelMessages.push(`❌ فشل الأداة ${call.name}: ${excelResult?.error || 'خطأ غير معروف'}`);
+          }
+        }
+      }
+      
+      // إذا نجحت أداة واحدة على الأقل، نقوم بعمليات الحفظ النهائية مرة واحدة
+      if (anyExcelSuccess) {
+          const targetFilePath = ctx.filePath || fileContext.path;
+          fusionMemory.storeCurrentFile(sessionId, targetFilePath);
+          fusionMemory.storeSessionMode(sessionId, "file_edit");
+          
+          // تحديث الفهرس
+          try {
+            const idx = await readIndexSafe();
+            const newId = generateFileId();
+            idx[newId] = {
+              fileId: newId,
+              fileName: path.basename(targetFilePath),
+              storedName: path.basename(targetFilePath),
+              storedPath: targetFilePath,
+              size: fs.statSync(targetFilePath).size,
+              uploadedAt: new Date().toISOString(),
+              type: "modified",
+              sessionId
+            };
+            await writeIndex(idx);
+          } catch (e) {
+            console.warn("⚠️ [Kernel] فشل تحديث الفهرس:", e.message);
           }
           
-          // بعد معالجة أداة Excel، نخرج من الحلقة
-          break;
-        }
+          // قراءة الملف للتحميل
+          try {
+            const fileBuffer = await fs.promises.readFile(targetFilePath);
+            fileBase64 = fileBuffer.toString("base64");
+          } catch (e) {
+            console.warn("⚠️ [Kernel] خطأ في تحويل الملف:", e.message);
+          }
+          
+          finalReplyText = excelMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/persistent_uploads/${path.basename(targetFilePath)})`;
+      } else if (excelMessages.length > 0) {
+          finalReplyText = excelMessages.join("\n");
       }
     }
     
-    // ✅ إذا تمت معالجة أداة Excel بنجاح، ارجع النتيجة مباشرة
-    if (excelResult && excelResult.success) {
+    // ✅ إذا تمت معالجة أدوات Excel (بنجاح واحدة على الأقل)، ارجع النتيجة
+    if (anyExcelSuccess) {
       memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
       return {
         reply: finalReplyText,
         fileName: ctx.fileName || fileContext.name,
         fileBase64,
         operations: [],
-        execution: excelResult,
+        execution: { success: true, messages: excelMessages },
         context: ctx
       };
     }
-    
-    // ⚠️ إذا فشلت أداة Excel، نعطي فرصة لـ Gemini يحاول بطريقة أخرى
-    if (excelResult && !excelResult.success) {
-      console.log(`⚠️ [Kernel] فشلت أداة Excel: ${excelResult.error}`);
-      // نستمر للتنفيذ العادي (ربما Gemini يكتب كود بايثون)
-    }
 
-    // ============================================================
     // 7. استخراج الكود (إذا لم يتم معالجة أداة Excel)
     // ============================================================
     let pythonCode = null;
@@ -412,8 +413,11 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
 
       const retryFunctionCalls = retryReply?.functionCalls || null;
       
-      // إذا استخدم أدوات Excel في المحاولة الثانية
+            // إذا استخدم أدوات Excel في المحاولة الثانية
       if (retryFunctionCalls && retryFunctionCalls.length > 0) {
+        let anyRetrySuccess = false;
+        let retryMessages = [];
+        
         for (const call of retryFunctionCalls) {
           if (call.name && call.name.startsWith('excel_')) {
             console.log(`🔧 [Kernel] المحاولة الثانية - معالجة أداة Excel: ${call.name}`);
@@ -422,31 +426,37 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
             if (targetFilePath && fs.existsSync(targetFilePath)) {
               excelResult = await handleExcelToolCall(call, targetFilePath);
               if (excelResult && excelResult.success) {
-                finalReplyText = `✅ ${excelResult.message || 'تم التنفيذ بنجاح'}`;
-                
-                fusionMemory.storeCurrentFile(sessionId, targetFilePath);
-                fusionMemory.storeOperation(sessionId, `excel_${call.name}`);
-                fusionMemory.storeSessionMode(sessionId, "file_edit");
-                
-                try {
-                  const fileBuffer = await fs.promises.readFile(targetFilePath);
-                  fileBase64 = fileBuffer.toString("base64");
-                } catch (e) {}
-                
-                finalReplyText += `\n📁 [تحميل الملف](/persistent_uploads/${path.basename(targetFilePath)})`;
-                
-                memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
-                return {
-                  reply: finalReplyText,
-                  fileName: ctx.fileName || fileContext.name,
-                  fileBase64,
-                  operations: [],
-                  execution: excelResult,
-                  context: ctx
-                };
+                  anyRetrySuccess = true;
+                  retryMessages.push(`✅ ${excelResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
+                  fusionMemory.storeOperation(sessionId, `excel_${call.name}`);
+              } else {
+                  retryMessages.push(`❌ فشل ${call.name}: ${excelResult?.error}`);
               }
             }
           }
+        }
+        
+        if (anyRetrySuccess) {
+            const targetFilePath = ctx.filePath || fileContext.path;
+            fusionMemory.storeCurrentFile(sessionId, targetFilePath);
+            fusionMemory.storeSessionMode(sessionId, "file_edit");
+            
+            try {
+                const fileBuffer = await fs.promises.readFile(targetFilePath);
+                fileBase64 = fileBuffer.toString("base64");
+            } catch (e) {}
+            
+            finalReplyText = retryMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/persistent_uploads/${path.basename(targetFilePath)})`;
+            
+            memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
+            return {
+                reply: finalReplyText,
+                fileName: ctx.fileName || fileContext.name,
+                fileBase64,
+                operations: [],
+                execution: { success: true, messages: retryMessages },
+                context: ctx
+            };
         }
       }
       
@@ -560,4 +570,4 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     execution: executionResult,
     context: ctx
   };
-                                                     }
+                                     }
