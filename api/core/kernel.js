@@ -1,6 +1,7 @@
 /**
  * api/core/kernel.js – Trusting Gemini's Intelligence
  * 🧠 بدلاً من التحكم الصارم، نثق بذكاء Gemini ونقدم له السياق الكامل
+ * 🔥 منع تنفيذ كود Python مع ملفات Excel - إجبار على استخدام الأدوات
  */
 
 import fs from "fs";
@@ -247,7 +248,7 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     finalReplyText = replyText;
 
     // ============================================================
-    // 6. معالجة أدوات Excel (الأولوية القصوى)
+    // 6. معالجة أدوات Excel (الأولية القصوى)
     // ============================================================
     let excelResult = null;
     if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
@@ -376,7 +377,88 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     // 9. تحديد مسار الملف
     const targetPath = ctx.filePath || fileContext.path || path.join(GENERATED_DIR, `${generateFileId()}.xlsx`);
 
-    // 10. تنفيذ الكود (مع ثقة في أن Gemini كتبه بشكل صحيح)
+    // ============================================================
+    // 🔥 10. منع تنفيذ كود Python مع ملفات Excel
+    // ============================================================
+    const isExcelFile = targetPath && targetPath.endsWith('.xlsx');
+    const isExcelRequest = message.match(/(اكسل|excel|جدول|ملف\s*إكسل|spreadsheet|ورقة|شيت|حضور|غياب)/i);
+    
+    // إذا كان الملف Excel والطلب يتعلق بـ Excel
+    if (isExcelFile && isExcelRequest) {
+      console.log('🚫 [Kernel] منع تنفيذ كود Python مع Excel');
+
+      // ✅ رسالة مختصرة، بدون سرد الأدوات
+      const retryPrompt = `
+🚫 تم منع تنفيذ كود Python مع ملفات Excel.
+
+لديك أدوات متخصصة لمعالجة Excel مدمجة في نظامك. استخدمها بدلاً من كتابة كود بايثون.
+
+الرجاء إعادة المحاولة باستخدام الأدوات المناسبة.
+`;
+
+      const retryMessages = [
+        ...conversationMessages,
+        { role: "assistant", content: `\`\`\`python\n${pythonCode}\n\`\`\`` },
+        { role: "user", content: retryPrompt }
+      ];
+
+      const retryReply = await geminiService.chat(retryMessages, {
+        fileName: ctx.fileName || fileContext.name,
+        filePath: ctx.filePath || fileContext.path,
+        fileContext,
+        systemInstruction: systemContent,
+        tools: EXCEL_TOOLS
+      });
+
+      const retryFunctionCalls = retryReply?.functionCalls || null;
+      
+      // إذا استخدم أدوات Excel في المحاولة الثانية
+      if (retryFunctionCalls && retryFunctionCalls.length > 0) {
+        for (const call of retryFunctionCalls) {
+          if (call.name && call.name.startsWith('excel_')) {
+            console.log(`🔧 [Kernel] المحاولة الثانية - معالجة أداة Excel: ${call.name}`);
+            const targetFilePath = ctx.filePath || fileContext.path;
+            
+            if (targetFilePath && fs.existsSync(targetFilePath)) {
+              excelResult = await handleExcelToolCall(call, targetFilePath);
+              if (excelResult && excelResult.success) {
+                finalReplyText = `✅ ${excelResult.message || 'تم التنفيذ بنجاح'}`;
+                
+                fusionMemory.storeCurrentFile(sessionId, targetFilePath);
+                fusionMemory.storeOperation(sessionId, `excel_${call.name}`);
+                fusionMemory.storeSessionMode(sessionId, "file_edit");
+                
+                try {
+                  const fileBuffer = await fs.promises.readFile(targetFilePath);
+                  fileBase64 = fileBuffer.toString("base64");
+                } catch (e) {}
+                
+                finalReplyText += `\n📁 [تحميل الملف](/persistent_uploads/${path.basename(targetFilePath)})`;
+                
+                memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
+                return {
+                  reply: finalReplyText,
+                  fileName: ctx.fileName || fileContext.name,
+                  fileBase64,
+                  operations: [],
+                  execution: excelResult,
+                  context: ctx
+                };
+              }
+            }
+          }
+        }
+      }
+      
+      // إذا فشل، رسالة قصيرة بدون سرد
+      finalReplyText = `⚠️ يا شريكي، لا يمكن تنفيذ كود Python مع ملفات Excel. استخدم الأدوات المتخصصة المدمجة في نظامك.`;
+      memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
+      return { reply: finalReplyText, fileName, fileBase64: null, execution: null };
+    }
+
+    // ============================================================
+    // 11. تنفيذ الكود (فقط إذا لم يكن Excel)
+    // ============================================================
     console.log("⚡ [Kernel] تنفيذ الكود...");
     executionResult = await executeDynamicPython(
       pythonCode,
@@ -386,7 +468,7 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
       fileContext
     );
 
-    // 11. معالجة النتيجة
+    // 12. معالجة النتيجة
     if (executionResult && executionResult.success && fs.existsSync(targetPath)) {
       console.log("✅ [Kernel] نجاح التنفيذ!");
       
@@ -467,7 +549,7 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     finalReplyText = `❌ خطأ تقني: ${error.message}`;
   }
 
-  // 12. حفظ السجل
+  // 13. حفظ السجل
   memory.appendSovereignHistory(sessionId, { role: "assistant", content: finalReplyText });
 
   return {
@@ -478,4 +560,4 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     execution: executionResult,
     context: ctx
   };
-}
+                                                     }
