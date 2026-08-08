@@ -11,7 +11,7 @@ import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 import { executeDynamicPython, extractPreviewAsync } from "./dynamic_executor.js";
 import fusionMemory from "./fusion_memory.js";
-import { handleExcelToolCall } from "./excel_tools.js";
+import { EXCEL_TOOLS, handleExcelToolCall } from "./excel_tools.js";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -238,7 +238,8 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
       fileName: ctx.fileName || fileContext.name,
       filePath: ctx.filePath || fileContext.path,
       fileContext,
-      systemInstruction: systemContent
+      systemInstruction: systemContent,
+      tools: EXCEL_TOOLS  // ✅ تمرير أدوات Excel
     });
 
     const replyText = rawReply?.text || "";
@@ -477,4 +478,4 @@ ${fileContext.history.length > 0 ? fileContext.history.map((h, i) => `${i+1}. ${
     execution: executionResult,
     context: ctx
   };
-                 }
+}
