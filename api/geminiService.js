@@ -1,7 +1,7 @@
 /**
  * api/geminiService.js – الإصدار المعزز للصلابة (Alatheer AI Suite)
- * - يدعم تدوير المفاتيح (Key Rotation) عند حدوث Rate Limit.
- * - متوافق بالكامل مع معمارية ES Modules.
+ * - يدعم تدوير المفاتيح (Key Rotation) والتنفيذ الذكي.
+ * - يدعم الاستيراد الافتراضي (Default) والمسجّل (Named).
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -11,7 +11,6 @@ import { EXCEL_TOOLS } from "./core/excel_tools.js";
 const API_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
     .split(",").map(k => k.trim()).filter(Boolean);
 
-// مؤشر المفتاح الحالي للتدوير
 let currentKeyIndex = 0;
 
 const MODEL_PRIORITY = [
@@ -42,18 +41,12 @@ const alatheerTools = [
     }
 ];
 
-/**
- * دالة للحصول على المفتاح التالي في دورة التدوير (Key Rotation)
- */
 export function getNextApiKey() {
     if (API_KEYS.length === 0) return null;
     currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
     return API_KEYS[currentKeyIndex];
 }
 
-/**
- * دالة التنفيذ الذكي مع التدوير التلقائي واستراتيجية Fallback بين النماذج
- */
 export async function executeWithSmartFallback(fn, userMessage = '', fileName = '') {
     const errors = [];
     
@@ -61,10 +54,9 @@ export async function executeWithSmartFallback(fn, userMessage = '', fileName = 
         throw new Error("❌ لم يتم العثور على أي مفاتيح Gemini API صالحة في متغيرات البيئة.");
     }
 
-    // محاولة التنفيذ عبر النماذج والمفاتيح
     for (const modelName of MODEL_PRIORITY) {
         let attempt = 0;
-        const maxRetries = 3; // عدد المحاولات لكل نموذج لضمان الاستقرار
+        const maxRetries = 3;
 
         while (attempt < maxRetries) {
             attempt++;
@@ -82,24 +74,20 @@ export async function executeWithSmartFallback(fn, userMessage = '', fileName = 
             } catch (err) {
                 const errString = err.toString().toLowerCase();
                 
-                // 429 Rate Limit: التبديل الفوري للمفتاح
                 if (err.status === 429 || errString.includes('429') || errString.includes('quota') || errString.includes('resource_exhausted')) {
                     console.log(`⚠️ [${modelName}] استنفد المفتاح الحالي، التبديل لمفتاح جديد...`);
                     getNextApiKey(); 
                     continue; 
                 } 
-                
-                // خطأ شبكة: انتظار ثم إعادة محاولة
                 else if (errString.includes('fetch failed') || errString.includes('network') || errString.includes('timeout')) {
                     console.log(`📡 [${modelName}] خطأ شبكة مؤقت، إعادة المحاولة بعد 3 ثواني...`);
                     await new Promise(resolve => setTimeout(resolve, 3000));
                     continue; 
                 } 
-                
                 else {
                     console.log(`❌ [${modelName}] فشل: ${err.message?.slice(0, 50)}`);
                     errors.push(`[${modelName}] ERROR: ${err.message?.slice(0, 50)}`);
-                    break; // الانتقال للنموذج التالي في القائمة
+                    break;
                 }
             }
         }
@@ -109,17 +97,50 @@ export async function executeWithSmartFallback(fn, userMessage = '', fileName = 
 }
 
 /**
- * دالة المحادثة الأساسية المتكاملة مع النظام
+ * دالة المحادثة المتوافقة تماماً مع بنية kernel.js
  */
-export async function processChat(prompt, history = []) {
+export async function chat(messages, options = {}) {
     return await executeWithSmartFallback(async (modelName, client, tools) => {
+        let systemInstruction = options.systemInstruction || "";
+        let history = [];
+        let currentMessage = "";
+
+        if (Array.isArray(messages)) {
+            const nonSystem = messages.filter(m => m.role !== 'system');
+            const sysMsg = messages.find(m => m.role === 'system');
+            if (sysMsg) systemInstruction = sysMsg.content;
+
+            if (nonSystem.length > 0) {
+                currentMessage = nonSystem[nonSystem.length - 1].content;
+                history = nonSystem.slice(0, -1).map(m => ({
+                    role: m.role === 'assistant' ? 'model' : 'user',
+                    parts: [{ text: m.content }]
+                }));
+            }
+        } else {
+            currentMessage = messages;
+        }
+
         const model = client.getGenerativeModel({ 
             model: modelName,
-            tools: tools
+            systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+            tools: options.tools || tools
         });
 
         const chatSession = model.startChat({ history: history });
-        const response = await chatSession.sendMessage(prompt);
-        return await response.response.text();
-    }, prompt);
+        const result = await chatSession.sendMessage(currentMessage);
+        const response = await result.response;
+        
+        return {
+            text: response.text(),
+            functionCalls: typeof response.functionCalls === 'function' ? response.functionCalls() : (response.functionCalls || null)
+        };
+    }, messages);
 }
+
+// تصدير افتراضي يجمع الكل لضمان عدم حدوث أي خطأ في الـ Import
+export default {
+    chat,
+    executeWithSmartFallback,
+    getNextApiKey
+};
