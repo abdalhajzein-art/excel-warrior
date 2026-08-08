@@ -1,155 +1,26 @@
 /**
- * api/geminiService.js – الإصدار المتوافق مع الجيل الثالث للتوثيق الرسمي (Alatheer AI Suite)
+ * api/geminiService.js – الإصدار المعزز للصلابة (Alatheer AI Suite)
+ * - تمت إزالة إدارة الحصص الوهمية.
+ * - التركيز على إعادة المحاولة الذكية عند فشل الاتصال.
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { auditExecution } from "./core/execution_monitor.js";
 import { EXCEL_TOOLS } from "./core/excel_tools.js";
 
-// ============================================================
-// 📊 تعريف النماذج حسب التوثيق الرسمي (Gemini 3 Family)
-// ============================================================
-
+// استخراج المفاتيح
 const API_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
     .split(",").map(k => k.trim()).filter(Boolean);
 
-// 🎯 النماذج المدعومة مع حصصها الفعلية بناءً على التوثيق الحديث
-const MODEL_CONFIG = {
-    // 🥇 الخيار الأقوى للحصص العالية والمهام الخفيفة
-    'gemini-3.5-flash-lite': {
-        daily: 60,
-        minute: 15,
-        priority: 1,
-        description: 'أعلى حصة مجانية - للإنتاجية العالية والمهام السريعة'
-    },
-        
-    // 🥈 الأداء الفائق الموازن
-    'gemini-3.6-flash': {
-        daily: 20,
-        minute: 5,
-        priority: 2,
-        description: 'أداء فائق يضاهي النماذج الكبرى بأقل تكلفة'
-    },
-
-    // 🥉 خيار إضافي ممتاز
-    'gemini-3-flash-preview': {
-        daily: 20,
-        minute: 5,
-        priority: 3,
-        description: 'أداء رائد بمستوى النماذج الكبرى'
-    },
-    
-    // ❌ نماذج متقدمة / مدفوعة أو ذات طبيعة خاصة
-    'gemini-3.1-pro-preview': {
-        daily: 0,
-        minute: 0,
-        priority: 99,
-        paid: true,
-        description: 'نموذج الاستدلال المتطور والفهم المتعدد الوسائط (مدفوع/معاين)'
-    },
-};
-
-// ترتيب النماذج حسب الأولوية (الأعلى حصة أولاً)
-const MODEL_PRIORITY = Object.keys(MODEL_CONFIG)
-    .filter(name => !MODEL_CONFIG[name].paid)
-    .sort((a, b) => MODEL_CONFIG[a].priority - MODEL_CONFIG[b].priority);
-
-console.log('🚀 [GeminiService] ترتيب النماذج حسب الحصة:');
-MODEL_PRIORITY.forEach((model, i) => {
-    const config = MODEL_CONFIG[model];
-    console.log(`  ${i+1}. ${model} (${config.daily} طلب/يوم) - ${config.description}`);
-});
+// ترتيب النماذج للاستخدام (بدون حسابات حصص)
+const MODEL_PRIORITY = [
+    'gemini-3.5-flash-lite',
+    'gemini-3.6-flash',
+    'gemini-3-flash-preview'
+];
 
 // ============================================================
-// 🛡️ نظام إدارة الحصص
-// ============================================================
-
-class QuotaManager {
-    constructor() {
-        this.usage = new Map();
-        this.dailyReset = new Date().toDateString();
-    }
-
-    resetDailyIfNeeded() {
-        const today = new Date().toDateString();
-        if (today !== this.dailyReset) {
-            this.usage.clear();
-            this.dailyReset = today;
-            console.log(`🔄 [QuotaManager] إعادة ضبط الحصص - ${today}`);
-        }
-    }
-
-    getAvailableKey(modelName) {
-        this.resetDailyIfNeeded();
-        
-        const config = MODEL_CONFIG[modelName];
-        if (!config || config.paid) {
-            return null; // نموذج مدفوع أو غير معروف
-        }
-
-        // ترتيب المفاتيح حسب الاستخدام
-        const sortedKeys = API_KEYS
-            .map((key, index) => {
-                const usageKey = `${key}_${modelName}`;
-                const usage = this.usage.get(usageKey) || 0;
-                return { key, index, usage };
-            })
-            .sort((a, b) => a.usage - b.usage);
-
-        // ابحث عن مفتاح لم يستنفذ حصته
-        for (const keyInfo of sortedKeys) {
-            if (keyInfo.usage < config.daily) {
-                const usageKey = `${keyInfo.key}_${modelName}`;
-                this.usage.set(usageKey, (this.usage.get(usageKey) || 0) + 1);
-                
-                return {
-                    key: keyInfo.key,
-                    index: keyInfo.index,
-                    remaining: config.daily - keyInfo.usage - 1,
-                    total: config.daily
-                };
-            }
-        }
-
-        return null; // جميع المفاتيح استنفذت
-    }
-
-    getReport() {
-        this.resetDailyIfNeeded();
-        const report = {
-            date: this.dailyReset,
-            models: {}
-        };
-
-        for (const modelName of MODEL_PRIORITY) {
-            const config = MODEL_CONFIG[modelName];
-            const modelUsage = {};
-            let totalUsage = 0;
-
-            for (let i = 0; i < API_KEYS.length; i++) {
-                const key = API_KEYS[i];
-                const usageKey = `${key}_${modelName}`;
-                const usage = this.usage.get(usageKey) || 0;
-                modelUsage[`key_${i+1}`] = usage;
-                totalUsage += usage;
-            }
-
-            report.models[modelName] = {
-                dailyLimit: config.daily,
-                totalUsed: totalUsage,
-                remaining: config.daily - totalUsage,
-                keys: modelUsage
-            };
-        }
-
-        return report;
-    }
-}
-
-const quotaManager = new QuotaManager();
-
-// ============================================================
-// 🔧 تعريف الأدوات
+// 🔧 تعريف الأدوات (التي يحتاجها الأثير للعمل)
 // ============================================================
 
 const alatheerTools = [
@@ -160,22 +31,14 @@ const alatheerTools = [
                 description: "تنفيذ كود بايثون لمعالجة البيانات أو إنشاء/تعديل الملفات",
                 parameters: {
                     type: "OBJECT",
-                    properties: {
-                        code: { 
-                            type: "STRING", 
-                            description: "كود البايثون الكامل" 
-                        }
-                    },
+                    properties: { code: { type: "STRING" } },
                     required: ["code"]
                 }
             },
             {
                 name: "read_file_fingerprint",
-                description: "قراءة معلومات الملف النشط (الأعمدة، البيانات)",
-                parameters: {
-                    type: "OBJECT",
-                    properties: {}
-                }
+                description: "قراءة معلومات الملف النشط",
+                parameters: { type: "OBJECT", properties: {} }
             },
             ...(EXCEL_TOOLS && EXCEL_TOOLS[0] ? EXCEL_TOOLS[0].functionDeclarations : [])
         ]
@@ -183,66 +46,56 @@ const alatheerTools = [
 ];
 
 // ============================================================
-// 🚀 التنفيذ الديناميكي
+// 🚀 التنفيذ الذكي مع المرونة الشبكية
 // ============================================================
 
 async function executeWithSmartFallback(fn, userMessage = '', fileName = '') {
-    let lastError = null;
     const errors = [];
+    
+    // استخدام مفتاح واحد بشكل دوري أو ثابت (حسب الرغبة) - هنا نأخذ المفتاح الأول المتاح
+    const apiKey = API_KEYS[0]; 
 
     for (const modelName of MODEL_PRIORITY) {
-        const config = MODEL_CONFIG[modelName];
-        const keyInfo = quotaManager.getAvailableKey(modelName);
-        
-        if (!keyInfo) {
-            console.log(`⏭️ [${modelName}] لا يوجد مفتاح متاح (الحصة: ${config.daily} طلب/يوم)`);
-            continue;
-        }
+        let attempt = 0;
+        const maxRetries = 2; // إعادة محاولة للشبكة فقط
 
-        try {
-            console.log(`🔄 [${modelName}] محاولة | المفتاح #${keyInfo.index+1} | متبقي: ${keyInfo.remaining}/${keyInfo.total}`);
-            
-            const client = new GoogleGenerativeAI(keyInfo.key);
-            const result = await fn(modelName, client);
-            
-            console.log(`✅ [${modelName}] نجاح التنفيذ!`);
-            return result;
-
-        } catch (err) {
-            lastError = err;
-            const errString = err.toString().toLowerCase();
-            const isQuota = errString.includes('quota') || err.status === 429 || errString.includes('too many requests');
-            
-            if (isQuota) {
-                const usageKey = `${keyInfo.key}_${modelName}`;
-                quotaManager.usage.set(usageKey, config.daily);
-                console.log(`⚠️ [${modelName}] استنفد الحصة، الانتقال للنموذج التالي...`);
-                errors.push(`[${modelName}] QUOTA: ${err.message?.slice(0, 80)}`);
-            } else {
-                console.log(`⚠️ [${modelName}] خطأ مؤقت: ${err.message?.slice(0, 80)}`);
-                errors.push(`[${modelName}] ERROR: ${err.message?.slice(0, 80)}`);
+        while (attempt < maxRetries) {
+            attempt++;
+            try {
+                console.log(`🔄 [${modelName}] محاولة (${attempt}/${maxRetries})...`);
                 
-                if (errString.includes('network') || errString.includes('timeout') || errString.includes('fetch failed')) {
-                    console.log(`🔄 [${modelName}] إعادة المحاولة بعد 2 ثانية...`);
+                const client = new GoogleGenerativeAI(apiKey);
+                const result = await fn(modelName, client);
+                
+                console.log(`✅ [${modelName}] نجاح.`);
+                return result;
+
+            } catch (err) {
+                const errString = err.toString().toLowerCase();
+                
+                // التمييز بين أخطاء الـ API (Quota/Rate Limit) وأخطاء الشبكة
+                const isRateLimit = errString.includes('quota') || err.status === 429 || errString.includes('resource_exhausted');
+                const isNetworkError = errString.includes('fetch failed') || errString.includes('network') || errString.includes('timeout') || errString.includes('error fetching');
+
+                if (isRateLimit) {
+                    console.log(`⚠️ [${modelName}] تجاوز حد الاستخدام (Rate Limited)، الانتقال للنموذج التالي.`);
+                    errors.push(`[${modelName}] RATE_LIMIT`);
+                    break; // الانتقال للنموذج التالي
+                } 
+                else if (isNetworkError && attempt < maxRetries) {
+                    console.log(`📡 [${modelName}] خطأ شبكة مؤقت، إعادة المحاولة بعد 2 ثانية...`);
                     await new Promise(resolve => setTimeout(resolve, 2000));
-                    try {
-                        const client = new GoogleGenerativeAI(keyInfo.key);
-                        const result = await fn(modelName, client);
-                        console.log(`✅ [${modelName}] نجاح بعد إعادة المحاولة!`);
-                        return result;
-                    } catch (retryErr) {
-                        console.log(`❌ [${modelName}] فشلت إعادة المحاولة`);
-                        errors.push(`[${modelName}] RETRY FAILED: ${retryErr.message?.slice(0, 80)}`);
-                    }
+                    continue; 
+                } 
+                else {
+                    console.log(`❌ [${modelName}] فشل غير متوقع: ${err.message?.slice(0, 50)}`);
+                    errors.push(`[${modelName}] ERROR: ${err.message?.slice(0, 50)}`);
+                    break; // الانتقال للنموذج التالي
                 }
             }
         }
     }
 
-    console.error(`\n❌ [GeminiService] فشلت جميع النماذج (${MODEL_PRIORITY.length})`);
-    const report = quotaManager.getReport();
-    console.log('📊 [QuotaReport]:', JSON.stringify(report, null, 2));
-    
     throw new Error(`❌ فشل جميع النماذج. الأخطاء: ${errors.join(' | ')}`);
 }
 
@@ -290,60 +143,27 @@ geminiService.chat = async function(messages, extra = {}) {
         const result = await chat.sendMessage(lastUserMessage || "مرحبا");
         const response = await result.response;
 
+        // معالجة استخراج الدوال
         let functionCalls = null;
-        try {
-            if (typeof response.functionCalls === 'function') {
-                functionCalls = response.functionCalls();
-            } else if (response.functionCalls) {
-                functionCalls = response.functionCalls;
-            } else if (response.candidates?.[0]?.content?.parts) {
-                const parts = response.candidates[0].content.parts;
-                const fcPart = parts.find(p => p.functionCall);
-                if (fcPart) functionCalls = [fcPart.functionCall];
-            }
-        } catch (e) {}
-
-        let textReply = "";
-        try {
-            if (response.text && typeof response.text === 'function') {
-                textReply = response.text();
-            }
-        } catch (e) {}
+        if (response.functionCalls) functionCalls = response.functionCalls;
+        else if (response.candidates?.[0]?.content?.parts) {
+            const fcPart = response.candidates[0].content.parts.find(p => p.functionCall);
+            if (fcPart) functionCalls = [fcPart.functionCall];
+        }
 
         auditExecution({
-            action: functionCalls && functionCalls.length > 0 ? "llm_tool_call" : "llm_chat",
+            action: functionCalls ? "llm_tool_call" : "llm_chat",
             target: fileName,
-            usage: response.usageMetadata || null,
             model: modelName
         });
 
         return {
-            text: textReply,
-            functionCalls: functionCalls || null,
+            text: response.text(),
+            functionCalls: functionCalls,
             modelUsed: modelName
         };
     }, userMessage, fileName);
 };
 
-geminiService.getQuotaReport = function() {
-    return quotaManager.getReport();
-};
-
-geminiService.diagnose = function() {
-    console.log('\n🔍 [Diagnostic] تقرير النظام:');
-    const report = quotaManager.getReport();
-    console.log(`📅 التاريخ: ${report.date}`);
-    console.log('📊 النماذج المتاحة:');
-    
-    let available = 0;
-    for (const [model, data] of Object.entries(report.models)) {
-        const status = data.remaining > 0 ? '✅' : '❌';
-        console.log(`  ${status} ${model}: ${data.remaining}/${data.dailyLimit} طلب متبقي`);
-        if (data.remaining > 0) available++;
-    }
-    
-    console.log(`\n📈 الإجمالي: ${available} نموذج متاح`);
-    return report;
-};
-
 export default geminiService;
+
