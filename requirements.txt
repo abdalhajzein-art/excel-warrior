@@ -21,4 +21,4 @@ defusedxml>=0.7.1
 oletools>=0.60.2
 
 # ✅ Aspose.Cells FOSS - معالج Excel احترافي
-aspose-cells-foss==24.6.0
+aspose-cells-foss==26.7.0
