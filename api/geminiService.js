@@ -1,5 +1,5 @@
 /**
- * api/geminiService.js – الإصدار المتوافق مع التوثيق الرسمي
+ * api/geminiService.js – الإصدار المحسن والمستقر (Alatheer AI Suite)
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -15,24 +15,18 @@ const API_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "
 
 // 🎯 النماذج المدعومة مع حصصها الفعلية
 const MODEL_CONFIG = {
-    // 🥇 أفضل الخيارات المجانية
-    'gemini-3.5-flash-lite': {
+    'gemini-1.5-flash': { // أو النماذج المعتمدة لديك
         daily: 60,
         minute: 15,
         priority: 1,
         description: 'أعلى حصة مجانية - للمهام الخفيفة'
     },
-        
-    // 🥈 خيارات متوسطة
-    'gemini-3.6-flash': {
+    'gemini-1.5-pro': {
         daily: 20,
         minute: 5,
         priority: 2,
         description: 'أفضل توازن بين القوة والحصة'
     },
-    
-    
-    // ❌ نماذج مدفوعة (لا تستخدمها إلا كحل أخير)
     'gemini-3.1-pro-preview': {
         daily: 0,
         minute: 0,
@@ -76,11 +70,8 @@ class QuotaManager {
         this.resetDailyIfNeeded();
         
         const config = MODEL_CONFIG[modelName];
-        if (!config || config.paid) {
-            return null; // نموذج مدفوع أو غير معروف
-        }
+        if (!config || config.paid) return null;
 
-        // ترتيب المفاتيح حسب الاستخدام
         const sortedKeys = API_KEYS
             .map((key, index) => {
                 const usageKey = `${key}_${modelName}`;
@@ -89,7 +80,6 @@ class QuotaManager {
             })
             .sort((a, b) => a.usage - b.usage);
 
-        // ابحث عن مفتاح لم يستنفذ حصته
         for (const keyInfo of sortedKeys) {
             if (keyInfo.usage < config.daily) {
                 const usageKey = `${keyInfo.key}_${modelName}`;
@@ -103,16 +93,12 @@ class QuotaManager {
                 };
             }
         }
-
-        return null; // جميع المفاتيح استنفذت
+        return null;
     }
 
     getReport() {
         this.resetDailyIfNeeded();
-        const report = {
-            date: this.dailyReset,
-            models: {}
-        };
+        const report = { date: this.dailyReset, models: {} };
 
         for (const modelName of MODEL_PRIORITY) {
             const config = MODEL_CONFIG[modelName];
@@ -134,7 +120,6 @@ class QuotaManager {
                 keys: modelUsage
             };
         }
-
         return report;
     }
 }
@@ -142,23 +127,19 @@ class QuotaManager {
 const quotaManager = new QuotaManager();
 
 // ============================================================
-// 🔧 تعريف الأدوات (استخدام EXCEL_TOOLS مباشرة مع الأدوات الحالية)
+// 🔧 تعريف الأدوات
 // ============================================================
 
 const alatheerTools = [
     {
         functionDeclarations: [
-            // الأدوات الحالية
             {
                 name: "execute_python",
                 description: "تنفيذ كود بايثون لمعالجة البيانات أو إنشاء/تعديل الملفات",
                 parameters: {
                     type: "OBJECT",
                     properties: {
-                        code: { 
-                            type: "STRING", 
-                            description: "كود البايثون الكامل" 
-                        }
+                        code: { type: "STRING", description: "كود البايثون الكامل" }
                     },
                     required: ["code"]
                 }
@@ -166,31 +147,25 @@ const alatheerTools = [
             {
                 name: "read_file_fingerprint",
                 description: "قراءة معلومات الملف النشط (الأعمدة، البيانات)",
-                parameters: {
-                    type: "OBJECT",
-                    properties: {}
-                }
+                parameters: { type: "OBJECT", properties: {} }
             },
-            // 🆕 أدوات Excel المدمجة
-            ...EXCEL_TOOLS[0].functionDeclarations
+            ...(EXCEL_TOOLS && EXCEL_TOOLS[0] ? EXCEL_TOOLS[0].functionDeclarations : [])
         ]
     }
 ];
 
 // ============================================================
-// 🚀 التنفيذ الديناميكي
+// 🚀 التنفيذ الديناميكي الذكي
 // ============================================================
 
 async function executeWithSmartFallback(fn, userMessage = '', fileName = '') {
     let lastError = null;
     const errors = [];
 
-    // 🔥 جرب النماذج حسب الأولوية
     for (const modelName of MODEL_PRIORITY) {
         const config = MODEL_CONFIG[modelName];
-        
-        // الحصول على مفتاح متاح
         const keyInfo = quotaManager.getAvailableKey(modelName);
+        
         if (!keyInfo) {
             console.log(`⏭️ [${modelName}] لا يوجد مفتاح متاح (الحصة: ${config.daily} طلب/يوم)`);
             continue;
@@ -202,51 +177,45 @@ async function executeWithSmartFallback(fn, userMessage = '', fileName = '') {
             const client = new GoogleGenerativeAI(keyInfo.key);
             const result = await fn(modelName, client);
             
-            console.log(`✅ [${modelName}] نجاح!`);
+            console.log(`✅ [${modelName}] نجاح التنفيذ!`);
             return result;
 
         } catch (err) {
             lastError = err;
-            const isQuota = err.message?.includes('quota') || err.status === 429;
+            const errString = err.toString().toLowerCase();
+            const isQuota = errString.includes('quota') || err.status === 429 || errString.includes('too many requests');
             
             if (isQuota) {
-                // استنفذ الحصة - سجلها وانتقل للنموذج التالي
                 const usageKey = `${keyInfo.key}_${modelName}`;
                 quotaManager.usage.set(usageKey, config.daily);
-                console.log(`⚠️ [${modelName}] استنفذ الحصة، الانتقال للنموذج التالي`);
-                errors.push(`[${modelName}] QUOTA: ${err.message.slice(0, 80)}`);
+                console.log(`⚠️ [${modelName}] استنفد الحصة (429)، الانتقال للنموذج التالي...`);
+                errors.push(`[${modelName}] QUOTA: ${err.message?.slice(0, 80)}`);
             } else {
-                // خطأ آخر - قد يكون مؤقتاً
-                console.log(`⚠️ [${modelName}] خطأ: ${err.message.slice(0, 80)}`);
-                errors.push(`[${modelName}] ERROR: ${err.message.slice(0, 80)}`);
+                console.log(`⚠️ [${modelName}] خطأ مؤقت: ${err.message?.slice(0, 80)}`);
+                errors.push(`[${modelName}] ERROR: ${err.message?.slice(0, 80)}`);
                 
-                // إذا كان خطأ شبكة، جرب مرة أخرى مع نفس النموذج
-                if (err.message?.includes('network') || err.message?.includes('timeout')) {
+                if (errString.includes('network') || errString.includes('timeout') || errString.includes('fetch failed')) {
                     console.log(`🔄 [${modelName}] إعادة المحاولة بعد 2 ثانية...`);
                     await new Promise(resolve => setTimeout(resolve, 2000));
-                    // إعادة المحاولة (بسيطة)
                     try {
                         const client = new GoogleGenerativeAI(keyInfo.key);
                         const result = await fn(modelName, client);
                         console.log(`✅ [${modelName}] نجاح بعد إعادة المحاولة!`);
                         return result;
                     } catch (retryErr) {
-                        console.log(`❌ [${modelName}] فشلت إعادة المحاولة`);
-                        errors.push(`[${modelName}] RETRY FAILED: ${retryErr.message.slice(0, 80)}`);
+                        console.log(`❌ [${modelName}] فشلت محاولة الإعادة.`);
+                        errors.push(`[${modelName}] RETRY FAILED: ${retryErr.message?.slice(0, 80)}`);
                     }
                 }
             }
         }
     }
 
-    // ❌ فشلت جميع المحاولات
-    console.error(`\n❌ [GeminiService] فشلت جميع النماذج (${MODEL_PRIORITY.length})`);
-    
-    // عرض تقرير الحصص
+    console.error(`\n❌ [GeminiService] فشلت جميع النماذج المتاحة.`);
     const report = quotaManager.getReport();
     console.log('📊 [QuotaReport]:', JSON.stringify(report, null, 2));
     
-    throw new Error(`❌ فشل جميع النماذج. آخر خطأ: ${lastError?.message || 'غير معروف'}`);
+    throw new Error(`❌ فشل جميع النماذج. الأخطاء: ${errors.join(' | ')}`);
 }
 
 // ============================================================
@@ -272,28 +241,20 @@ geminiService.chat = async function(messages, extra = {}) {
             const isLast = i === conv.length - 1;
 
             if (msg.role === "user") {
-                if (isLast) {
-                    lastUserMessage = msg.content;
-                } else {
-                    history.push({ role: "user", parts: [{ text: msg.content }] });
-                }
-            }
-
-            if (msg.role === "assistant") {
-                if (!isLast) {
-                    history.push({ role: "model", parts: [{ text: msg.content }] });
-                }
+                if (isLast) lastUserMessage = msg.content;
+                else history.push({ role: "user", parts: [{ text: msg.content }] });
+            } else if (msg.role === "assistant") {
+                if (!isLast) history.push({ role: "model", parts: [{ text: msg.content }] });
             }
         }
 
-        // ✅ استخدام alatheerTools مباشرة (ثابتة وشاملة)
         const model = client.getGenerativeModel({
             model: modelName,
-            systemInstruction,
+            systemInstruction: systemInstruction || undefined,
             tools: alatheerTools,
             generationConfig: {
                 temperature: 0.25,
-                maxOutputTokens: 32768,
+                maxOutputTokens: 8192,
             }
         });
 
@@ -301,19 +262,32 @@ geminiService.chat = async function(messages, extra = {}) {
         const result = await chat.sendMessage(lastUserMessage || "مرحبا");
         const response = await result.response;
 
+        // 🛡️ معالجة آمنة لاستدعاء الأدوات
         let functionCalls = null;
         try {
             if (typeof response.functionCalls === 'function') {
                 functionCalls = response.functionCalls();
+            } else if (response.functionCalls) {
+                functionCalls = response.functionCalls;
+            } else if (response.candidates?.[0]?.content?.parts) {
+                // استخراج الـ function calls يدويًا من أجزاء الاستجابة إن وجدت
+                const parts = response.candidates[0].content.parts;
+                const fcPart = parts.find(p => p.functionCall);
+                if (fcPart) functionCalls = [fcPart.functionCall];
             }
-        } catch (e) {}
+        } catch (e) {
+            console.warn("⚠️ [GeminiService] تحذير أثناء استخراج وظائف الأدوات:", e.message);
+        }
 
+        // 🛡️ استخراج النص الآمن
         let textReply = "";
         try {
             if (response.text && typeof response.text === 'function') {
                 textReply = response.text();
             }
-        } catch (e) {}
+        } catch (e) {
+            // الاستجابة قد تكون مخصصة للأدوات فقط بدون نص
+        }
 
         auditExecution({
             action: functionCalls && functionCalls.length > 0 ? "llm_tool_call" : "llm_chat",
@@ -330,7 +304,6 @@ geminiService.chat = async function(messages, extra = {}) {
     }, userMessage, fileName);
 };
 
-// 📊 وظائف مساعدة
 geminiService.getQuotaReport = function() {
     return quotaManager.getReport();
 };
@@ -338,7 +311,6 @@ geminiService.getQuotaReport = function() {
 geminiService.diagnose = function() {
     console.log('\n🔍 [Diagnostic] تقرير النظام:');
     const report = quotaManager.getReport();
-    
     console.log(`📅 التاريخ: ${report.date}`);
     console.log('📊 النماذج المتاحة:');
     
@@ -354,3 +326,4 @@ geminiService.diagnose = function() {
 };
 
 export default geminiService;
+
