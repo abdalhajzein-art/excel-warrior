@@ -22,13 +22,7 @@ const MODEL_CONFIG = {
         priority: 1,
         description: 'أعلى حصة مجانية - للمهام الخفيفة'
     },
-    'gemini-2.5-flash-lite': {
-        daily: 60,
-        minute: 15,
-        priority: 1,
-        description: 'نسخة محدثة من Flash Lite'
-    },
-    
+        
     // 🥈 خيارات متوسطة
     'gemini-3.6-flash': {
         daily: 20,
@@ -41,20 +35,6 @@ const MODEL_CONFIG = {
         minute: 5,
         priority: 2,
         description: 'نسخة تجريبية سريعة'
-    },
-    
-    // 🥉 النماذج القديمة (ما زالت تعمل)
-    'gemini-1.5-flash': {
-        daily: 60,
-        minute: 15,
-        priority: 1,
-        description: 'النموذج القديم - حصة جيدة'
-    },
-    'gemini-1.5-pro': {
-        daily: 30,
-        minute: 10,
-        priority: 2,
-        description: 'النموذج القديم - أقوى لكن حصة أقل'
     },
     
     // ❌ نماذج مدفوعة (لا تستخدمها إلا كحل أخير)
