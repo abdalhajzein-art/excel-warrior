@@ -1,8 +1,7 @@
 /**
  * api/core/dynamic_executor.js – Trusted Code Executor
- * 🚀 تنفيذ بسيط يعتمد على جودة الكود من Gemini
+ * 🚀 تنفيذ سيادي نظيف – يرسل فقط نتائج التنفيذ لضمان استقرار التحليل
  */
-
 import fs from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -16,11 +15,9 @@ const execFileAsync = promisify(execFile);
 
 const PYTHON_EXEC = process.env.NODE_ENV === "production" ? "/opt/venv/bin/python" : "python3";
 
-export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile = false, sessionId = null, fileContext = null) {
+export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile = false, sessionId = null) {
   return new Promise((resolve) => {
-    if (!targetFilePath) {
-      return resolve({ success: false, error: "مسار الملف غير صالح." });
-    }
+    if (!targetFilePath) return resolve({ success: false, error: "مسار الملف غير صالح." });
 
     if (!pythonCode || typeof pythonCode !== 'string' || pythonCode.trim().length < 10) {
       console.error("❌ [Executor] الكود فارغ أو قصير جداً");
@@ -118,4 +115,4 @@ export async function extractPreviewAsync(filePath) {
     console.warn("⚠️ [Preview] فشل:", error.message);
     return { error: error.message };
   }
-                             }
+}
