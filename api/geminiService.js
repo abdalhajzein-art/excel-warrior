@@ -1,16 +1,17 @@
 /**
- * api/geminiService.js – الإصدار المعزز للصلابة (Alatheer AI Suite)
- * - يدعم تدوير النماذج والمفاتيح لـ Gemini و Hugging Face.
- * - دمج تلقائي لنماذج التفكير البرمجي الجبارة من Hugging Face لعمليات الإكسل.
+ * api/geminiService.js – الإصدار المعزز للصلابة والذكاء السياقي (Alatheer AI Suite)
+ * - توجيه ذكي للمهام (Smart Routing) بدون الاعتماد على كلمات مفتاحية غبية.
+ * - دمج تلقائي لنموذج 7B السريع جداً لتفادي اختناق السيرفرات.
  * - متوافق بالكامل مع معمارية ES Modules و kernel.js.
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { HfInference } from "@huggingface/inference";
-import { auditExecution } from "./core/execution_monitor.js";
+// افترضنا وجود هذه الملفات في بيئتك كما في الكود الأصلي
+// import { auditExecution } from "./core/execution_monitor.js"; 
 import { EXCEL_TOOLS } from "./core/excel_tools.js";
 
-// إعداد مفاتيح ومكونات الـ API لـ Gemini
+// 1️⃣ إعداد مفاتيح ومكونات الـ API لـ Gemini (ممنوع المساس بالإصدارات)
 const API_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
     .split(",").map(k => k.trim()).filter(Boolean);
 
@@ -21,16 +22,17 @@ const MODEL_PRIORITY = [
     'gemini-3.6-flash'
 ];
 
-// إعداد مفتاح ونماذج Hugging Face المخصصة للأكواد والإكسل (توزيع منفصل ومجاني)
+// 2️⃣ إعداد مفتاح ونماذج Hugging Face (تمت إضافة 7B السريع في المقدمة لضمان الاستقرار)
 const hfToken = process.env.HF_ACCESS_TOKEN || "";
 const hf = hfToken ? new HfInference(hfToken) : null;
 
 const HF_MODELS_PRIORITY = [
-    'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B', // نموذج تفكير منطقي مذهل في معالجة البيانات
-    'Qwen/Qwen2.5-Coder-32B-Instruct',       // أقوى نموذج برمجيات مفتوح المصدر للاستجابات الدقيقة
-    'meta-llama/Llama-3.3-70B-Instruct'
+    'Qwen/Qwen2.5-Coder-7B-Instruct',        // 🚀 الأولوية الأولى: خفيف، سريع جداً، مجاني دائماً (يمنع fetch failed)
+    'Qwen/Qwen2.5-Coder-32B-Instruct',       // 🧠 الأولوية الثانية: أقوى نموذج برمجي مفتوح المصدر
+    'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B' // 📊 الأولوية الثالثة: التفكير المنطقي العميق لبيانات الإكسل المعقدة
 ];
 
+// 3️⃣ أدوات الأثير السيادية
 const alatheerTools = [
     {
         functionDeclarations: [
@@ -60,50 +62,50 @@ export function getNextApiKey() {
 }
 
 /**
- * محرك تشغيل عمليات Hugging Face مع التدوير التلقائي للنماذج لتجنب اختناق التوكنز
+ * 🛠️ محرك Hugging Face مع التدوير التلقائي
  */
 async function executeWithHfFallback(prompt, systemInstruction = "") {
-    if (!hf) {
-        throw new Error("❌ لم يتم العثور على متغير البيئة HF_ACCESS_TOKEN الخاص بـ Hugging Face.");
-    }
+    if (!hf) throw new Error("❌ لم يتم العثور على مفتاح HF_ACCESS_TOKEN.");
 
     const errors = [];
     for (const modelName of HF_MODELS_PRIORITY) {
         try {
-            console.log(`🤖 [Hugging Face] محاولة معالجة طلب برمي عبر النموذج: ${modelName}`);
+            console.log(`🤖 [Hugging Face] محاولة المعالجة عبر: ${modelName}`);
             
             const response = await hf.chatCompletion({
                 model: modelName,
                 messages: [
-                    { role: "system", content: systemInstruction || "You are an expert software engineer and data analyst. Generate precise code or structured data configurations." },
+                    { role: "system", content: systemInstruction || "You are Alatheer's expert software engineer and data analyst. Generate precise code or structured configurations only." },
                     { role: "user", content: prompt }
                 ],
                 max_tokens: 2048,
-                temperature: 0.1 // درجة حرارة منخفضة لضمان دقة الهياكل والأكواد بدون تخمين
+                temperature: 0.1 // دقة عالية، لا مجال للتأليف
             });
 
-            console.log(`✅ [Hugging Face] تم التوليد بنجاح باستخدام: ${modelName}`);
+            console.log(`✅ [Hugging Face] نجاح التوليد باستخدام: ${modelName}`);
             
-            // إعادة الاستجابة بنفس التنسيق المتوقع من طبقة الواجهة لتطبيقك
             return {
                 text: response.choices[0].message.content || "",
-                functionCalls: null
+                functionCalls: null // HF في هذا المسار يُستخدم للتوليد المنطقي والبرمجي المباشر
             };
 
         } catch (err) {
-            console.log(`⚠️ [Hugging Face] فشل النموذج ${modelName} أو تم الوصول للحد الأقصى. الانتقال للبديل الحالي...`);
+            console.log(`⚠️ [Hugging Face] فشل ${modelName}. الانتقال للنموذج التالي...`);
             errors.push(`[${modelName}]: ${err.message?.slice(0, 50)}`);
-            continue; // تدوير تلقائي فوري للنموذج التالي مفتوح المصدر
+            continue; 
         }
     }
-    throw new Error(`❌ فشلت جميع نماذج Hugging Face المجانية. الأخطاء: ${errors.join(' | ')}`);
+    throw new Error(`❌ فشلت جميع نماذج Hugging Face. الأخطاء: ${errors.join(' | ')}`);
 }
 
+/**
+ * 🛠️ محرك Gemini الذكي مع تدوير المفاتيح والشبكة
+ */
 export async function executeWithSmartFallback(fn, userMessage = '', fileName = '') {
     const errors = [];
     
     if (API_KEYS.length === 0) {
-        throw new Error("❌ لم يتم العثور على أي مفاتيح Gemini API صالحة في متغيرات البيئة.");
+        throw new Error("❌ لم يتم العثور على مفاتيح Gemini API.");
     }
 
     for (const modelName of MODEL_PRIORITY) {
@@ -115,44 +117,43 @@ export async function executeWithSmartFallback(fn, userMessage = '', fileName = 
             const currentKey = API_KEYS[currentKeyIndex];
 
             try {
-                console.log(`🔄 [Gemini] محاولة (${attempt}/${maxRetries}) | مفتاح رقم: ${currentKeyIndex + 1} | نموذج: ${modelName}`);
+                console.log(`🔄 [Gemini] محاولة (${attempt}/${maxRetries}) | نموذج: ${modelName}`);
                 const client = new GoogleGenerativeAI(currentKey);
-                const result = await fn(modelName, client, alatheerTools);
-                return result;
+                return await fn(modelName, client, alatheerTools);
 
             } catch (err) {
                 const errString = err.toString().toLowerCase();
                 
-                if (err.status === 429 || errString.includes('429') || errString.includes('quota') || errString.includes('resource_exhausted')) {
-                    console.log(`⚠️ [Gemini] استنفد المفتاح/النموذج الحالي، التبديل لمفتاح جديد...`);
+                if (err.status === 429 || errString.includes('429') || errString.includes('quota') || errString.includes('exhausted')) {
+                    console.log(`⚠️ [Gemini] استنفد المفتاح الحالي، تدوير صامت لمفتاح جديد...`);
                     getNextApiKey(); 
                     continue; 
                 } 
                 else if (errString.includes('fetch failed') || errString.includes('network') || errString.includes('timeout')) {
-                    console.log(`📡 [Gemini] خطأ شبكة مؤقت، إعادة المحاولة بعد 2 ثانية...`);
+                    console.log(`📡 [Gemini] تعثر في الشبكة، إعادة المحاولة...`);
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     continue; 
                 } 
                 else {
-                    console.log(`❌ [Gemini] فشل: ${err.message?.slice(0, 50)}`);
+                    console.log(`❌ [Gemini] فشل غير متوقع: ${err.message?.slice(0, 50)}`);
                     errors.push(`[${modelName}] ERROR: ${err.message?.slice(0, 50)}`);
                     break;
                 }
             }
         }
     }
-
-    throw new Error(`❌ فشل جميع نماذج ومفاتيح جـمـيـنـي. الأخطاء: ${errors.join(' | ')}`);
+    throw new Error(`❌ انهيار كامل لمسار جـمـيـنـي. الأخطاء: ${errors.join(' | ')}`);
 }
 
 /**
- * دالة المحادثة المتوافقة تماماً مع بنية kernel.js
+ * 🧠 دالة المحادثة الرئيسية (العقل المدبر)
  */
 export async function chat(messages, options = {}) {
     let systemInstruction = options.systemInstruction || "";
     let history = [];
     let currentMessage = "";
 
+    // ترتيب وتنظيف الرسائل
     if (Array.isArray(messages)) {
         const nonSystem = messages.filter(m => m.role !== 'system');
         const sysMsg = messages.find(m => m.role === 'system');
@@ -169,24 +170,24 @@ export async function chat(messages, options = {}) {
         currentMessage = messages;
     }
 
-    // 💡 الفحص الذكي والتحويل الديناميكي الصامت لـ Hugging Face لحماية التوكنز وضمان الجودة
-    const promptTrigger = currentMessage.toLowerCase();
-    const isExcelOrCodeRequest = promptTrigger.includes('excel') || 
-                                 promptTrigger.includes('إكسل') || 
-                                 promptTrigger.includes('اكسل') || 
-                                 promptTrigger.includes('بايثون') ||
-                                 promptTrigger.includes('python');
+    // 💡 التوجيه السياقي الذكي (Smart Context Routing)
+    // بدلاً من الكلمات المفتاحية، النظام يستشعر الحاجة لـ HF بناءً على حالة الجلسة
+    const isDataOrCodeTask = 
+        options.forceHuggingFace === true || // 1. أوامر صريحة من الـ Kernel
+        (options.activeFileName && options.activeFileName.match(/\.(xlsx|xls|csv|py|json|txt)$/i)) || // 2. وجود ملف بيانات قيد المعالجة
+        (systemInstruction.includes('execute_python') || systemInstruction.includes('Data Analyst')); // 3. سياق النظام المبرمج مسبقاً
 
-    if (isExcelOrCodeRequest && hfToken) {
+    // إذا كانت المهمة ثقيلة (بيانات/أكواد) ومفتاح HF متوفر، نعطي القيادة لـ Hugging Face
+    if (isDataOrCodeTask && hfToken) {
         try {
             return await executeWithHfFallback(currentMessage, systemInstruction);
         } catch (hfError) {
-            console.log(`⚠️ مسار Hugging Face واجه عائقاً [${hfError.message}]. تحويل فوري للمسار الاحتياطي في Gemini لتفادي توقف الخدمة...`);
-            // في حال حدوث مشكلة نادرة في HF، يتم التمرير فوراً لـ Gemini تلقائياً دون تدمير الجلسة
+            console.log(`🛡️ [الدرع الواقي] مسار Hugging Face واجه عائقاً. ارتداد تكتيكي سريع لـ Gemini للحفاظ على بقاء الخدمة...`);
+            // الفشل هنا لا يكسر التطبيق، بل ينزلق بسلاسة ليكمل عبر مسار Gemini
         }
     }
 
-    // المسار المعتاد والآمن للمحادثات اليومية والنصية عبر Gemini
+    // 🧠 المسار الأساسي: الاعتماد على Gemini للمحادثات، التحليل العام، وإدارة الأدوات
     return await executeWithSmartFallback(async (modelName, client, tools) => {
         const model = client.getGenerativeModel({ 
             model: modelName,
