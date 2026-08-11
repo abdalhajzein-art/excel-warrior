@@ -182,9 +182,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     finalReplyText = rawReply?.text || "";
     const functionCalls = rawReply?.functionCalls || null;
 
-    // ============================================================
-    // 4. معالجة استدعاءات الأدوات (Tool Calling Handler) المرنة
-    // ============================================================
     if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
       console.log(`🔧 [Kernel] تم استلام ${functionCalls.length} أداة للتنفيذ...`);
       
@@ -214,16 +211,17 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
         if (toolResult && toolResult.success) {
           anySuccess = true;
-          let successMsg = `✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`;
-          
+          // 💡 التحليل الذكي: تحويل المخرجات البرمجية إلى تقرير مهني
           if (toolResult.output) {
-              const cleanOutput = toolResult.output.replace("SUCCESS: تم التنفيذ بنجاح ✓", "").trim();
-              if (cleanOutput) {
-                  successMsg += `\n\n**مخرجات التنفيذ (Console):**\n\`\`\`\n${cleanOutput}\n\`\`\``;
-              }
+              const cleanOutput = toolResult.output.replace(/SUCCESS:.*$/gm, "").trim();
+              const analysis = await geminiService.chat([
+                { role: "system", content: "أنت الأثير. صغ المخرجات البرمجية التالية كتقرير مهني معماري للمهندس عبدالغني (لا تعرض أكواد، ركز على النتائج بأسلوب مهني):" },
+                { role: "user", content: cleanOutput.substring(0, 1500) }
+              ]);
+              toolMessages.push(analysis.text);
+          } else {
+              toolMessages.push(`✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
           }
-          
-          toolMessages.push(successMsg);
           
           fusionMemory.storeOperation(sessionId, call.name);
           const historyUpdate = fusionMemory.getFileHistory(sessionId) || [];
@@ -269,7 +267,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         }
 
         const fileDirName = targetFilePath.includes("persistent_uploads") ? "persistent_uploads" : "generated";
-        finalReplyText = toolMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/${fileDirName}/${path.basename(targetFilePath)})`;
+        finalReplyText = toolMessages.join("\n\n") + `\n\n📁 [تحميل الملف المحدث](/${fileDirName}/${path.basename(targetFilePath)})`;
         
         ctx.filePath = targetFilePath;
         ctx.fileName = path.basename(targetFilePath);
