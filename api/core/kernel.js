@@ -12,8 +12,12 @@ import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
 import { extractPreviewAsync } from "./dynamic_executor.js";
 import fusionMemory from "./fusion_memory.js";
-import { EXCEL_TOOLS, handleExcelToolCall } from "./excel_tools.js";
 import { fileURLToPath } from "url";
+
+// ✅ التعديل 1: استيراد شامل مضاد لأخطاء (Export/Import) في Node.js
+import * as excelToolsModule from "./excel_tools.js";
+const EXCEL_TOOLS = excelToolsModule.EXCEL_TOOLS || excelToolsModule.default?.EXCEL_TOOLS;
+const handleExcelToolCall = excelToolsModule.handleExcelToolCall || excelToolsModule.default?.handleExcelToolCall;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,7 +88,9 @@ function rescueGeneratedFile(expectedPath) {
     if (allFiles.length > 0) {
       const rescuedFile = allFiles[0].path;
       console.log(`🛡️ [Kernel Guard] تم إنقاذ الملف ونقله من ${rescuedFile} إلى ${expectedPath}`);
-      fs.copyFileSync(rescuedFile, expectedPath);
+      
+      // ✅ التعديل 2: نقل الملف (rename) بدلاً من نسخه (copy) لتوفير المساحة وعدم تكرار الملفات
+      fs.renameSync(rescuedFile, expectedPath);
       return expectedPath;
     }
   } catch (e) {
@@ -195,7 +201,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       for (const call of functionCalls) {
         console.log(`🔍 [Kernel] اسم الأداة المستلمة: "${call.name}" | الوسائط:`, JSON.stringify(call.args));
         
-        if (call.name) {
+        if (call.name && typeof handleExcelToolCall === "function") {
           console.log(`⚙️ [Kernel] جاري تنفيذ الأداة: ${call.name}`);
           
           const toolResult = await handleExcelToolCall(call, targetFilePath);
@@ -210,6 +216,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
           } else {
             toolMessages.push(`❌ فشل أداة ${call.name}: ${toolResult?.error || 'خطأ غير معروف'}`);
           }
+        } else {
+            console.warn(`⚠️ [Kernel] الدالة ${call.name} غير مدعومة أو لم يتم استيرادها بشكل صحيح.`);
         }
       }
 
@@ -219,7 +227,8 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
         try {
           const idx = await readIndexSafe();
-          const newId = generateFileId();
+          // الاستخراج الديناميكي للـ ID بدلاً من توليد واحد لا يتطابق مع الملف
+          const newId = path.basename(targetFilePath).split('-')[0] || generateFileId(); 
           idx[newId] = {
             fileId: newId,
             fileName: path.basename(targetFilePath),
@@ -235,7 +244,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         }
 
         try {
-          // استخدام حارس المسارات لضمان إيجاد الملف حتى لو حفظه بايثون في جذر المشروع
           const finalPath = rescueGeneratedFile(targetFilePath);
           if (finalPath && fs.existsSync(finalPath)) {
             const fileBuffer = await fs.promises.readFile(finalPath);
@@ -249,7 +257,10 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
           toolMessages.push(`❌ خطأ في العثور على الملف: ${e.message}`);
         }
 
-        finalReplyText = toolMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/persistent_uploads/${path.basename(targetFilePath)})`;
+        // ✅ التعديل 3: توجيه مسار التحميل بشكل ديناميكي (generated مقابل persistent_uploads) لتجنب خطأ 404
+        const fileDirName = targetFilePath.includes("persistent_uploads") ? "persistent_uploads" : "generated";
+        finalReplyText = toolMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/${fileDirName}/${path.basename(targetFilePath)})`;
+        
         ctx.filePath = targetFilePath;
         ctx.fileName = path.basename(targetFilePath);
 
