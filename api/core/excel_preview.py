@@ -2,6 +2,7 @@
 api/core/excel_preview.py – Sovereign Excel Engine (Strict Tabular Edition)
 ⚡ محرك إكسل سيادي بمعمارية قياسية صارمة: ترويسة من الصف الأول، دعم RTL، تحليل مخطط دقيق، وتوليد نظيف.
 ✅ تمت إضافة metadata متوافقة مع file_fingerprint.js
+✅ تم إصلاح اقتطاع النص وتحسين خوارزمية معاينة البيانات لضمان الرؤية المطلقة لـ Gemini
 """
 
 import sys
@@ -10,7 +11,7 @@ import openpyxl
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.styles import Font, PatternFill, Alignment, Border
 
-MAX_PREVIEW_ROWS = 15
+MAX_PREVIEW_ROWS = 25
 MAX_FORMULAS = 20
 
 def safe_str(value):
@@ -240,13 +241,21 @@ def main():
             metadata["rowCounts"][sheet_name] = p.get("rows_count", 0)
             metadata["columnCounts"][sheet_name] = p.get("columns_count", 0)
         
-        # ✅ بناء النص الموجز للمعاينة
+        # ✅ بناء النص الموجز للمعاينة (النسخة السيادية المصححة)
         preview_text_parts = []
         for p in previews[:2]:
             sheet_name = p["sheet"]
-            rows = p.get("preview_rows", [])[:3]
-            if rows:
-                preview_text_parts.append(f"[{sheet_name}]: {str(rows)[:200]}")
+            
+            # 1. تصفية الأسطر الفارغة تماماً (لتجاوز الترويسات والصفوف البيضاء)
+            valid_rows = [row for row in p.get("preview_rows", []) if any(str(cell).strip() for cell in row)]
+            
+            # 2. أخذ أول 10 أسطر فعلية مليئة بالبيانات بدلاً من 3
+            rows_to_show = valid_rows[:10]
+            
+            if rows_to_show:
+                # 3. تحويلها إلى JSON مقروء وإلغاء حد الـ 200 حرف القاتل (رفع الحد إلى 4000 حرف)
+                rows_str = json.dumps(rows_to_show, ensure_ascii=False)
+                preview_text_parts.append(f"[{sheet_name}]: {rows_str[:4000]}")
         
         output = {
             "file": file_path,
