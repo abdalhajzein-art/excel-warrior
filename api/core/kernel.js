@@ -211,14 +211,16 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
         if (toolResult && toolResult.success) {
           anySuccess = true;
-          // 💡 التحليل الذكي: تحويل المخرجات البرمجية إلى تقرير مهني
+          // 💡 التحليل الذكي: تحويل المخرجات البرمجية إلى تقرير مهني (نصي بحت دون تمرير أدوات أو المساس بالملف)
           if (toolResult.output) {
               const cleanOutput = toolResult.output.replace(/SUCCESS:.*$/gm, "").trim();
               const analysis = await geminiService.chat([
                 { role: "system", content: "أنت الأثير. صغ المخرجات البرمجية التالية كتقرير مهني معماري للمهندس عبدالغني (لا تعرض أكواد، ركز على النتائج بأسلوب مهني):" },
                 { role: "user", content: cleanOutput.substring(0, 1500) }
-              ]);
-              toolMessages.push(analysis.text);
+              ], {
+                tools: null
+              });
+              toolMessages.push(analysis.text || `✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
           } else {
               toolMessages.push(`✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
           }
