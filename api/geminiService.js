@@ -1,14 +1,13 @@
 /**
- * api/geminiService.js – الإصدار المعزز للصلابة والذكاء السياقي (Alatheer AI Suite)
- * - توجيه ذكي للمهام (Smart Routing) بدون الاعتماد على كلمات مفتاحية غبية.
- * - دمج تلقائي لنموذج 7B السريع جداً لتفادي اختناق السيرفرات.
- * - متوافق بالكامل مع معمارية ES Modules و kernel.js.
+ * api/geminiService.js – الإصدار السيادي الفائق (Alatheer AI Suite)
+ * - توجيه سياقي ذكي ومطلق بدون كلمات مفتاحية ساذجة.
+ * - دعم كامل لتوليد ومعالجة ملفات الإكسل والأكواد عبر نماذج Hugging Face المتقدمة.
+ * - حماية قصوى وارتداد تكتيكي (Fallback) فوري لـ Gemini حصناً ضد توقف السيرفر.
+ * - متوافق بالكامل مع معمارية ES Modules و kernel.js (مع الحفاظ على إصدارات Gemini).
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { HfInference } from "@huggingface/inference";
-// افترضنا وجود هذه الملفات في بيئتك كما في الكود الأصلي
-// import { auditExecution } from "./core/execution_monitor.js"; 
 import { EXCEL_TOOLS } from "./core/excel_tools.js";
 
 // 1️⃣ إعداد مفاتيح ومكونات الـ API لـ Gemini (ممنوع المساس بالإصدارات)
@@ -22,14 +21,14 @@ const MODEL_PRIORITY = [
     'gemini-3.6-flash'
 ];
 
-// 2️⃣ إعداد مفتاح ونماذج Hugging Face (تمت إضافة 7B السريع في المقدمة لضمان الاستقرار)
+// 2️⃣ إعداد مفتاح ونماذج Hugging Face (النموذج الخفيف 7B أولاً لمنع اختناق السيرفر)
 const hfToken = process.env.HF_ACCESS_TOKEN || "";
 const hf = hfToken ? new HfInference(hfToken) : null;
 
 const HF_MODELS_PRIORITY = [
-    'Qwen/Qwen2.5-Coder-7B-Instruct',        // 🚀 الأولوية الأولى: خفيف، سريع جداً، مجاني دائماً (يمنع fetch failed)
-    'Qwen/Qwen2.5-Coder-32B-Instruct',       // 🧠 الأولوية الثانية: أقوى نموذج برمجي مفتوح المصدر
-    'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B' // 📊 الأولوية الثالثة: التفكير المنطقي العميق لبيانات الإكسل المعقدة
+    'Qwen/Qwen2.5-Coder-7B-Instruct',        // 🚀 الأول: خفيف، فائق السرعة، مجاني دائماً (يمنع fetch failed)
+    'Qwen/Qwen2.5-Coder-32B-Instruct',       // 🧠 الثاني: أقوى نموذج برمجي مفتوح المصدر
+    'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B' // 📊 الثالث: التفكير المنطقي العميق لبيانات الإكسل المعقدة
 ];
 
 // 3️⃣ أدوات الأثير السيادية
@@ -62,7 +61,7 @@ export function getNextApiKey() {
 }
 
 /**
- * 🛠️ محرك Hugging Face مع التدوير التلقائي
+ * 🛠️ محرك Hugging Face مع التدوير التلقائي للنماذج
  */
 async function executeWithHfFallback(prompt, systemInstruction = "") {
     if (!hf) throw new Error("❌ لم يتم العثور على مفتاح HF_ACCESS_TOKEN.");
@@ -70,7 +69,7 @@ async function executeWithHfFallback(prompt, systemInstruction = "") {
     const errors = [];
     for (const modelName of HF_MODELS_PRIORITY) {
         try {
-            console.log(`🤖 [Hugging Face] محاولة المعالجة عبر: ${modelName}`);
+            console.log(`🤖 [Hugging Face] محاولة المعالجة عبر النموذج: ${modelName}`);
             
             const response = await hf.chatCompletion({
                 model: modelName,
@@ -79,18 +78,18 @@ async function executeWithHfFallback(prompt, systemInstruction = "") {
                     { role: "user", content: prompt }
                 ],
                 max_tokens: 2048,
-                temperature: 0.1 // دقة عالية، لا مجال للتأليف
+                temperature: 0.1 // دقة مطلقة بلا تخمين
             });
 
             console.log(`✅ [Hugging Face] نجاح التوليد باستخدام: ${modelName}`);
             
             return {
                 text: response.choices[0].message.content || "",
-                functionCalls: null // HF في هذا المسار يُستخدم للتوليد المنطقي والبرمجي المباشر
+                functionCalls: null
             };
 
         } catch (err) {
-            console.log(`⚠️ [Hugging Face] فشل ${modelName}. الانتقال للنموذج التالي...`);
+            console.log(`⚠️ [Hugging Face] فشل النموذج ${modelName}. الانتقال للبديل التالي...`);
             errors.push(`[${modelName}]: ${err.message?.slice(0, 50)}`);
             continue; 
         }
@@ -99,7 +98,7 @@ async function executeWithHfFallback(prompt, systemInstruction = "") {
 }
 
 /**
- * 🛠️ محرك Gemini الذكي مع تدوير المفاتيح والشبكة
+ * 🛠️ محرك Gemini الذكي مع تدوير المفاتيح ومعالجة الشبكة
  */
 export async function executeWithSmartFallback(fn, userMessage = '', fileName = '') {
     const errors = [];
@@ -146,14 +145,14 @@ export async function executeWithSmartFallback(fn, userMessage = '', fileName = 
 }
 
 /**
- * 🧠 دالة المحادثة الرئيسية (العقل المدبر)
+ * 🧠 دالة المحادثة الرئيسية (العقل المدبر والموجه السياقي)
  */
 export async function chat(messages, options = {}) {
     let systemInstruction = options.systemInstruction || "";
     let history = [];
     let currentMessage = "";
 
-    // ترتيب وتنظيف الرسائل
+    // تنظيم وترتيب هيكل الرسائل
     if (Array.isArray(messages)) {
         const nonSystem = messages.filter(m => m.role !== 'system');
         const sysMsg = messages.find(m => m.role === 'system');
@@ -170,24 +169,27 @@ export async function chat(messages, options = {}) {
         currentMessage = messages;
     }
 
-    // 💡 التوجيه السياقي الذكي (Smart Context Routing)
-    // بدلاً من الكلمات المفتاحية، النظام يستشعر الحاجة لـ HF بناءً على حالة الجلسة
+    // 💡 التوجيه السياقي الذكي والشامل (يلتقط الملفات والبيانات من أي مكان في الخيارات أو السياق)
+    const activeFile = options.activeFileName || options.filePath || options.file || "";
+    
     const isDataOrCodeTask = 
-        options.forceHuggingFace === true || // 1. أوامر صريحة من الـ Kernel
-        (options.activeFileName && options.activeFileName.match(/\.(xlsx|xls|csv|py|json|txt)$/i)) || // 2. وجود ملف بيانات قيد المعالجة
-        (systemInstruction.includes('execute_python') || systemInstruction.includes('Data Analyst')); // 3. سياق النظام المبرمج مسبقاً
+        options.forceHuggingFace === true || 
+        (typeof activeFile === 'string' && activeFile.match(/\.(xlsx|xls|csv|py|json|txt)$/i)) || 
+        currentMessage.includes('الملف') || 
+        currentMessage.includes('الملفات') ||
+        systemInstruction.includes('execute_python') || 
+        systemInstruction.includes('Data Analyst');
 
-    // إذا كانت المهمة ثقيلة (بيانات/أكواد) ومفتاح HF متوفر، نعطي القيادة لـ Hugging Face
+    // إذا كانت المهمة متعلقة بالبيانات أو الملفات، نوجهها فوراً لمسار Hugging Face السيادي
     if (isDataOrCodeTask && hfToken) {
         try {
             return await executeWithHfFallback(currentMessage, systemInstruction);
         } catch (hfError) {
-            console.log(`🛡️ [الدرع الواقي] مسار Hugging Face واجه عائقاً. ارتداد تكتيكي سريع لـ Gemini للحفاظ على بقاء الخدمة...`);
-            // الفشل هنا لا يكسر التطبيق، بل ينزلق بسلاسة ليكمل عبر مسار Gemini
+            console.log(`🛡️ [الدرع الواقي] مسار Hugging Face واجه عائقاً [${hfError.message}]. ارتداد تكتيكي فوري لـ Gemini لضمان استمرار الخدمة...`);
         }
     }
 
-    // 🧠 المسار الأساسي: الاعتماد على Gemini للمحادثات، التحليل العام، وإدارة الأدوات
+    // 🧠 المسار الأساسي: الاعتماد على Gemini للمحادثات العامة وإدارة الأدوات
     return await executeWithSmartFallback(async (modelName, client, tools) => {
         const model = client.getGenerativeModel({ 
             model: modelName,
@@ -211,4 +213,3 @@ export default {
     executeWithSmartFallback,
     getNextApiKey
 };
-
