@@ -18,7 +18,6 @@ const PYTHON_EXEC = process.env.NODE_ENV === "production" ? "/opt/venv/bin/pytho
 
 export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile = false, sessionId = null, fileContext = null) {
   return new Promise((resolve) => {
-    // تحقق بسيط
     if (!targetFilePath) {
       return resolve({ success: false, error: "مسار الملف غير صالح." });
     }
@@ -28,7 +27,6 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
       return resolve({ success: false, error: "الكود غير صالح للتنفيذ." });
     }
 
-    // تحضير البيئة
     const dir = path.dirname(targetFilePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -36,28 +34,19 @@ export async function executeDynamicPython(pythonCode, targetFilePath, isNewFile
     const scriptPath = path.join(process.cwd(), scriptName);
 
     try {
-      // بناء الكود الآمن
       const safeCode = `
 import sys
 import os
 import traceback
 
-# ============================================
-# المتغير السيادي للمسار
-# ============================================
 if len(sys.argv) > 1:
     target_file = sys.argv[1]
 else:
     print("ERROR: لم يتم تمرير مسار الملف")
     sys.exit(1)
 
-# ============================================
-# كود المستخدم - ثقة كاملة في Gemini
-# ============================================
 ${pythonCode}
-# ============================================
 
-# التحقق النهائي
 if os.path.exists(target_file) and os.path.getsize(target_file) > 0:
     print("SUCCESS: تم التنفيذ بنجاح ✓")
 else:
@@ -70,9 +59,11 @@ else:
       execFile(
         PYTHON_EXEC,
         [scriptPath, targetFilePath],
-        { maxBuffer: 50 * 1024 * 1024 },
+        { 
+          cwd: dir, 
+          maxBuffer: 50 * 1024 * 1024 
+        },
         async (error, stdout, stderr) => {
-          // تنظيف
           try { fs.unlinkSync(scriptPath); } catch(e) {}
 
           const outputStr = (stdout || "");
@@ -93,7 +84,6 @@ else:
 
           console.log("✅ [Executor] نجاح التنفيذ");
           
-          // تحديث الذاكرة
           if (sessionId) {
             fusionMemory.storeCurrentFile(sessionId, targetFilePath);
             fusionMemory.storeOperation(sessionId, isNewFile ? "generate_file" : "modify_file");
@@ -128,4 +118,4 @@ export async function extractPreviewAsync(filePath) {
     console.warn("⚠️ [Preview] فشل:", error.message);
     return { error: error.message };
   }
-  }
+                             }
