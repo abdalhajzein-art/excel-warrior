@@ -1,6 +1,7 @@
 /**
  * api/geminiService.js – الإصدار السيادي المُعزز (Alatheer AI Suite)
- * - الاعتماد الكلي على Gemini مع تفعيل ميزة التفكير البرمجي (Thinking Mode).
+ * - الاعتماد الكلي على Gemini مع هندسة التفكير العميق الافتراضي (Virtual Thinking).
+ * - حل جذري لتعارض thinkingConfig مع الـ Function Calling.
  * - لا حاجة لـ Hugging Face (تجنب مشاكل الـ fetch failed).
  */
 
@@ -14,8 +15,8 @@ let currentKeyIndex = 0;
 
 // ترتيب النماذج حسب القدرة البرمجية
 const MODEL_PRIORITY = [
-    'gemini-3.6-flash',      // الأسرع والأذكى في المهام الوكيلية
-    'gemini-1.5-pro',        // العقل المدبر الأعلى دقة في كتابة البايثون
+    'gemini-3.6-flash',      // الأسرع والأذكى في المهام الوكيلية مع التفكير الافتراضي
+    'gemini-1.5-pro',        // العقل المدبر الأعلى دقة
     'gemini-3.5-flash-lite'
 ];
 
@@ -50,22 +51,34 @@ export function getNextApiKey() {
 export async function executeWithSmartFallback(fn, userMessage = '', systemInstruction = '', isDataTask = false) {
     const errors = [];
     
+    // 1. هندسة التفكير العميق الافتراضي (Virtual Chain-of-Thought)
+    let finalSystemInstruction = systemInstruction;
+    if (isDataTask) {
+        finalSystemInstruction += `
+        
+[CRITICAL PROTOCOL FOR DATA TASKS]
+You are Alatheer's Data Architect. To write flawless Python (pandas/openpyxl), you MUST follow this protocol:
+1. THINK FIRST: You must deeply analyze the file structure, variables, and logic inside <think>...</think> tags.
+2. DRAFT CODE: Write your draft Python code inside the <think> block to review it for errors and ensure strict syntax.
+3. EXECUTE: ONLY AFTER closing the </think> tag, call the 'execute_python' tool with your finalized code.
+Never call a tool without thinking first.`;
+    }
+
     for (const modelName of MODEL_PRIORITY) {
         try {
             const currentKey = API_KEYS[currentKeyIndex];
-            console.log(`🔄 [Gemini] محاولة عبر: ${modelName} | Thinking: ${isDataTask ? 'ON' : 'OFF'}`);
+            console.log(`🔄 [Gemini] محاولة عبر: ${modelName} | Virtual Thinking: ${isDataTask ? 'ON' : 'OFF'}`);
             
             const client = new GoogleGenerativeAI(currentKey);
             
-            // إعدادات التفكير البرمجي (فقط للملفات والبيانات)
-            const generationConfig = isDataTask ? {
-                thinkingConfig: { includeThoughts: true, budgetTokens: 2048 },
-                temperature: 0.1 
-            } : { temperature: 0.4 };
+            // 2. استخدام حرارة صفرية للمهام البرمجية لضمان المنطق الصارم بدون كسر الـ API
+            const generationConfig = { 
+                temperature: isDataTask ? 0.0 : 0.4 
+            };
 
             const model = client.getGenerativeModel({ 
                 model: modelName,
-                systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+                systemInstruction: finalSystemInstruction ? { parts: [{ text: finalSystemInstruction }] } : undefined,
                 tools: alatheerTools,
                 generationConfig
             });
@@ -73,12 +86,13 @@ export async function executeWithSmartFallback(fn, userMessage = '', systemInstr
             return await fn(model, client);
 
         } catch (err) {
-            console.log(`❌ [Gemini] فشل ${modelName}: ${err.message?.slice(0, 40)}`);
+            // توسيع نطاق قراءة الخطأ لتشخيص أدق في سجلات الخادم
+            console.log(`❌ [Gemini] فشل ${modelName}: ${err.message?.slice(0, 150)}`);
             if (err.status === 429) getNextApiKey();
             continue;
         }
     }
-    throw new Error("❌ فشل جميع نماذج Gemini.");
+    throw new Error("❌ فشل جميع نماذج Gemini. راجع سجلات الخادم للتفاصيل.");
 }
 
 export async function chat(messages, options = {}) {
@@ -92,6 +106,7 @@ export async function chat(messages, options = {}) {
     }
 
     const activeFile = options.activeFileName || options.filePath || "";
+    // تحديد ما إذا كانت المهمة تتطلب تعاملاً مع البيانات والملفات
     const isDataTask = !!(activeFile.match(/\.(xlsx|xls|csv|py|json)$/i) || currentMessage.includes('ملف'));
 
     return await executeWithSmartFallback(async (model) => {
@@ -107,4 +122,3 @@ export async function chat(messages, options = {}) {
 }
 
 export default { chat, getNextApiKey };
-
