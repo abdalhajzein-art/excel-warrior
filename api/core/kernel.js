@@ -197,7 +197,7 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
         if (call.name === "execute_python") {
           console.log(`⚙️ [Kernel] توجيه الأداة لمشغل البايثون الديناميكي...`);
           const pythonCode = call.args.code;
-          toolResult = await executeDynamicPython(pythonCode, targetFilePath, !fileContext.exists, sessionId, fileContext);
+          toolResult = await executeDynamicPython(pythonCode, targetFilePath, !fileContext.exists, sessionId);
           
         } else if (call.name && typeof handleExcelToolCall === "function") {
           console.log(`⚙️ [Kernel] جاري تنفيذ أداة الإكسل: ${call.name}`);
@@ -211,19 +211,16 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
         if (toolResult && toolResult.success) {
           anySuccess = true;
-          // 💡 التحليل الذكي: تحويل المخرجات البرمجية إلى تقرير مهني (نصي بحت دون تمرير أدوات أو المساس بالملف)
-          if (toolResult.output) {
-              const cleanOutput = toolResult.output.replace(/SUCCESS:.*$/gm, "").trim();
-              const analysis = await geminiService.chat([
-                { role: "system", content: "أنت الأثير. صغ المخرجات البرمجية التالية كتقرير مهني معماري للمهندس عبدالغني (لا تعرض أكواد، ركز على النتائج بأسلوب مهني):" },
-                { role: "user", content: cleanOutput.substring(0, 1500) }
-              ], {
-                tools: null
-              });
-              toolMessages.push(analysis.text || `✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
-          } else {
-              toolMessages.push(`✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
-          }
+          
+          // 🧠 التحليل المهني مع تمرير tools: null لمنع تداخل الأدوات في مرحلة قراءة النتائج
+          const analysis = await geminiService.chat([
+            { role: "system", content: "أنت الأثير. صغ المخرجات البرمجية التالية كتقرير مهني معماري للمهندس عبدالغني (لا تعرض أكواد، ركز على النتائج بأسلوب مهني):" },
+            { role: "user", content: toolResult.output }
+          ], {
+            tools: null
+          });
+          
+          toolMessages.push(analysis.text || `✅ ${toolResult.output}`);
           
           fusionMemory.storeOperation(sessionId, call.name);
           const historyUpdate = fusionMemory.getFileHistory(sessionId) || [];
@@ -306,3 +303,4 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     context: ctx
   };
 }
+
