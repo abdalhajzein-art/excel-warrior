@@ -10,11 +10,11 @@ import crypto from "crypto";
 import geminiService from "../geminiService.js";
 import memory from "./memory.js";
 import { SYSTEM_PROMPT } from "../agent/system.js";
-import { extractPreviewAsync } from "./dynamic_executor.js";
+import { extractPreviewAsync, executeDynamicPython } from "./dynamic_executor.js";
 import fusionMemory from "./fusion_memory.js";
 import { fileURLToPath } from "url";
 
-// ✅ التعديل 1: استيراد شامل مضاد لأخطاء (Export/Import) في Node.js
+// ✅ استيراد شامل مضاد لأخطاء (Export/Import) في Node.js
 import * as excelToolsModule from "./excel_tools.js";
 const EXCEL_TOOLS = excelToolsModule.EXCEL_TOOLS || excelToolsModule.default?.EXCEL_TOOLS;
 const handleExcelToolCall = excelToolsModule.handleExcelToolCall || excelToolsModule.default?.handleExcelToolCall;
@@ -82,14 +82,11 @@ function rescueGeneratedFile(expectedPath) {
       }
     }
 
-    // ترتيب الملفات حسب الأحدث تاريخاً
     allFiles.sort((a, b) => b.mtime - a.mtime);
 
     if (allFiles.length > 0) {
       const rescuedFile = allFiles[0].path;
       console.log(`🛡️ [Kernel Guard] تم إنقاذ الملف ونقله من ${rescuedFile} إلى ${expectedPath}`);
-      
-      // ✅ التعديل 2: نقل الملف (rename) بدلاً من نسخه (copy) لتوفير المساحة وعدم تكرار الملفات
       fs.renameSync(rescuedFile, expectedPath);
       return expectedPath;
     }
@@ -112,7 +109,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
   ensureDirs();
   console.log(`\n🚀 [Kernel] بدء معالجة جلسة: ${sessionId} | الرسالة: "${message.substring(0, 30)}..."`);
 
-  // 1. بناء السياق الكامل للملف
   const activeFile = ctx.activeFile || null;
   const filePath = activeFile?.filePath || ctx.filePath || null;
   const fileName = activeFile?.fileName || ctx.fileName || null;
@@ -145,7 +141,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
     }
   }
 
-  // 2. بناء وصف البيئة الغني
   const structureSummary = fileContext.structure ? {
     sheets: fileContext.structure.sheets || [],
     rows: fileContext.structure.metadata?.rowCounts || {},
@@ -163,7 +158,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
   const systemContent = SYSTEM_PROMPT + `\n\n${environmentDescription}`;
 
-  // 3. تجهيز سجل المحادثة واستدعاء Gemini مع الأدوات الهيكلية
   const history = Array.isArray(ctx.history) ? ctx.history.slice(-20) : [];
   const conversationMessages = [
     { role: "system", content: systemContent },
@@ -201,23 +195,41 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
       for (const call of functionCalls) {
         console.log(`🔍 [Kernel] اسم الأداة المستلمة: "${call.name}" | الوسائط:`, JSON.stringify(call.args));
         
-        if (call.name && typeof handleExcelToolCall === "function") {
-          console.log(`⚙️ [Kernel] جاري تنفيذ الأداة: ${call.name}`);
+        let toolResult = null;
+
+        if (call.name === "execute_python") {
+          console.log(`⚙️ [Kernel] توجيه الأداة لمشغل البايثون الديناميكي...`);
+          const pythonCode = call.args.code;
+          toolResult = await executeDynamicPython(pythonCode, targetFilePath, !fileContext.exists, sessionId, fileContext);
           
-          const toolResult = await handleExcelToolCall(call, targetFilePath);
+        } else if (call.name && typeof handleExcelToolCall === "function") {
+          console.log(`⚙️ [Kernel] جاري تنفيذ أداة الإكسل: ${call.name}`);
+          toolResult = await handleExcelToolCall(call, targetFilePath);
           
-          if (toolResult && toolResult.success) {
-            anySuccess = true;
-            toolMessages.push(`✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`);
-            
-            fusionMemory.storeOperation(sessionId, call.name);
-            const historyUpdate = fusionMemory.getFileHistory(sessionId) || [];
-            fusionMemory.storeFileHistory(sessionId, [...historyUpdate, `تطبيق أداة: ${call.name}`]);
-          } else {
-            toolMessages.push(`❌ فشل أداة ${call.name}: ${toolResult?.error || 'خطأ غير معروف'}`);
-          }
         } else {
-            console.warn(`⚠️ [Kernel] الدالة ${call.name} غير مدعومة أو لم يتم استيرادها بشكل صحيح.`);
+          console.warn(`⚠️ [Kernel] الدالة ${call.name} غير مدعومة أو لم يتم استيرادها بشكل صحيح.`);
+          toolMessages.push(`❌ فشل: الأداة ${call.name} غير مدعومة بالنظام.`);
+          continue;
+        }
+
+        if (toolResult && toolResult.success) {
+          anySuccess = true;
+          let successMsg = `✅ ${toolResult.message || `تم تنفيذ ${call.name} بنجاح`}`;
+          
+          if (toolResult.output) {
+              const cleanOutput = toolResult.output.replace("SUCCESS: تم التنفيذ بنجاح ✓", "").trim();
+              if (cleanOutput) {
+                  successMsg += `\n\n**مخرجات التنفيذ (Console):**\n\`\`\`\n${cleanOutput}\n\`\`\``;
+              }
+          }
+          
+          toolMessages.push(successMsg);
+          
+          fusionMemory.storeOperation(sessionId, call.name);
+          const historyUpdate = fusionMemory.getFileHistory(sessionId) || [];
+          fusionMemory.storeFileHistory(sessionId, [...historyUpdate, `تطبيق أداة: ${call.name}`]);
+        } else {
+          toolMessages.push(`❌ فشل أداة ${call.name}: ${toolResult?.error || 'خطأ غير معروف'}`);
         }
       }
 
@@ -227,7 +239,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
 
         try {
           const idx = await readIndexSafe();
-          // الاستخراج الديناميكي للـ ID بدلاً من توليد واحد لا يتطابق مع الملف
           const newId = path.basename(targetFilePath).split('-')[0] || generateFileId(); 
           idx[newId] = {
             fileId: newId,
@@ -257,7 +268,6 @@ export default async function kernel(sessionId, rawMessage, ctx = {}) {
           toolMessages.push(`❌ خطأ في العثور على الملف: ${e.message}`);
         }
 
-        // ✅ التعديل 3: توجيه مسار التحميل بشكل ديناميكي (generated مقابل persistent_uploads) لتجنب خطأ 404
         const fileDirName = targetFilePath.includes("persistent_uploads") ? "persistent_uploads" : "generated";
         finalReplyText = toolMessages.join("\n") + `\n\n📁 [تحميل الملف المحدث](/${fileDirName}/${path.basename(targetFilePath)})`;
         
