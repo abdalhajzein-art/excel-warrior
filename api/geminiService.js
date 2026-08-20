@@ -1,24 +1,37 @@
 /**
  * api/geminiService.js – الإصدار السيادي المُعزز (Alatheer AI Suite)
- * - الاعتماد الكلي على Gemini مع هندسة التفكير العميق الافتراضي (Virtual Thinking).
- * - حل جذري لتعارض thinkingConfig مع الـ Function Calling.
- * - لا حاجة لـ Hugging Face (تجنب مشاكل الـ fetch failed).
+ * ✅ تم التعديل لدعم OmniRoute كبوابة بدلاً من Gemini المباشر
+ * - الحفاظ على وظيفة execute_python وأدوات Excel
+ * - التوجيه الذكي للطلبات عبر OmniRoute
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { EXCEL_TOOLS } from "./core/excel_tools.js";
 
-const API_KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
-    .split(",").map(k => k.trim()).filter(Boolean);
+// ============================================================
+// 🌐 إعدادات OmniRoute
+// ============================================================
 
-let currentKeyIndex = 0;
+// 🔥 عنوان OmniRoute - غيّره إلى عنوان السيرفر الخاص بك
+const OMNIROUTE_URL = process.env.OMNIROUTE_URL || "https://omniroute-server.onrender.com/v1";
+// مفتاح API الخاص بـ OmniRoute
+const OMNIROUTE_API_KEY = process.env.OMNIROUTE_API_KEY || "your-omniroute-api-key";
 
-// ترتيب النماذج حسب القدرة البرمجية
+// ============================================================
+// 🎯 تعريف النماذج عبر OmniRoute
+// ============================================================
+
+// نماذج OmniRoute المتاحة (يمكنك إضافة المزيد)
 const MODEL_PRIORITY = [
-    'gemini-3.6-flash',      // الأسرع والأذكى في المهام الوكيلية مع التفكير الافتراضي
-    'gemini-1.5-pro',        // العقل المدبر الأعلى دقة
-    'gemini-3.5-flash-lite'
+    'gemini-3.6-flash',      // الأسرع والأذكى في المهام الوكيلية
+    'claude-3-sonnet',       // من خلال OmniRoute
+    'deepseek-coder',        // للبرمجة
+    'qwen-coder',            // بديل جيد للبرمجة
+    'gemini-1.5-pro'         // العقل المدبر الأعلى دقة
 ];
+
+// ============================================================
+// 🔧 أدوات Alatheer (نفس الأدوات السابقة)
+// ============================================================
 
 const alatheerTools = [
     {
@@ -42,16 +55,48 @@ const alatheerTools = [
     }
 ];
 
-export function getNextApiKey() {
-    if (API_KEYS.length === 0) return null;
-    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-    return API_KEYS[currentKeyIndex];
+// ============================================================
+// 🧠 الاتصال بـ OmniRoute (بدلاً من Gemini مباشرة)
+// ============================================================
+
+async function callOmniRoute(modelName, systemInstruction, userMessage, tools) {
+    const response = await fetch(`${OMNIROUTE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OMNIROUTE_API_KEY}`
+        },
+        body: JSON.stringify({
+            model: modelName,
+            messages: [
+                { role: 'system', content: systemInstruction },
+                { role: 'user', content: userMessage }
+            ],
+            tools: tools,
+            tool_choice: 'auto',
+            temperature: 0.25,
+            max_tokens: 32768
+        })
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OmniRoute API error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data;
 }
+
+// ============================================================
+// 🚀 التنفيذ مع التجاوز التلقائي (Smart Fallback)
+// ============================================================
 
 export async function executeWithSmartFallback(fn, userMessage = '', systemInstruction = '', isDataTask = false) {
     const errors = [];
-    
-    // 1. هندسة التفكير العميق الافتراضي (Virtual Chain-of-Thought)
+    const lastError = null;
+
+    // تحضير التعليمات للمهام البرمجية
     let finalSystemInstruction = systemInstruction;
     if (isDataTask) {
         finalSystemInstruction += `
@@ -64,61 +109,85 @@ You are Alatheer's Data Architect. To write flawless Python (pandas/openpyxl), y
 Never call a tool without thinking first.`;
     }
 
+    // تجربة النماذج حسب الأولوية
     for (const modelName of MODEL_PRIORITY) {
         try {
-            const currentKey = API_KEYS[currentKeyIndex];
-            console.log(`🔄 [Gemini] محاولة عبر: ${modelName} | Virtual Thinking: ${isDataTask ? 'ON' : 'OFF'}`);
-            
-            const client = new GoogleGenerativeAI(currentKey);
-            
-            // 2. استخدام حرارة صفرية للمهام البرمجية لضمان المنطق الصارم بدون كسر الـ API
-            const generationConfig = { 
-                temperature: isDataTask ? 0.0 : 0.4 
+            console.log(`🔄 [OmniRoute] محاولة عبر النموذج: ${modelName}`);
+
+            const result = await callOmniRoute(
+                modelName,
+                finalSystemInstruction,
+                userMessage,
+                alatheerTools
+            );
+
+            // استخراج الرد والأدوات من استجابة OmniRoute
+            const reply = result.choices?.[0]?.message;
+            if (!reply) {
+                throw new Error('استجابة فارغة من OmniRoute');
+            }
+
+            return {
+                text: reply.content || '',
+                functionCalls: reply.tool_calls || null,
+                modelUsed: modelName,
+                raw: result
             };
 
-            const model = client.getGenerativeModel({ 
-                model: modelName,
-                systemInstruction: finalSystemInstruction ? { parts: [{ text: finalSystemInstruction }] } : undefined,
-                tools: alatheerTools,
-                generationConfig
-            });
-
-            return await fn(model, client);
-
         } catch (err) {
-            // توسيع نطاق قراءة الخطأ لتشخيص أدق في سجلات الخادم
-            console.log(`❌ [Gemini] فشل ${modelName}: ${err.message?.slice(0, 150)}`);
-            if (err.status === 429) getNextApiKey();
-            continue;
+            console.error(`❌ [OmniRoute] فشل النموذج ${modelName}:`, err.message);
+            errors.push(`[${modelName}] ${err.message}`);
+            // الاستمرار إلى النموذج التالي
         }
     }
-    throw new Error("❌ فشل جميع نماذج Gemini. راجع سجلات الخادم للتفاصيل.");
+
+    throw new Error(`❌ فشل جميع النماذج عبر OmniRoute. الأخطاء: ${errors.join('; ')}`);
 }
+
+// ============================================================
+// 🌐 الوظيفة الرئيسية للدردشة
+// ============================================================
 
 export async function chat(messages, options = {}) {
     let systemInstruction = options.systemInstruction || "You are Alatheer's expert engineer. Think step-by-step for coding tasks.";
     let currentMessage = "";
-    
+
     if (Array.isArray(messages)) {
-        currentMessage = messages[messages.length - 1].content;
+        // استخراج آخر رسالة مستخدم
+        const lastUserMsg = messages.filter(m => m.role === 'user').pop();
+        currentMessage = lastUserMsg?.content || messages[messages.length - 1]?.content || '';
     } else {
         currentMessage = messages;
     }
 
     const activeFile = options.activeFileName || options.filePath || "";
-    // تحديد ما إذا كانت المهمة تتطلب تعاملاً مع البيانات والملفات
     const isDataTask = !!(activeFile.match(/\.(xlsx|xls|csv|py|json)$/i) || currentMessage.includes('ملف'));
 
-    return await executeWithSmartFallback(async (model) => {
-        const chatSession = model.startChat({ history: [] });
-        const result = await chatSession.sendMessage(currentMessage);
-        const response = await result.response;
-        
-        return {
-            text: response.text(),
-            functionCalls: typeof response.functionCalls === 'function' ? response.functionCalls() : null
-        };
+    return await executeWithSmartFallback(async (modelName) => {
+        // هذه الدالة لن تُستخدم مباشرة، بل سنستخدم callOmniRoute
+        // لكننا نحتفظ بها للتوافق مع الكود القديم
+        return await callOmniRoute(modelName, systemInstruction, currentMessage, alatheerTools);
     }, currentMessage, systemInstruction, isDataTask);
 }
 
-export default { chat, getNextApiKey };
+// ============================================================
+// 📊 وظائف مساعدة
+// ============================================================
+
+export function getNextApiKey() {
+    // لم تعد هناك حاجة لمفاتيح Gemini، ولكن نحتفظ بالدالة للتوافق
+    console.warn('⚠️ getNextApiKey() تم استبدالها بـ OmniRoute');
+    return null;
+}
+
+// ============================================================
+// 🚀 تصدير الخدمة
+// ============================================================
+
+export default { 
+    chat, 
+    getNextApiKey,
+    executeWithSmartFallback,
+    callOmniRoute,
+    MODEL_PRIORITY
+};
