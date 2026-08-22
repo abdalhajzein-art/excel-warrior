@@ -6,7 +6,6 @@ import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsLis
 import { getSelectedFile, getAttachedFileName, resetFile } from './fileHandler.js';
 import { streamTextEffect, showTypingIndicator, hideTypingIndicator, showSearchIndicator, hideSearchIndicator, formatReply } from './uiController.js';
 
-//  تم حذف الـ Slash في نهاية الرابط لمنع //chat
 const WORKER_URL = "https://al-atheer.abd-alhajzein.workers.dev";
 
 let isGenerating = false;
@@ -209,11 +208,21 @@ export async function handleSendMessage(renderCallbacks) {
         if (isSearchQuery) hideSearchIndicator(indicatorId);
         else hideTypingIndicator(indicatorId);
 
+        // 🛡️ معالجة الأخطاء السليمة لمنع ظهور [object Object]
         if (!response.ok || data.error) {
-            throw new Error(data.error || `خطأ من الخادم (${response.status})`);
+            const rawError = data.error;
+            const errorMsg = typeof rawError === 'object' 
+                ? (rawError.message || rawError.status || JSON.stringify(rawError)) 
+                : rawError;
+            throw new Error(errorMsg || `خطأ من الخادم (${response.status})`);
         }
 
-        const replyText = data.reply || "تم إنجاز طلبك بنجاح!";
+        // 🛡️ استخراج النص المراد عرضه بدقة من أي مفتاح محتمل
+        const replyText = data.reply 
+            || data.output_text 
+            || (data.candidates && data.candidates[0]?.content?.parts[0]?.text) 
+            || "تم إنجاز طلبك بنجاح!";
+
         const cleanedReply = cleanArtifacts(replyText);
 
         const assistantMsgDiv = document.createElement('div');
@@ -233,7 +242,11 @@ export async function handleSendMessage(renderCallbacks) {
         if (error.name !== 'AbortError') {
             const errorDiv = document.createElement('div');
             errorDiv.className = 'message ai';
-            errorDiv.innerHTML = `<div>⚠️ ${error.message || 'تعذر الاتصال بالسيرفر.'}</div>`;
+            
+            // تحويل الرسالة لنص صريح بدقة
+            const displayErr = typeof error.message === 'string' ? error.message : JSON.stringify(error);
+            errorDiv.innerHTML = `<div>⚠️ ${displayErr || 'تعذر الاتصال بالسيرفر.'}</div>`;
+            
             chatArea.appendChild(errorDiv);
             chatArea.scrollTop = chatArea.scrollHeight;
         }
