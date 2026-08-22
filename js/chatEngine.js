@@ -1,13 +1,13 @@
 /**
- * js/chatEngine.js – النسخة النهائية للربط مع Cloudflare Worker (Gemini)
+ * js/chatEngine.js – النسخة النهائية المصلحة للربط مع Cloudflare Worker (Gemini)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
 import { getSelectedFile, getAttachedFileName, resetFile } from './fileHandler.js';
 import { streamTextEffect, showTypingIndicator, hideTypingIndicator, showSearchIndicator, hideSearchIndicator, formatReply } from './uiController.js';
 
-// 🔥 عنوان Cloudflare Worker
-const WORKER_URL = "https://al-atheer.abd-alhajzein.workers.dev/";
+//  تم حذف الـ Slash في نهاية الرابط لمنع //chat
+const WORKER_URL = "https://al-atheer.abd-alhajzein.workers.dev";
 
 let isGenerating = false;
 let currentAbortController = null;
@@ -58,10 +58,10 @@ export function stopGeneration() {
 }
 
 function cleanArtifacts(text) {
+    if (!text) return "";
     return text
         .replace(/\$\d+/g, "")
         .replace(/<(unk|pad|mask)>/gi, "")
-        .replace(/#{2,}/g, "")
         .replace(/\s{3,}/g, " ");
 }
 
@@ -93,6 +93,10 @@ export async function handleSendMessage(renderCallbacks) {
                 method: "POST",
                 body: formData
             });
+
+            if (!uploadResponse.ok) {
+                throw new Error(`Upload failed with status ${uploadResponse.status}`);
+            }
 
             processedFileResult = await uploadResponse.json();
             fileDisplayName = currentFileName;
@@ -205,6 +209,10 @@ export async function handleSendMessage(renderCallbacks) {
         if (isSearchQuery) hideSearchIndicator(indicatorId);
         else hideTypingIndicator(indicatorId);
 
+        if (!response.ok || data.error) {
+            throw new Error(data.error || `خطأ من الخادم (${response.status})`);
+        }
+
         const replyText = data.reply || "تم إنجاز طلبك بنجاح!";
         const cleanedReply = cleanArtifacts(replyText);
 
@@ -222,11 +230,13 @@ export async function handleSendMessage(renderCallbacks) {
         if (isSearchQuery) hideSearchIndicator(indicatorId);
         else hideTypingIndicator(indicatorId);
 
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'message ai';
-        errorDiv.innerHTML = `<div>⚠️ ${error.message || 'تعذر الاتصال بالسيرفر.'}</div>`;
-        chatArea.appendChild(errorDiv);
-        chatArea.scrollTop = chatArea.scrollHeight;
+        if (error.name !== 'AbortError') {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'message ai';
+            errorDiv.innerHTML = `<div>⚠️ ${error.message || 'تعذر الاتصال بالسيرفر.'}</div>`;
+            chatArea.appendChild(errorDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
 
     } finally {
         isGenerating = false;
@@ -278,3 +288,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
 
     chatArea.scrollTop = chatArea.scrollHeight;
 }
+
