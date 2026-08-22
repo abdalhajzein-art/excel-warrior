@@ -1,7 +1,7 @@
 import { initSessions, createNewSession, clearChat, exportChat, getStoredSessions, getCurrentSessionId } from './sessionManager.js';
 import { initFileHandler, resetFile } from './fileHandler.js';
 import { initUIController } from './uiController.js';
-import { getIsGenerating, updateSendButtonState, handleMainAction, appendMessageToDOM } from './chatEngine.js';
+import { getIsGenerating, updateSendButtonState, handleSendMessage, appendMessageToDOM } from './chatEngine.js';
 import { stations, resolveStationUrl } from './radioService.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // كولباكس للتنسيق المتبادل بين الوحدات
     const callbacks = {
-        isGenerating: () => getIsGenerating(), // ⭐ تم إضافة الدالة هنا ليعمل زر الإرفاق بلا أخطاء
+        isGenerating: () => getIsGenerating(),
         onResetFile: () => resetFile(),
         onUpdateSendState: () => updateSendButtonState(),
         appendMessageToDOM: (sender, text, fileData) => appendMessageToDOM(sender, text, fileData)
@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (exportChatBtn) exportChatBtn.addEventListener('click', exportChat);
 
     if (sendBtn) {
-        sendBtn.addEventListener('click', () => handleMainAction(callbacks));
+        sendBtn.addEventListener('click', () => handleSendMessage(callbacks));
         updateSendButtonState();
     }
 
@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!e.shiftKey) {
                     e.preventDefault();
                     if (!sendBtn.disabled) {
-                        handleMainAction(callbacks);
+                        handleSendMessage(callbacks);
                     }
                 }
             }
@@ -118,11 +118,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // ⭐ نظام راديو الأثير FM (النهائي والمربوط مع Service) ⭐
+    // ⭐ نظام راديو الأثير FM ⭐
     // ==========================================
 
     if (radioDropdown) {
-        radioDropdown.innerHTML = ''; // تفريغ لتجنب التكرار
+        radioDropdown.innerHTML = '';
         stations.forEach(station => {
             const item = document.createElement('div');
             item.className = 'radio-station-item';
@@ -171,7 +171,6 @@ document.addEventListener('DOMContentLoaded', () => {
             radioStop.style.display = 'inline-flex';
         }
 
-        // جلب الرابط الفعلي عبر دالة الخدمة المستقلة
         const streamUrl = await resolveStationUrl(station);
 
         if (!streamUrl) {
@@ -228,4 +227,3 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
-
