@@ -1,25 +1,11 @@
 /**
- * api/geminiService.js – الإصدار السيادي الجديد (Alatheer Gemini Router)
- * 🚀 يعتمد على Cloudflare Worker كبوابة إلى Gemini API
- * ❌ بدون OmniRoute
- * ❌ بدون سيرفر
- * ❌ بدون OpenRouter
- * ✔ اختيار النموذج المناسب تلقائيًا
- * ✔ دعم أدوات Excel و execute_python
+ * api/geminiService.js – الاصدار السيادي المعتمد (Gemini 3 Series & Interactions API)
  */
 
 import { EXCEL_TOOLS } from "./core/excel_tools.js";
 
-// ============================================================
-// 🌐 إعدادات Cloudflare Worker
-// ============================================================
-
-// عنوان الـ Worker الخاص بك
-const WORKER_URL = process.env.WORKER_URL || "https://al-atheer.abd-alhajzein.workers.dev/";
-
-// ============================================================
-// 🔧 أدوات Alatheer (نفس الأدوات السابقة)
-// ============================================================
+// عنوان Cloudflare Worker المباشر (متوافق مع المتصفح و GitHub Pages)
+const WORKER_URL = "https://al-atheer.abd-alhajzein.workers.dev/chat";
 
 const alatheerTools = [
     {
@@ -43,34 +29,23 @@ const alatheerTools = [
     }
 ];
 
-// ============================================================
-// 🧠 اختيار نموذج Gemini المناسب حسب نوع المهمة
-// ============================================================
-
+// اختيار نموذج Gemini 3 المناسب للمهمة
 function selectGeminiModel(message, activeFile) {
-    // مهام الملفات الثقيلة
+    // المهام المعقدة والملفات الثقيلة
     if (activeFile?.match(/\.(pdf|docx|xlsx|xls|csv)$/i)) {
-        return "gemini-3.1-pro"; // أقوى نموذج للملفات
+        return "gemini-3.1-pro";
     }
 
-    // مهام التحليل
-    if (message.includes("حلّل") || message.includes("استخرج") || message.includes("فسّر")) {
-        return "gemini-3.7-flash"; // أقوى نموذج للتحليل
+    // البرمجة، التحليل المعقد، والعمليات متعددة الخطوات
+    if (message.includes("حلّل") || message.includes("استخرج") || message.includes("فسّر") || message.includes("كود") || message.includes("برمج")) {
+        return "gemini-3.7-flash";
     }
 
-    // مهام البرمجة
-    if (message.includes("كود") || message.includes("برمج") || message.includes("function")) {
-        return "gemini-3.7-flash"; // أقوى نموذج للبرمجة
-    }
-
-    // دردشة عامة
+    // المحادثات والمهام اليومية
     return "gemini-3.6-flash";
 }
 
-// ============================================================
-// 🌐 الاتصال بـ Cloudflare Worker → Gemini API
-// ============================================================
-
+// إرسال الطلب بهيكلية Interactions API إلى Cloudflare Worker
 async function callGemini(modelName, systemInstruction, userMessage, tools) {
     const payload = {
         model: modelName,
@@ -93,10 +68,6 @@ async function callGemini(modelName, systemInstruction, userMessage, tools) {
 
     return await response.json();
 }
-
-// ============================================================
-// 🚀 الوظيفة الرئيسية للدردشة
-// ============================================================
 
 export async function chat(messages, options = {}) {
     let systemInstruction = options.systemInstruction || "You are Alatheer's expert engineer. Think step-by-step for coding tasks.";
@@ -121,27 +92,16 @@ export async function chat(messages, options = {}) {
         alatheerTools
     );
 
-    const reply = result.output_text || result.text || "";
-
     return {
-        text: reply,
+        text: result.reply || result.output_text || "",
         modelUsed: selectedModel,
         raw: result
     };
 }
 
-// ============================================================
-// 📊 وظائف مساعدة
-// ============================================================
-
 export function getNextApiKey() {
-    console.warn("⚠️ لم تعد هناك حاجة لمفاتيح Gemini داخل المنصة. المفتاح داخل Cloudflare Worker فقط.");
     return null;
 }
-
-// ============================================================
-// 🚀 تصدير الخدمة
-// ============================================================
 
 export default {
     chat,
@@ -149,3 +109,4 @@ export default {
     callGemini,
     selectGeminiModel
 };
+
