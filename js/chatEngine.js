@@ -1,10 +1,11 @@
 /**
- * js/chatEngine.js – النسخة السيادية (مصحّحة الإرسال وتفريغ صندوق المرفقات)
+ * js/chatEngine.js – النسخة النهائية المعدّلة للربط مع OmniRoute الخارجي
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
 import { getSelectedFile, getAttachedFileName, resetFile } from './fileHandler.js';
 import { streamTextEffect, showTypingIndicator, hideTypingIndicator, showSearchIndicator, hideSearchIndicator, formatReply } from './uiController.js';
+import { OMNIROUTE_URL, OMNIROUTE_API_KEY } from './config.js';
 
 let isGenerating = false;
 let currentAbortController = null;
@@ -54,14 +55,6 @@ export function stopGeneration() {
     document.querySelectorAll('.typing-indicator, .search-indicator-badge').forEach(el => el.remove());
 }
 
-export function handleMainAction(renderCallbacks) {
-    if (isGenerating) {
-        stopGeneration();
-    } else {
-        handleSendMessage(renderCallbacks);
-    }
-}
-
 function cleanArtifacts(text) {
     return text
         .replace(/\$\d+/g, "")
@@ -87,26 +80,23 @@ export async function handleSendMessage(renderCallbacks) {
     let displayMessage = message || "";
     let processedFileResult = null;
     let fileDisplayName = null;
-    let fileBase64 = null;
 
     if (currentFileToProcess) {
         try {
-            const fileBuffer = await currentFileToProcess.arrayBuffer();
-            const base64Data = btoa(String.fromCharCode(...new Uint8Array(fileBuffer)));
-            
-            fileBase64 = base64Data;
-            fileDisplayName = currentFileName;
-            
             const formData = new FormData();
             formData.append("file", currentFileToProcess);
-            formData.append("action", "preview");
 
-            const uploadResponse = await fetch("/api/upload", {
+            const uploadResponse = await fetch(`${OMNIROUTE_URL}/files/analyze`, {
                 method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${OMNIROUTE_API_KEY}`
+                },
                 body: formData
             });
 
             processedFileResult = await uploadResponse.json();
+            fileDisplayName = currentFileName;
+
         } catch (err) {
             console.error("❌ Error processing file:", err);
             appendMessageToDOM('assistant', '⚠️ تعذر معالجة الملف. حاول مرة أخرى.');
@@ -151,10 +141,7 @@ export async function handleSendMessage(renderCallbacks) {
         fileData: processedFileResult
     });
 
-    // 🧹 التعديل هنا: تفريغ الملف من الواجهة فوراً بعد اعتماده وإضافته للشاشة
-    if (currentFileToProcess) {
-        resetFile();
-    }
+    if (currentFileToProcess) resetFile();
 
     let sessions = getStoredSessions();
     if (sessions[sessionId] && sessions[sessionId].title === 'جلسة جديدة') {
@@ -179,11 +166,8 @@ export async function handleSendMessage(renderCallbacks) {
     const isSearchQuery = /(ابحث|ابحثلي|بحث|النت|جوجل|شبكة|عن وصفة|أخبار|مصادر|رابط|روابط|طقس|الجو)/i.test(displayMessage);
     
     let indicatorId;
-    if (isSearchQuery) {
-        indicatorId = showSearchIndicator();
-    } else {
-        indicatorId = showTypingIndicator();
-    }
+    if (isSearchQuery) indicatorId = showSearchIndicator();
+    else indicatorId = showTypingIndicator();
 
     try {
         const currentSessionData = sessions[sessionId];
@@ -202,38 +186,32 @@ export async function handleSendMessage(renderCallbacks) {
 
         let finalMessageForAI = displayMessage || "ممكن تعطيني ملخص عن محتوى الملف؟";
 
-        const requestPayload = { 
-            message: finalMessageForAI,
-            history: formattedHistoryForBackend,
-            sessionId: sessionId,
-            fileId: processedFileResult?.fileId || processedFileResult?.id || null, 
-            filePath: processedFileResult?.storedPath || processedFileResult?.filePath || null,
-            fileData: fileBase64,
-            fileName: fileDisplayName || null
+        const payload = {
+            model: "gemini-1.5-pro",
+            messages: [
+                ...formattedHistoryForBackend,
+                { role: "user", content: finalMessageForAI }
+            ],
+            temperature: 0.25,
+            max_tokens: 32768
         };
 
-        const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestPayload),
+        const response = await fetch(`${OMNIROUTE_URL}/chat/completions`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${OMNIROUTE_API_KEY}`
+            },
+            body: JSON.stringify(payload),
             signal: currentAbortController.signal
         });
-
-        if (!response.ok) {
-            let errorMsg = `خطأ في السيرفر (كود: ${response.status})`;
-            try {
-                const errData = await response.json();
-                errorMsg = errData.error || errData.message || errorMsg;
-            } catch (e) {}
-            throw new Error(errorMsg);
-        }
 
         const data = await response.json();
 
         if (isSearchQuery) hideSearchIndicator(indicatorId);
         else hideTypingIndicator(indicatorId);
 
-        const replyText = data.reply || "تم إنجاز طلبك بنجاح!";
+        const replyText = data.choices?.[0]?.message?.content || "تم إنجاز طلبك بنجاح!";
         const cleanedReply = cleanArtifacts(replyText);
 
         const assistantMsgDiv = document.createElement('div');
@@ -243,54 +221,19 @@ export async function handleSendMessage(renderCallbacks) {
         await streamTextEffect(assistantMsgDiv, cleanedReply, 15, getIsGenerating);
         addCopyButtonToMessage(assistantMsgDiv, cleanedReply);
 
-        let savedFileData = null;
-
-        if (data.isFileGenerated && data.downloadUrl) {
-            const safeFileName = data.fileName || 'generated_file.xlsx';
-            savedFileData = { downloadUrl: data.downloadUrl, name: safeFileName, isGenerated: true };
-
-            const downloadBtn = document.createElement('a');
-            downloadBtn.href = data.downloadUrl;
-            downloadBtn.download = safeFileName;
-            downloadBtn.className = 'alatheer-download-btn generated-file';
-            downloadBtn.innerHTML = `📥 تحميل الملف المُنشأ (${safeFileName})`;
-            assistantMsgDiv.appendChild(downloadBtn);
-        }
-
-        if (data.fileBase64 && !data.isFileGenerated) {
-            const safeFileName = data.fileName || 'modified_file.xlsx';
-            const fileDownloadUrl = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${data.fileBase64}`;
-            
-            savedFileData = { downloadUrl: fileDownloadUrl, base64: data.fileBase64, name: safeFileName, isGenerated: false };
-
-            const downloadBtn = document.createElement('a');
-            downloadBtn.href = fileDownloadUrl;
-            downloadBtn.download = safeFileName;
-            downloadBtn.className = 'alatheer-download-btn';
-            downloadBtn.innerHTML = `📥 اضغط هنا لتحميل ملفك المعدل (${safeFileName})`;
-            assistantMsgDiv.appendChild(downloadBtn);
-        }
-
-        if (!window._isUserScrolledUp) {
-            chatArea.scrollTop = chatArea.scrollHeight;
-        }
-
-        saveMessageToCurrentSession('assistant', cleanedReply, savedFileData);
+        saveMessageToCurrentSession('assistant', cleanedReply);
 
     } catch (error) {
-        if (error.name === 'AbortError') {
-            console.log('🛑 Request aborted by user.');
-        } else {
-            console.error('❌ Fetch Error:', error);
-            if (isSearchQuery) hideSearchIndicator(indicatorId);
-            else hideTypingIndicator(indicatorId);
+        console.error('❌ Fetch Error:', error);
+        if (isSearchQuery) hideSearchIndicator(indicatorId);
+        else hideTypingIndicator(indicatorId);
 
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'message ai';
-            errorDiv.innerHTML = `<div>⚠️ ${error.message || 'تعذر الاتصال بالسيرفر.'}</div>`;
-            chatArea.appendChild(errorDiv);
-            if (!window._isUserScrolledUp) chatArea.scrollTop = chatArea.scrollHeight;
-        }
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'message ai';
+        errorDiv.innerHTML = `<div>⚠️ ${error.message || 'تعذر الاتصال بالسيرفر.'}</div>`;
+        chatArea.appendChild(errorDiv);
+        chatArea.scrollTop = chatArea.scrollHeight;
+
     } finally {
         isGenerating = false;
         currentAbortController = null;
@@ -307,14 +250,14 @@ function addCopyButtonToMessage(messageDiv, textToCopy) {
     copyBtn.title = 'نسخ النص';
     copyBtn.style.cssText = `position: absolute; top: 10px; left: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; background: rgba(255, 255, 255, 0.05); color: var(--text-secondary); border: 1px solid var(--border-glass); padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; z-index: 5;`;
     
-    copyBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span>نسخ</span>`;
+    copyBtn.innerHTML = `<span>نسخ</span>`;
 
     copyBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(textToCopy).then(() => {
             copyBtn.innerHTML = `<span>تم النسخ ✓</span>`;
             copyBtn.style.color = 'var(--accent-gold)';
             setTimeout(() => {
-                copyBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span>نسخ</span>`;
+                copyBtn.innerHTML = `<span>نسخ</span>`;
                 copyBtn.style.color = 'var(--text-secondary)';
             }, 2000);
         });
@@ -339,14 +282,5 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     chatArea.appendChild(messageDiv);
     if (sender === 'assistant') addCopyButtonToMessage(messageDiv, text);
 
-    if (fileData?.downloadUrl) {
-        const downloadBtn = document.createElement('a');
-        downloadBtn.href = fileData.downloadUrl;
-        downloadBtn.download = fileData.name || 'file.xlsx';
-        downloadBtn.className = 'alatheer-download-btn';
-        downloadBtn.innerHTML = `📥 اضغط هنا لتحميل الملف (${fileData.name || 'file.xlsx'})`;
-        messageDiv.appendChild(downloadBtn);
-    }
     chatArea.scrollTop = chatArea.scrollHeight;
-}
-
+            }
