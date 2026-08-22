@@ -1,8 +1,8 @@
 /**
- * js/fileHandler.js – النسخة النهائية المعدّلة للربط مع OmniRoute الخارجي
+ * js/fileHandler.js – النسخة النهائية للربط مع Cloudflare Worker (Gemini)
  */
 
-import { OMNIROUTE_URL, OMNIROUTE_API_KEY } from './config.js';
+const WORKER_URL = "https://al-atheer.abd-alhajzein.workers.dev";
 
 let selectedFileObject = null;
 let attachedFileName = null;
@@ -44,6 +44,7 @@ export function initFileHandler(callbacks) {
         try {
             selectedFileObject = file;
             attachedFileName = file.name;
+
             await new Promise(resolve => setTimeout(resolve, 300));
             isFileLoading = false;
 
@@ -116,11 +117,8 @@ export async function sendSelectedFileToServer() {
     formData.append("file", selectedFileObject, selectedFileObject.name);
 
     try {
-        const response = await fetch(`${OMNIROUTE_URL}/files/analyze`, {
+        const response = await fetch(`${WORKER_URL}/files/analyze`, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${OMNIROUTE_API_KEY}`
-            },
             body: formData
         });
 
@@ -128,6 +126,6 @@ export async function sendSelectedFileToServer() {
 
     } catch (err) {
         console.error("❌ خطأ أثناء إرسال الملف:", err);
-        return { error: "❌ فشل إرسال الملف إلى OmniRoute." };
+        return { error: "❌ فشل إرسال الملف إلى Cloudflare Worker." };
     }
-       }
+    }
