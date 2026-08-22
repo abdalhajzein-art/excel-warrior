@@ -1,11 +1,13 @@
 /**
- * js/chatEngine.js – النسخة النهائية المعدّلة للربط مع OmniRoute الخارجي
+ * js/chatEngine.js – النسخة النهائية للربط مع Cloudflare Worker (Gemini)
  */
 
 import { getStoredSessions, saveSessions, getCurrentSessionId, renderSessionsList } from './sessionManager.js';
 import { getSelectedFile, getAttachedFileName, resetFile } from './fileHandler.js';
 import { streamTextEffect, showTypingIndicator, hideTypingIndicator, showSearchIndicator, hideSearchIndicator, formatReply } from './uiController.js';
-import { OMNIROUTE_URL, OMNIROUTE_API_KEY } from './config.js';
+
+// 🔥 عنوان Cloudflare Worker
+const WORKER_URL = "https://al-atheer.abd-alhajzein.workers.dev/";
 
 let isGenerating = false;
 let currentAbortController = null;
@@ -81,16 +83,14 @@ export async function handleSendMessage(renderCallbacks) {
     let processedFileResult = null;
     let fileDisplayName = null;
 
+    // 📎 رفع الملف إلى Cloudflare Worker
     if (currentFileToProcess) {
         try {
             const formData = new FormData();
             formData.append("file", currentFileToProcess);
 
-            const uploadResponse = await fetch(`${OMNIROUTE_URL}/files/analyze`, {
+            const uploadResponse = await fetch(`${WORKER_URL}/files/analyze`, {
                 method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${OMNIROUTE_API_KEY}`
-                },
                 body: formData
             });
 
@@ -186,23 +186,17 @@ export async function handleSendMessage(renderCallbacks) {
 
         let finalMessageForAI = displayMessage || "ممكن تعطيني ملخص عن محتوى الملف؟";
 
-        const payload = {
-            model: "gemini-1.5-pro",
-            messages: [
-                ...formattedHistoryForBackend,
-                { role: "user", content: finalMessageForAI }
-            ],
-            temperature: 0.25,
-            max_tokens: 32768
-        };
-
-        const response = await fetch(`${OMNIROUTE_URL}/chat/completions`, {
+        // 🚀 إرسال الطلب إلى Cloudflare Worker
+        const response = await fetch(`${WORKER_URL}/chat`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${OMNIROUTE_API_KEY}`
-            },
-            body: JSON.stringify(payload),
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                messages: [
+                    ...formattedHistoryForBackend,
+                    { role: "user", content: finalMessageForAI }
+                ],
+                file: processedFileResult
+            }),
             signal: currentAbortController.signal
         });
 
@@ -211,7 +205,7 @@ export async function handleSendMessage(renderCallbacks) {
         if (isSearchQuery) hideSearchIndicator(indicatorId);
         else hideTypingIndicator(indicatorId);
 
-        const replyText = data.choices?.[0]?.message?.content || "تم إنجاز طلبك بنجاح!";
+        const replyText = data.reply || "تم إنجاز طلبك بنجاح!";
         const cleanedReply = cleanArtifacts(replyText);
 
         const assistantMsgDiv = document.createElement('div');
@@ -283,4 +277,4 @@ export function appendMessageToDOM(sender, text, fileData = null) {
     if (sender === 'assistant') addCopyButtonToMessage(messageDiv, text);
 
     chatArea.scrollTop = chatArea.scrollHeight;
-            }
+}
