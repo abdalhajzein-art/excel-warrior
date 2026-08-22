@@ -1,3 +1,4 @@
+//  الصح
 import { initSessions, createNewSession, clearChat, exportChat, getStoredSessions, getCurrentSessionId } from './sessionManager.js';
 import { initFileHandler, resetFile } from './fileHandler.js';
 import { initUIController } from './uiController.js';
