@@ -1,16 +1,14 @@
 /**
- * js/fileHandler.js – معالج الملفات في الواجهة الأمامية
- * ✅ تم إصلاح مشكلة إرسال الملفات بشكل صحيح
+ * js/fileHandler.js – النسخة النهائية المعدّلة للربط مع OmniRoute الخارجي
  */
+
+import { OMNIROUTE_URL, OMNIROUTE_API_KEY } from './config.js';
 
 let selectedFileObject = null;
 let attachedFileName = null;
 let isFileLoading = false;
 const fileInput = document.createElement('input');
 
-/* ============================================================
-   ⭐ تهيئة زر رفع الملف
-   ============================================================ */
 export function initFileHandler(callbacks) {
     fileInput.type = 'file';
     fileInput.accept = '.xlsx, .xls, .csv, .json, .txt, .docx, .pdf, .png, .jpg, .jpeg';
@@ -71,9 +69,6 @@ export function initFileHandler(callbacks) {
     });
 }
 
-/* ============================================================
-   ⭐ عرض فقاعة الملف
-   ============================================================ */
 export function showFileBubbleUI() {
     const fileBubbles = document.getElementById('fileBubbles');
     if (!fileBubbles || !attachedFileName) return;
@@ -93,9 +88,6 @@ export function showFileBubbleUI() {
     }
 }
 
-/* ============================================================
-   ⭐ إزالة الملف
-   ============================================================ */
 export function resetFile() {
     selectedFileObject = null;
     attachedFileName = null;
@@ -107,9 +99,6 @@ export function resetFile() {
     fileInput.value = '';
 }
 
-/* ============================================================
-   ⭐ دوال مساعدة
-   ============================================================ */
 export function getSelectedFile() {
     return selectedFileObject;
 }
@@ -118,25 +107,20 @@ export function getAttachedFileName() {
     return attachedFileName;
 }
 
-/* ============================================================
-   ⭐ إرسال الملف إلى السيرفر عبر /api/upload
-   ============================================================ */
 export async function sendSelectedFileToServer() {
     if (!selectedFileObject) {
         return { error: "⚠️ لا يوجد ملف مرفوع." };
     }
 
     const formData = new FormData();
-
-    // ✅ استخدام الاسم الأصلي للملف
-    const safeFilename = selectedFileObject.name;
-
-    formData.append("file", selectedFileObject, safeFilename);
-    formData.append("action", "preview");
+    formData.append("file", selectedFileObject, selectedFileObject.name);
 
     try {
-        const response = await fetch("/api/upload", {
+        const response = await fetch(`${OMNIROUTE_URL}/files/analyze`, {
             method: "POST",
+            headers: {
+                "Authorization": `Bearer ${OMNIROUTE_API_KEY}`
+            },
             body: formData
         });
 
@@ -144,6 +128,6 @@ export async function sendSelectedFileToServer() {
 
     } catch (err) {
         console.error("❌ خطأ أثناء إرسال الملف:", err);
-        return { error: "❌ فشل إرسال الملف إلى السيرفر." };
+        return { error: "❌ فشل إرسال الملف إلى OmniRoute." };
     }
-}
+       }
